@@ -1,0 +1,65 @@
+"""
+API v1 router aggregation
+"""
+from fastapi import APIRouter
+from app.api.v1.endpoints import (
+    auth,
+    tenants,
+    users,
+    categories,
+    products,
+    suppliers,
+    purchases,
+    inventory,
+    barcode,
+    sales,
+    invoices,
+    reports,
+    settings,
+    audit,
+)
+
+api_router = APIRouter()
+
+# Authentication
+api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
+
+# Tenant management
+api_router.include_router(tenants.router, prefix="/tenants", tags=["Tenants"])
+
+# User management
+api_router.include_router(users.router, prefix="/users", tags=["Users"])
+
+# Category management
+api_router.include_router(categories.router, prefix="/categories", tags=["Categories"])
+
+# Product management
+api_router.include_router(products.router, prefix="/products", tags=["Products"])
+
+# Supplier management
+api_router.include_router(suppliers.router, prefix="/suppliers", tags=["Suppliers"])
+
+# Purchase/Procurement management
+api_router.include_router(purchases.router, prefix="/purchases", tags=["Purchases"])
+
+# Inventory management
+api_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
+
+# Barcode management
+api_router.include_router(barcode.router, prefix="/barcode", tags=["Barcode"])
+
+# Sales/Billing
+api_router.include_router(sales.router, prefix="/sales", tags=["Sales"])
+
+# Invoice management
+api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"])
+
+# Reports
+api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
+
+# Settings
+api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])
+
+# Audit logs
+api_router.include_router(audit.router, prefix="/audit", tags=["Audit Logs"])
+

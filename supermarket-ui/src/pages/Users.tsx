@@ -1,0 +1,176 @@
+/**
+ * Users Management Page
+ */
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Box, Typography, Button, Card, TextField, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions,
+  FormControl, InputLabel, Select, MenuItem, Chip, InputAdornment,
+} from '@mui/material';
+import Grid from '@mui/material/Grid';
+import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
+import { Add, Edit, Delete, Search, Refresh, Lock } from '@mui/icons-material';
+import api from '../services/api';
+import { API_ENDPOINTS } from '../config/api';
+import { User, PaginatedResponse } from '../types';
+import toast from 'react-hot-toast';
+
+const Users: React.FC = () => {
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(10);
+  const [search, setSearch] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [formData, setFormData] = useState({ username: '', email: '', full_name: '', password: '', role: 'cashier', status: 'active' });
+  const [newPassword, setNewPassword] = useState('');
+
+  const fetchUsers = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get<PaginatedResponse<User>>(API_ENDPOINTS.USERS, {
+        params: { page: page + 1, page_size: pageSize, search }
+      });
+      setUsers(response.data.items);
+      setTotal(response.data.total);
+    } catch (error) { toast.error('Failed to fetch users'); }
+    finally { setLoading(false); }
+  }, [page, pageSize, search]);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+
+  const handleOpenDialog = (user?: User) => {
+    if (user) {
+      setEditUser(user);
+      const roleName = typeof user.role === 'object' ? user.role?.role_name : user.role;
+      setFormData({ username: user.username, email: user.email || '', full_name: user.full_name || '',
+        password: '', role: roleName || 'cashier', status: user.status });
+    } else {
+      setEditUser(null);
+      setFormData({ username: '', email: '', full_name: '', password: '', role: 'cashier', status: 'active' });
+    }
+    setDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    try {
+      const data: any = { username: formData.username, email: formData.email, full_name: formData.full_name,
+        role: formData.role, status: formData.status };
+      if (!editUser && formData.password) data.password = formData.password;
+      if (editUser) {
+        await api.put(`${API_ENDPOINTS.USERS}/${editUser.id}`, data);
+        toast.success('User updated');
+      } else {
+        await api.post(API_ENDPOINTS.USERS, data);
+        toast.success('User created');
+      }
+      setDialogOpen(false);
+      fetchUsers();
+    } catch (error: any) { toast.error(error.response?.data?.detail || 'Failed to save user'); }
+  };
+
+  const handleResetPassword = async () => {
+    if (!editUser || !newPassword) return;
+    try {
+      await api.post(`${API_ENDPOINTS.USERS}/${editUser.id}/reset-password`, { new_password: newPassword });
+      toast.success('Password reset');
+      setPasswordOpen(false);
+      setNewPassword('');
+    } catch (error: any) { toast.error(error.response?.data?.detail || 'Failed to reset password'); }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!window.confirm('Delete this user?')) return;
+    try {
+      await api.delete(`${API_ENDPOINTS.USERS}/${id}`);
+      toast.success('User deleted');
+      fetchUsers();
+    } catch (error) { toast.error('Failed to delete user'); }
+  };
+
+  const columns: GridColDef[] = [
+    { field: 'username', headerName: 'Username', width: 130 },
+    { field: 'full_name', headerName: 'Full Name', flex: 1, minWidth: 150 },
+    { field: 'email', headerName: 'Email', width: 200 },
+    { field: 'role', headerName: 'Role', width: 100, renderCell: (params: GridRenderCellParams) => {
+      const roleName = params.value?.role_name || params.value || '';
+      return <Chip label={roleName} size="small" color={roleName === 'admin' ? 'primary' : 'default'} />;
+    }},
+    { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
+      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+    )},
+    { field: 'actions', headerName: 'Actions', width: 140, sortable: false, renderCell: (params: GridRenderCellParams) => (
+      <>
+        <IconButton size="small" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
+        <IconButton size="small" onClick={() => { setEditUser(params.row); setPasswordOpen(true); }}><Lock fontSize="small" /></IconButton>
+        <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+      </>
+    )},
+  ];
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h4">Users</Typography>
+        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add User</Button>
+      </Box>
+      <Card sx={{ mb: 2, p: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <TextField placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
+          <IconButton onClick={fetchUsers}><Refresh /></IconButton>
+        </Box>
+      </Card>
+      <Card>
+        <DataGrid rows={users} columns={columns} loading={loading} rowCount={total}
+          paginationMode="server"
+          paginationModel={{ page, pageSize }}
+          onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
+          pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
+      </Card>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>{editUser ? 'Edit User' : 'Add User'}</DialogTitle>
+        <DialogContent>
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Username" required value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })} disabled={!!editUser} /></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" type="email" required value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></Grid>
+            <Grid size={12}><TextField fullWidth label="Full Name" value={formData.full_name}
+                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} /></Grid>
+            {!editUser && <Grid size={12}><TextField fullWidth label="Password" type="password" required value={formData.password}
+                onChange={(e) => setFormData({ ...formData, password: e.target.value })} /></Grid>}
+            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth><InputLabel>Role</InputLabel>
+              <Select value={formData.role} label="Role" onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
+                <MenuItem value="admin">Admin</MenuItem><MenuItem value="cashier">Cashier</MenuItem>
+              </Select></FormControl></Grid>
+            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth><InputLabel>Status</InputLabel>
+              <Select value={formData.status} label="Status" onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
+                <MenuItem value="active">Active</MenuItem><MenuItem value="inactive">Inactive</MenuItem>
+              </Select></FormControl></Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleSave}>Save</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={passwordOpen} onClose={() => setPasswordOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Reset Password</DialogTitle>
+        <DialogContent>
+          <TextField fullWidth label="New Password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} sx={{ mt: 1 }} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPasswordOpen(false)}>Cancel</Button>
+          <Button variant="contained" onClick={handleResetPassword}>Reset</Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default Users;
+
