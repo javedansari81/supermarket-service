@@ -1,9 +1,10 @@
 """
 Barcode schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
+from datetime import date
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
 from app.schemas.base import TimestampSchema
 
 
@@ -65,5 +66,44 @@ class BarcodeLabelData(BaseModel):
     product_name: str
     barcode: str
     mrp: str
+    selling_price: Optional[str] = None
+    unit_type: Optional[str] = None
+    is_loose: bool = False
     barcode_image: str  # Base64 encoded image
+
+
+class PackedLabelRequest(BaseModel):
+    """Schema for a packed-goods (Legal Metrology) label print request"""
+    product_id: int
+    net_quantity: Decimal = Field(..., gt=0)
+    net_unit: Literal["g", "kg", "ml", "l", "pcs"]
+    mrp: Optional[Decimal] = Field(None, gt=0)
+    packed_date: date
+    best_before_date: Optional[date] = None
+    batch_no: Optional[str] = Field(None, max_length=30)
+    copies: int = Field(1, ge=1, le=500)
+
+    @model_validator(mode="after")
+    def check_dates(self):
+        if self.best_before_date and self.best_before_date < self.packed_date:
+            raise ValueError("Best before date cannot be earlier than packed date")
+        return self
+
+
+class PackedLabelData(BaseModel):
+    """Schema for packed-goods label data"""
+    store_name: str
+    store_address: str = ""
+    store_phone: str = ""
+    store_email: str = ""
+    fssai_license: str = ""
+    product_name: str
+    barcode: str
+    barcode_image: str
+    net_quantity: str
+    mrp: str
+    unit_sale_price: Optional[str] = None
+    packed_date: str
+    best_before_date: Optional[str] = None
+    batch_no: Optional[str] = None
 

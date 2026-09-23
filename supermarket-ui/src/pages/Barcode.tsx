@@ -14,8 +14,99 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api';
 import { Product, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+import dayjs from 'dayjs';
 
 interface PrintItem { product_id: number; product_name: string; barcode: string; price: number; quantity: number; }
+
+interface LabelData {
+  store_name: string; product_no: string; product_name: string; barcode: string;
+  mrp: string; selling_price?: string | null; unit_type?: string | null; is_loose: boolean; barcode_image: string;
+}
+
+interface PackedLabelData {
+  store_name: string; store_address: string; store_phone: string; store_email: string; fssai_license: string;
+  product_name: string; barcode: string; barcode_image: string; net_quantity: string; mrp: string;
+  unit_sale_price?: string | null; packed_date: string; best_before_date?: string | null; batch_no?: string | null;
+}
+
+const LABEL_SIZES: Record<string, { w: number; h: number; font: number }> = {
+  small: { w: 38, h: 25, font: 7 },
+  medium: { w: 50, h: 30, font: 8 },
+  sticker: { w: 50, h: 38, font: 8 },
+  large: { w: 70, h: 40, font: 10 },
+};
+
+const printHtml = (html: string) => {
+  const frame = document.createElement('iframe');
+  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow!.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  setTimeout(() => {
+    frame.contentWindow!.focus();
+    frame.contentWindow!.print();
+    setTimeout(() => frame.remove(), 1000);
+  }, 300);
+};
+
+const buildPackedLabelsHtml = (labels: PackedLabelData[]) => {
+  const e = (s?: string | null) => escapeHtml(s || '');
+  const body = labels.map((l) => `<div class="label">
+    <div class="name">${e(l.product_name)}</div>
+    <div class="big"><span>Net Qty: ${e(l.net_quantity)}</span><span>MRP ${e(l.mrp)}</span></div>
+    <div class="row"><span>(Incl. of all taxes)</span>${l.unit_sale_price ? `<span>Unit price: ${e(l.unit_sale_price)}</span>` : ''}</div>
+    <div class="row"><span>Pkd: ${e(l.packed_date)}</span>${l.best_before_date ? `<span>Best before: ${e(l.best_before_date)}</span>` : ''}</div>
+    ${l.batch_no ? `<div class="row"><span>Batch: ${e(l.batch_no)}</span></div>` : ''}
+    <img src="data:image/png;base64,${l.barcode_image}" /><div class="code">${e(l.barcode)}</div>
+    <div class="small"><b>Packed &amp; Marketed by:</b> ${e(l.store_name)}, ${e(l.store_address)}</div>
+    <div class="small">Customer care: ${[l.store_phone, l.store_email].filter(Boolean).map(e).join(', ')}</div>
+    ${l.fssai_license ? `<div class="small">FSSAI Lic. No. ${e(l.fssai_license)}</div>` : ''}
+  </div>`).join('');
+  return `<!DOCTYPE html><html><head><title>Packed Labels</title><style>
+    @page { size: 50mm 38mm; margin: 0; }
+    body { margin: 0; font-family: Arial, sans-serif; color: #000; }
+    .label { width: 50mm; height: 38mm; box-sizing: border-box; padding: 1mm 1.5mm; overflow: hidden;
+      page-break-after: always; display: flex; flex-direction: column; font-size: 5.5pt; line-height: 1.15; }
+    .name { font-weight: bold; font-size: 8pt; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .big { display: flex; justify-content: space-between; font-weight: bold; font-size: 8pt; }
+    .row { display: flex; justify-content: space-between; }
+    img { height: 7mm; max-width: 100%; align-self: center; margin-top: 0.5mm; }
+    .code { text-align: center; letter-spacing: 1px; }
+    .small { font-size: 5pt; }
+  </style></head><body>${body}</body></html>`;
+};
+
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+
+const buildLabelsHtml = (labels: LabelData[], size: string) => {
+  const { w, h, font } = LABEL_SIZES[size] || LABEL_SIZES.small;
+  const body = labels.map((l) => {
+    const price = l.is_loose
+      ? `${escapeHtml(l.selling_price || l.mrp)}/${escapeHtml(l.unit_type || 'kg')}`
+      : `MRP ${escapeHtml(l.mrp)} (incl. of all taxes)`;
+    return `<div class="label">
+      <div class="store">${escapeHtml(l.store_name)}</div>
+      <div class="name">${escapeHtml(l.product_name)}</div>
+      <img src="data:image/png;base64,${l.barcode_image}" />
+      <div class="code">${escapeHtml(l.barcode)}</div>
+      <div class="price">${price}</div>
+    </div>`;
+  }).join('');
+  return `<!DOCTYPE html><html><head><title>Labels</title><style>
+    @page { margin: 2mm; }
+    body { margin: 0; font-family: Arial, sans-serif; }
+    .label { width: ${w}mm; height: ${h}mm; box-sizing: border-box; padding: 1mm; display: inline-flex; flex-direction: column;
+      align-items: center; justify-content: space-between; overflow: hidden; page-break-inside: avoid; border: 0.2mm dashed #ccc; font-size: ${font}pt; }
+    .store { font-weight: bold; }
+    .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    img { max-width: 100%; height: ${Math.round(h * 0.35)}mm; }
+    .code { letter-spacing: 1px; }
+    .price { font-weight: bold; }
+  </style></head><body>${body}</body></html>`;
+};
 
 const Barcode: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -23,6 +114,43 @@ const Barcode: React.FC = () => {
   const [printQty, setPrintQty] = useState('1');
   const [printItems, setPrintItems] = useState<PrintItem[]>([]);
   const [labelSize, setLabelSize] = useState('small');
+  const [packed, setPacked] = useState({
+    product_id: '', net_quantity: '', net_unit: 'g', mrp: '', packed_date: dayjs().format('YYYY-MM-DD'),
+    best_before_date: '', batch_no: '', copies: '1',
+  });
+  const setPackedField = (field: keyof typeof packed, value: string) => setPacked((p) => ({ ...p, [field]: value }));
+  const packedProducts = products.filter((p) => p.barcode && !p.is_loose);
+
+  const handlePackedProductChange = (productId: string) => {
+    const product = products.find((p) => p.id === parseInt(productId));
+    setPacked((p) => ({ ...p, product_id: productId, mrp: product?.mrp ? String(product.mrp) : '' }));
+  };
+
+  const handlePrintPacked = async () => {
+    const netQty = parseFloat(packed.net_quantity);
+    const copies = parseInt(packed.copies);
+    if (!packed.product_id) { toast.error('Select a product'); return; }
+    if (!netQty || netQty <= 0) { toast.error('Enter net quantity'); return; }
+    if (!parseFloat(packed.mrp)) { toast.error('Enter MRP'); return; }
+    if (!copies || copies < 1) { toast.error('Enter number of labels'); return; }
+    try {
+      const response = await api.post<{ labels: PackedLabelData[]; count: number }>(API_ENDPOINTS.BARCODE_PACKED_LABELS, {
+        product_id: parseInt(packed.product_id),
+        net_quantity: netQty,
+        net_unit: packed.net_unit,
+        mrp: parseFloat(packed.mrp),
+        packed_date: packed.packed_date,
+        best_before_date: packed.best_before_date || undefined,
+        batch_no: packed.batch_no.trim() || undefined,
+        copies,
+      });
+      printHtml(buildPackedLabelsHtml(response.data.labels));
+      toast.success(`${response.data.count} labels ready`);
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to print packed labels');
+    }
+  };
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -39,15 +167,15 @@ const Barcode: React.FC = () => {
     const product = products.find(p => p.id === parseInt(selectedProduct));
     if (!product || !product.barcode) { toast.error('Product must have a barcode'); return; }
     
+    const qty = parseInt(printQty);
+    if (!qty || qty < 1) { toast.error('Enter a valid label quantity'); return; }
     const existingIndex = printItems.findIndex(i => i.product_id === product.id);
     if (existingIndex >= 0) {
-      const updated = [...printItems];
-      updated[existingIndex].quantity += parseInt(printQty);
-      setPrintItems(updated);
+      setPrintItems(printItems.map((i, idx) => idx === existingIndex ? { ...i, quantity: i.quantity + qty } : i));
     } else {
       setPrintItems([...printItems, {
         product_id: product.id, product_name: product.product_name,
-        barcode: product.barcode, price: product.selling_price || 0, quantity: parseInt(printQty)
+        barcode: product.barcode, price: product.selling_price || 0, quantity: qty
       }]);
     }
     setSelectedProduct(''); setPrintQty('1');
@@ -58,23 +186,22 @@ const Barcode: React.FC = () => {
   const handlePrint = async () => {
     if (printItems.length === 0) { toast.error('Add items to print'); return; }
     try {
-      const response = await api.post(API_ENDPOINTS.BARCODE_PRINT, {
-        items: printItems.map(item => ({ product_id: item.product_id, quantity: item.quantity })),
-        label_size: labelSize
-      });
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(response.data.html_content || '<pre>Barcode labels generated</pre>');
-        printWindow.document.close();
-        printWindow.print();
-      }
-      toast.success('Print job sent');
+      const responses = await Promise.all(printItems.map(item =>
+        api.post<{ labels: LabelData[]; count: number }>(API_ENDPOINTS.BARCODE_PRINT, {
+          product_ids: [item.product_id],
+          copies: item.quantity,
+        })
+      ));
+      const labels = responses.flatMap(r => r.data.labels);
+      if (labels.length === 0) { toast.error('No printable labels'); return; }
+      printHtml(buildLabelsHtml(labels, labelSize));
+      toast.success(`${labels.length} labels ready`);
     } catch (error) { toast.error('Failed to print barcodes'); }
   };
 
   const generateBarcode = async (productId: number) => {
     try {
-      await api.post(`${API_ENDPOINTS.BARCODE_GENERATE}/${productId}`);
+      await api.post(API_ENDPOINTS.BARCODE_GENERATE_CODE, null, { params: { product_id: productId } });
       toast.success('Barcode generated');
       const response = await api.get<PaginatedResponse<Product>>(API_ENDPOINTS.PRODUCTS, { params: { page_size: 500 } });
       setProducts(response.data.items);
@@ -126,6 +253,61 @@ const Barcode: React.FC = () => {
               </Table>
             </TableContainer>
           )}
+          <Card sx={{ mt: 2 }}>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>Packed Goods Labels (50x38mm)</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                For items you pack in the store (e.g. Toor Dal 1 kg). Create each pack size as a packed product with its own barcode and MRP.
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Packed Product</InputLabel>
+                    <Select value={packed.product_id} label="Packed Product" onChange={(e) => handlePackedProductChange(e.target.value)}>
+                      {packedProducts.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.product_name} - {p.barcode}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="Net Quantity" type="number" value={packed.net_quantity}
+                    onChange={(e) => setPackedField('net_quantity', e.target.value)} inputProps={{ min: 0, step: 'any' }} />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <FormControl fullWidth>
+                    <InputLabel>Unit</InputLabel>
+                    <Select value={packed.net_unit} label="Unit" onChange={(e) => setPackedField('net_unit', e.target.value)}>
+                      <MenuItem value="g">g</MenuItem><MenuItem value="kg">kg</MenuItem>
+                      <MenuItem value="ml">ml</MenuItem><MenuItem value="l">L</MenuItem><MenuItem value="pcs">pcs</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="MRP (₹)" type="number" value={packed.mrp} onChange={(e) => setPackedField('mrp', e.target.value)} />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="Packed On" type="date" value={packed.packed_date}
+                    onChange={(e) => setPackedField('packed_date', e.target.value)} InputLabelProps={{ shrink: true }} />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="Best Before" type="date" value={packed.best_before_date}
+                    onChange={(e) => setPackedField('best_before_date', e.target.value)} InputLabelProps={{ shrink: true }}
+                    inputProps={{ min: packed.packed_date }} />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="Batch No (optional)" value={packed.batch_no}
+                    onChange={(e) => setPackedField('batch_no', e.target.value)} inputProps={{ maxLength: 30 }} />
+                </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <TextField fullWidth label="Labels" type="number" value={packed.copies} onChange={(e) => setPackedField('copies', e.target.value)} />
+                </Grid>
+                <Grid size={{ xs: 12, sm: 9 }}>
+                  <Button fullWidth variant="contained" size="large" startIcon={<Print />} onClick={handlePrintPacked} sx={{ height: '100%' }}>
+                    Print Packed Labels
+                  </Button>
+                </Grid>
+              </Grid>
+            </CardContent>
+          </Card>
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
           <Card>
@@ -136,6 +318,7 @@ const Barcode: React.FC = () => {
                 <Select value={labelSize} label="Label Size" onChange={(e) => setLabelSize(e.target.value)}>
                   <MenuItem value="small">Small (38x25mm)</MenuItem>
                   <MenuItem value="medium">Medium (50x30mm)</MenuItem>
+                  <MenuItem value="sticker">Sticker (50x38mm)</MenuItem>
                   <MenuItem value="large">Large (70x40mm)</MenuItem>
                 </Select>
               </FormControl>

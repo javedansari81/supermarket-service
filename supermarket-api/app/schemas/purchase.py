@@ -4,15 +4,15 @@ Purchase schemas
 from typing import Optional, List
 from datetime import date
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, computed_field
 from app.schemas.base import TimestampSchema
 
 
 class PurchaseItemCreate(BaseModel):
     """Schema for creating a purchase item"""
     product_id: int
-    quantity: Decimal
-    unit_cost: Decimal
+    quantity: Decimal = Field(..., gt=0, max_digits=12, decimal_places=3)
+    unit_cost: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2)
 
 
 class PurchaseItemResponse(BaseModel):
@@ -37,16 +37,21 @@ class PurchaseBase(BaseModel):
 
 class PurchaseCreate(PurchaseBase):
     """Schema for creating a purchase"""
-    items: List[PurchaseItemCreate]
+    items: List[PurchaseItemCreate] = Field(..., min_length=1)
 
 
 class PurchaseUpdate(BaseModel):
-    """Schema for updating a purchase"""
+    """Schema for updating a purchase; when items are sent they replace the existing lines"""
     supplier_id: Optional[int] = None
-    supplier_invoice_no: Optional[str] = None
+    supplier_invoice_no: Optional[str] = Field(None, max_length=100)
     purchase_date: Optional[date] = None
     remarks: Optional[str] = None
-    status: Optional[str] = None
+    items: Optional[List[PurchaseItemCreate]] = Field(None, min_length=1)
+
+
+class PurchaseCancel(BaseModel):
+    """Schema for cancelling a purchase"""
+    reason: Optional[str] = Field(None, max_length=500)
 
 
 class SupplierBrief(BaseModel):
@@ -67,6 +72,11 @@ class PurchaseResponse(PurchaseBase, TimestampSchema):
     status: str
     supplier: Optional[SupplierBrief] = None
     items: List[PurchaseItemResponse] = []
+
+    @computed_field
+    @property
+    def supplier_name(self) -> Optional[str]:
+        return self.supplier.supplier_name if self.supplier else None
 
 
 class PurchaseListResponse(BaseModel):

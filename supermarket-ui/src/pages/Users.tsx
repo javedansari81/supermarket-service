@@ -12,8 +12,17 @@ import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Add, Edit, Delete, Search, Refresh, Lock } from '@mui/icons-material';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api';
-import { User, PaginatedResponse } from '../types';
+import { User, Role, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+
+const apiErrorMessage = (error: any, fallback: string): string => {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail) && detail.length) {
+    return detail.map((d: any) => String(d.msg || '').replace(/^Value error, /, '')).join('; ');
+  }
+  return fallback;
+};
 
 const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
@@ -25,8 +34,15 @@ const Users: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
   const [editUser, setEditUser] = useState<User | null>(null);
-  const [formData, setFormData] = useState({ username: '', email: '', full_name: '', password: '', role: 'cashier', status: 'active' });
+  const [formData, setFormData] = useState({ username: '', email: '', full_name: '', password: '', role_id: '', status: 'active' });
   const [newPassword, setNewPassword] = useState('');
+  const [roles, setRoles] = useState<Role[]>([]);
+
+  useEffect(() => {
+    api.get<Role[]>(API_ENDPOINTS.ROLES).then((res) => setRoles(res.data)).catch(() => toast.error('Failed to load roles'));
+  }, []);
+
+  const roleIdByName = (name: string) => String(roles.find(r => r.role_name === name)?.id ?? '');
 
   const fetchUsers = useCallback(async () => {
     setLoading(true);
@@ -45,31 +61,36 @@ const Users: React.FC = () => {
   const handleOpenDialog = (user?: User) => {
     if (user) {
       setEditUser(user);
-      const roleName = typeof user.role === 'object' ? user.role?.role_name : user.role;
+      const roleId = user.role_id ?? (typeof user.role === 'object' ? user.role?.id : undefined);
       setFormData({ username: user.username, email: user.email || '', full_name: user.full_name || '',
-        password: '', role: roleName || 'cashier', status: user.status });
+        password: '', role_id: roleId ? String(roleId) : '', status: user.status });
     } else {
       setEditUser(null);
-      setFormData({ username: '', email: '', full_name: '', password: '', role: 'cashier', status: 'active' });
+      setFormData({ username: '', email: '', full_name: '', password: '', role_id: roleIdByName('cashier'), status: 'active' });
     }
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
+    if (!editUser && formData.username.trim().length < 3) { toast.error('Username must be at least 3 characters'); return; }
+    if (!editUser && formData.password.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+    if (!formData.role_id) { toast.error('Please select a role'); return; }
     try {
-      const data: any = { username: formData.username, email: formData.email, full_name: formData.full_name,
-        role: formData.role, status: formData.status };
-      if (!editUser && formData.password) data.password = formData.password;
+      const data: any = { email: formData.email.trim() || null, full_name: formData.full_name.trim() || null,
+        role_id: parseInt(formData.role_id) };
       if (editUser) {
+        data.status = formData.status;
         await api.put(`${API_ENDPOINTS.USERS}/${editUser.id}`, data);
         toast.success('User updated');
       } else {
+        data.username = formData.username.trim();
+        data.password = formData.password;
         await api.post(API_ENDPOINTS.USERS, data);
         toast.success('User created');
       }
       setDialogOpen(false);
       fetchUsers();
-    } catch (error: any) { toast.error(error.response?.data?.detail || 'Failed to save user'); }
+    } catch (error: any) { toast.error(apiErrorMessage(error, 'Failed to save user')); }
   };
 
   const handleResetPassword = async () => {
@@ -137,17 +158,20 @@ const Users: React.FC = () => {
           <Grid container spacing={2} sx={{ pt: 1 }}>
             <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Username" required value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })} disabled={!!editUser} /></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" type="email" required value={formData.email}
+            <Grid size={{ xs: 12, md: 6 }}><TextField fullWidth label="Email" type="email" value={formData.email}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })} /></Grid>
             <Grid size={12}><TextField fullWidth label="Full Name" value={formData.full_name}
                 onChange={(e) => setFormData({ ...formData, full_name: e.target.value })} /></Grid>
             {!editUser && <Grid size={12}><TextField fullWidth label="Password" type="password" required value={formData.password}
+                helperText="At least 6 characters"
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })} /></Grid>}
-            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth><InputLabel>Role</InputLabel>
-              <Select value={formData.role} label="Role" onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
-                <MenuItem value="admin">Admin</MenuItem><MenuItem value="cashier">Cashier</MenuItem>
+            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth required><InputLabel>Role</InputLabel>
+              <Select value={formData.role_id} label="Role" onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}>
+                {roles.map(r => (
+                  <MenuItem key={r.id} value={String(r.id)} sx={{ textTransform: 'capitalize' }}>{r.role_name}</MenuItem>
+                ))}
               </Select></FormControl></Grid>
-            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth><InputLabel>Status</InputLabel>
+            <Grid size={{ xs: 12, md: 6 }}><FormControl fullWidth disabled={!editUser}><InputLabel>Status</InputLabel>
               <Select value={formData.status} label="Status" onChange={(e) => setFormData({ ...formData, status: e.target.value })}>
                 <MenuItem value="active">Active</MenuItem><MenuItem value="inactive">Inactive</MenuItem>
               </Select></FormControl></Grid>

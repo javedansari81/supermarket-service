@@ -16,7 +16,7 @@ class StockMovement(Base):
     tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
     movement_type = Column(String(50), nullable=False)  # purchase_in, sale_out, adjustment_in, etc.
-    quantity = Column(Numeric(10, 2), nullable=False)
+    quantity = Column(Numeric(12, 3), nullable=False)
     reference_type = Column(String(50))  # purchase, sale, adjustment
     reference_id = Column(Integer)  # ID of the related record
     remarks = Column(Text)
@@ -26,7 +26,11 @@ class StockMovement(Base):
     # Relationships
     tenant = relationship("Tenant", back_populates="stock_movements")
     product = relationship("Product", back_populates="stock_movements")
-    
+
+    @property
+    def product_name(self):
+        return self.product.product_name if self.product else None
+
     # Valid movement types
     MOVEMENT_TYPES = [
         'purchase_in',

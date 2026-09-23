@@ -4,7 +4,7 @@ Stock movement schemas
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class StockMovementCreate(BaseModel):
@@ -46,17 +46,20 @@ class StockAdjustment(BaseModel):
     """Schema for stock adjustment"""
     product_id: int
     adjustment_type: str  # adjustment_in, adjustment_out, damage_out, expired_out
-    quantity: Decimal
+    quantity: Decimal = Field(..., gt=0, max_digits=12, decimal_places=3)
     remarks: Optional[str] = None
 
 
 class StockSummary(BaseModel):
     """Schema for stock summary"""
+    id: int
     product_id: int
     product_no: str
     product_name: str
+    barcode: Optional[str] = None
     category_name: Optional[str]
     current_stock: Decimal
+    stock_quantity: Decimal
     reorder_level: Decimal
     unit_type: str
     is_low_stock: bool

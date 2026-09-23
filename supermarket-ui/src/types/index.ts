@@ -63,6 +63,11 @@ export interface Product {
   barcode?: string;
   category_id?: number;
   category_name?: string;
+  category?: Category;
+  brand?: string;
+  hsn_code?: string;
+  is_loose?: boolean;
+  expiry_date?: string;
   mrp?: number;
   selling_price?: number;
   purchase_price?: number;
@@ -79,9 +84,10 @@ export interface Supplier {
   supplier_code: string;
   supplier_name: string;
   contact_person?: string;
-  phone?: string;
+  contact_no?: string;
   email?: string;
   address?: string;
+  gst_no?: string;
   status: string;
 }
 
@@ -108,8 +114,16 @@ export interface Sale {
   payment_mode: string;
   customer_name?: string;
   customer_phone?: string;
+  customer_gstin?: string;
+  place_of_supply?: string;
+  is_interstate?: boolean;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
   status: string;
   items: SaleItem[];
+  invoice_id?: number;
+  invoice_no?: string;
 }
 
 // Invoice types
@@ -120,6 +134,10 @@ export interface Invoice {
   sale_id: number;
   total_amount: number;
   customer_name?: string;
+  customer_gstin?: string;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
 }
 
 // Dashboard types

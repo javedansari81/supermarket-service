@@ -32,23 +32,23 @@ async def list_users(
     query = db.query(User).options(joinedload(User.role)).filter(
         User.tenant_id == context.tenant_id
     )
-    
+
     if status:
         query = query.filter(User.status == status)
-    
+
     if role_id:
         query = query.filter(User.role_id == role_id)
-    
+
     if search:
         query = query.filter(
             (User.username.ilike(f"%{search}%")) |
             (User.full_name.ilike(f"%{search}%")) |
             (User.email.ilike(f"%{search}%"))
         )
-    
+
     total = query.count()
     items = query.offset((page - 1) * page_size).limit(page_size).all()
-    
+
     return UserListResponse(
         items=[UserResponse.model_validate(item) for item in items],
         total=total,
@@ -80,10 +80,10 @@ async def get_user(
         User.id == user_id,
         User.tenant_id == context.tenant_id
     ).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -102,15 +102,15 @@ async def create_user(
         User.tenant_id == context.tenant_id,
         User.username == user_data.username
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="Username already exists")
-    
+
     # Verify role exists
     role = db.query(Role).filter(Role.id == user_data.role_id).first()
     if not role:
         raise HTTPException(status_code=400, detail="Invalid role")
-    
+
     user = User(
         tenant_id=context.tenant_id,
         username=user_data.username,
@@ -121,11 +121,11 @@ async def create_user(
         role_id=user_data.role_id,
         created_by=context.user_id
     )
-    
+
     db.add(user)
     db.commit()
     db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -144,17 +144,27 @@ async def update_user(
         User.id == user_id,
         User.tenant_id == context.tenant_id
     ).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     update_data = user_data.model_dump(exclude_unset=True)
+
+    if "role_id" in update_data and update_data["role_id"] != user.role_id:
+        if not db.query(Role).filter(Role.id == update_data["role_id"]).first():
+            raise HTTPException(status_code=400, detail="Invalid role")
+        if user.id == context.user_id:
+            raise HTTPException(status_code=400, detail="You cannot change your own role")
+
+    if user.id == context.user_id and update_data.get("status", user.status) != "active":
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+
     for field, value in update_data.items():
         setattr(user, field, value)
-    
+
     db.commit()
     db.refresh(user)
-    
+
     return UserResponse.model_validate(user)
 
 
@@ -173,12 +183,37 @@ async def reset_user_password(
         User.id == user_id,
         User.tenant_id == context.tenant_id
     ).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     user.password_hash = get_password_hash(password_data.new_password)
     db.commit()
-    
+
     return {"message": "Password reset successfully"}
+
+
+@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Deactivate a user (admin only). Soft delete keeps sales/audit history intact.
+    """
+    if user_id == context.user_id:
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
+
+    user = db.query(User).filter(
+        User.id == user_id,
+        User.tenant_id == context.tenant_id
+    ).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.status = "inactive"
+    db.commit()
 

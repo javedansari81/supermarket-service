@@ -46,7 +46,7 @@ class PurchaseItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     purchase_id = Column(Integer, ForeignKey('purchases.id', ondelete='CASCADE'), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
-    quantity = Column(Numeric(10, 2), nullable=False)
+    quantity = Column(Numeric(12, 3), nullable=False)
     unit_cost = Column(Numeric(10, 2), nullable=False)
     total_cost = Column(Numeric(12, 2), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -54,7 +54,11 @@ class PurchaseItem(Base):
     # Relationships
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product", back_populates="purchase_items")
-    
+
+    @property
+    def product_name(self):
+        return self.product.product_name if self.product else None
+
     def __repr__(self):
         return f"<PurchaseItem(id={self.id}, purchase_id={self.purchase_id}, product_id={self.product_id})>"
 

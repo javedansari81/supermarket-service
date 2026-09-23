@@ -1,7 +1,7 @@
 """
 Sale and SaleItem models for billing
 """
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, DateTime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, DateTime, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -25,6 +25,12 @@ class Sale(Base, TimestampMixin):
     payment_status = Column(String(20), default='paid')
     customer_name = Column(String(200))
     customer_phone = Column(String(20))
+    customer_gstin = Column(String(15))
+    place_of_supply = Column(String(100))
+    is_interstate = Column(Boolean, default=False, nullable=False)
+    cgst_amount = Column(Numeric(12, 2), default=0)
+    sgst_amount = Column(Numeric(12, 2), default=0)
+    igst_amount = Column(Numeric(12, 2), default=0)
     remarks = Column(Text)
     status = Column(String(20), default='completed')
     created_by = Column(Integer, ForeignKey('users.id'))
@@ -53,10 +59,17 @@ class SaleItem(Base):
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
     product_name = Column(String(200), nullable=False)
     barcode = Column(String(100))
-    quantity = Column(Numeric(10, 2), nullable=False)
+    hsn_code = Column(String(20))
+    unit_type = Column(String(20))
+    mrp = Column(Numeric(10, 2))
+    quantity = Column(Numeric(12, 3), nullable=False)
     unit_price = Column(Numeric(10, 2), nullable=False)
+    taxable_value = Column(Numeric(12, 2), default=0)
     tax_percent = Column(Numeric(5, 2), default=0)
     tax_amount = Column(Numeric(10, 2), default=0)
+    cgst_amount = Column(Numeric(10, 2), default=0)
+    sgst_amount = Column(Numeric(10, 2), default=0)
+    igst_amount = Column(Numeric(10, 2), default=0)
     discount_percent = Column(Numeric(5, 2), default=0)
     discount_amount = Column(Numeric(10, 2), default=0)
     line_total = Column(Numeric(12, 2), nullable=False)

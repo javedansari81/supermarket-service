@@ -16,6 +16,8 @@ from app.models.tenant_setting import TenantSetting
 from app.models.user import User
 from app.schemas.sale import SaleCreate, SaleResponse, SaleListResponse
 from app.api.deps import get_current_user, get_tenant_context, TenantContext
+from app.api.v1.endpoints.settings import build_store_settings
+from app.api.v1.endpoints.invoices import create_invoice_for_sale, format_place_of_supply
 
 router = APIRouter()
 
@@ -41,6 +43,15 @@ def get_setting(db: Session, tenant_id: int, key: str, default: str = "") -> str
         TenantSetting.setting_key == key
     ).first()
     return setting.setting_value if setting else default
+
+
+def to_sale_response(sale: Sale) -> SaleResponse:
+    """Build sale response including the linked invoice"""
+    response = SaleResponse.model_validate(sale)
+    if sale.invoice:
+        response.invoice_id = sale.invoice.id
+        response.invoice_no = sale.invoice.invoice_no
+    return response
 
 
 @router.get("", response_model=SaleListResponse)
@@ -77,7 +88,7 @@ async def list_sales(
     items = query.order_by(Sale.sale_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
     return SaleListResponse(
-        items=[SaleResponse.model_validate(item) for item in items],
+        items=[to_sale_response(item) for item in items],
         total=total,
         page=page,
         page_size=page_size
@@ -100,8 +111,8 @@ async def get_sale(
     
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
-    
-    return SaleResponse.model_validate(sale)
+
+    return to_sale_response(sale)
 
 
 @router.post("", response_model=SaleResponse, status_code=status.HTTP_201_CREATED)
@@ -119,12 +130,26 @@ async def create_sale(
     
     # Generate sale number
     sale_no = generate_sale_no(db, context.tenant_id)
-    
+
+    # MRP/selling price in Indian retail is GST-inclusive unless configured otherwise
+    tax_inclusive = get_setting(db, context.tenant_id, "tax_inclusive_pricing", "true").lower() == "true"
+
+    # Intra-state supply -> CGST + SGST; inter-state -> IGST
+    store = build_store_settings(db, context.tenant_id)
+    store_state_code = store.store_state_code or ""
+    place_code = sale_data.place_of_supply_code or store_state_code
+    is_interstate = bool(store_state_code and place_code and place_code != store_state_code)
+    if sale_data.customer_gstin and not sale_data.customer_name:
+        raise HTTPException(status_code=400, detail="Customer name is required for a B2B (GSTIN) invoice")
+
     # Initialize totals
     subtotal = Decimal("0")
     total_tax = Decimal("0")
     total_discount = Decimal("0")
-    
+    total_cgst = Decimal("0")
+    total_sgst = Decimal("0")
+    total_igst = Decimal("0")
+
     # Create sale
     sale = Sale(
         tenant_id=context.tenant_id,
@@ -133,6 +158,9 @@ async def create_sale(
         payment_mode=sale_data.payment_mode,
         customer_name=sale_data.customer_name,
         customer_phone=sale_data.customer_phone,
+        customer_gstin=sale_data.customer_gstin,
+        place_of_supply=format_place_of_supply(place_code),
+        is_interstate=is_interstate,
         remarks=sale_data.remarks,
         created_by=context.user_id
     )
@@ -150,6 +178,14 @@ async def create_sale(
         if not product:
             raise HTTPException(status_code=400, detail=f"Product {item_data.product_id} not found")
         
+        if item_data.quantity <= 0:
+            raise HTTPException(status_code=400, detail=f"Invalid quantity for {product.product_name}")
+        if not product.is_loose and item_data.quantity != item_data.quantity.to_integral_value():
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.product_name} is a packed item; quantity must be a whole number"
+            )
+
         # Check stock
         if (product.stock_quantity or 0) < item_data.quantity:
             raise HTTPException(
@@ -162,33 +198,56 @@ async def create_sale(
         discount_percent = item_data.discount_percent or Decimal("0")
         
         # Calculate amounts
-        line_subtotal = unit_price * item_data.quantity
-        discount_amount = line_subtotal * (discount_percent / 100)
-        taxable_amount = line_subtotal - discount_amount
-        tax_amount = taxable_amount * (tax_percent / 100)
-        line_total = taxable_amount + tax_amount
-        
+        cents = Decimal("0.01")
+        line_gross = (unit_price * item_data.quantity).quantize(cents)
+        discount_amount = (line_gross * discount_percent / 100).quantize(cents)
+        net_amount = line_gross - discount_amount
+        if tax_inclusive:
+            tax_amount = (net_amount * tax_percent / (100 + tax_percent)).quantize(cents)
+            line_total = net_amount
+        else:
+            tax_amount = (net_amount * tax_percent / 100).quantize(cents)
+            line_total = net_amount + tax_amount
+
+        if is_interstate:
+            cgst_amount = sgst_amount = Decimal("0")
+            igst_amount = tax_amount
+        else:
+            cgst_amount = (tax_amount / 2).quantize(cents)
+            sgst_amount = tax_amount - cgst_amount
+            igst_amount = Decimal("0")
+
         # Create sale item
         sale_item = SaleItem(
             sale_id=sale.id,
             product_id=product.id,
             product_name=product.product_name,
             barcode=product.barcode,
+            hsn_code=product.hsn_code,
+            unit_type=product.unit_type,
+            mrp=product.mrp,
             quantity=item_data.quantity,
             unit_price=unit_price,
+            taxable_value=line_total - tax_amount,
             tax_percent=tax_percent,
             tax_amount=tax_amount,
+            cgst_amount=cgst_amount,
+            sgst_amount=sgst_amount,
+            igst_amount=igst_amount,
             discount_percent=discount_percent,
             discount_amount=discount_amount,
             line_total=line_total
         )
         db.add(sale_item)
         
-        # Update totals
-        subtotal += line_subtotal
+        # Update totals (subtotal excludes tax, before discount)
+        subtotal += line_total - tax_amount + discount_amount
         total_tax += tax_amount
         total_discount += discount_amount
-        
+        total_cgst += cgst_amount
+        total_sgst += sgst_amount
+        total_igst += igst_amount
+
         # Deduct stock
         product.stock_quantity = (product.stock_quantity or 0) - item_data.quantity
         
@@ -209,9 +268,16 @@ async def create_sale(
     sale.tax_amount = total_tax
     sale.discount_amount = total_discount
     sale.total_amount = subtotal - total_discount + total_tax
-    
+    sale.cgst_amount = total_cgst
+    sale.sgst_amount = total_sgst
+    sale.igst_amount = total_igst
+    db.flush()
+
+    # Create tax invoice
+    create_invoice_for_sale(db, sale, context.tenant_id)
+
     db.commit()
     db.refresh(sale)
-    
-    return SaleResponse.model_validate(sale)
+
+    return to_sale_response(sale)
 

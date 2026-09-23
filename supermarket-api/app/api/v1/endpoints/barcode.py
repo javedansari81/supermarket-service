@@ -3,6 +3,7 @@ Barcode management endpoints
 """
 import io
 import base64
+from decimal import Decimal
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import StreamingResponse
@@ -16,9 +17,44 @@ from app.models.barcode_config import BarcodeConfig
 from app.models.tenant_setting import TenantSetting
 from app.schemas.barcode import (
     BarcodeConfigCreate, BarcodeConfigUpdate, BarcodeConfigResponse,
-    BarcodeConfigListResponse, BarcodePrintRequest, BarcodeLabelData
+    BarcodeConfigListResponse, BarcodePrintRequest, BarcodeLabelData,
+    PackedLabelRequest, PackedLabelData
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
+from app.api.v1.endpoints.products import generate_instore_barcode
+from app.api.v1.endpoints.settings import build_store_settings
+
+# unit -> (base unit, factor to base unit)
+NET_UNITS = {
+    "g": ("g", Decimal("1")), "kg": ("g", Decimal("1000")),
+    "ml": ("ml", Decimal("1")), "l": ("ml", Decimal("1000")),
+    "pcs": ("pcs", Decimal("1")),
+}
+
+
+def format_net_quantity(qty: Decimal, unit: str) -> str:
+    """Format net quantity using the standard unit (e.g. 500 g, 1.5 kg)"""
+    base, factor = NET_UNITS[unit]
+    base_qty = qty * factor
+    if base in ("g", "ml") and base_qty >= 1000:
+        value, label = base_qty / 1000, "kg" if base == "g" else "L"
+    else:
+        value, label = base_qty, {"g": "g", "ml": "ml", "pcs": "N"}[base]
+    return f"{value.normalize():f} {label}"
+
+
+def unit_sale_price(mrp: Decimal, qty: Decimal, unit: str) -> Optional[str]:
+    """Unit sale price per Legal Metrology rule 6(11): per g/ml below 1 kg/L, per kg/L otherwise"""
+    base, factor = NET_UNITS[unit]
+    base_qty = qty * factor
+    if base == "pcs":
+        return None if base_qty == 1 else f"₹{mrp / base_qty:.2f} per N"
+    if base_qty == 1000:
+        return None
+    big = "kg" if base == "g" else "L"
+    if base_qty < 1000:
+        return f"₹{mrp / base_qty:.2f} per {base}"
+    return f"₹{mrp * 1000 / base_qty:.2f} per {big}"
 
 router = APIRouter()
 
@@ -39,6 +75,21 @@ def generate_barcode_image(barcode_value: str) -> str:
     code.write(buffer, options={"write_text": False, "module_height": 10})
     buffer.seek(0)
     return base64.b64encode(buffer.read()).decode()
+
+
+def build_label(product: Product, store_name: str) -> BarcodeLabelData:
+    """Build printable label data for a product"""
+    return BarcodeLabelData(
+        store_name=store_name,
+        product_no=product.product_no,
+        product_name=product.product_name,
+        barcode=product.barcode,
+        mrp=f"₹{product.mrp:.2f}" if product.mrp else "N/A",
+        selling_price=f"₹{product.selling_price:.2f}" if product.selling_price else None,
+        unit_type=product.unit_type or "pcs",
+        is_loose=bool(product.is_loose),
+        barcode_image=generate_barcode_image(product.barcode)
+    )
 
 
 @router.get("/configs", response_model=BarcodeConfigListResponse)
@@ -114,17 +165,7 @@ async def generate_barcode(
     if not product.barcode:
         raise HTTPException(status_code=400, detail="Product has no barcode")
     
-    store_name = get_store_name(db, context.tenant_id)
-    barcode_image = generate_barcode_image(product.barcode)
-    
-    return BarcodeLabelData(
-        store_name=store_name,
-        product_no=product.product_no,
-        product_name=product.product_name,
-        barcode=product.barcode,
-        mrp=f"₹{product.mrp:.2f}" if product.mrp else "N/A",
-        barcode_image=barcode_image
-    )
+    return build_label(product, get_store_name(db, context.tenant_id))
 
 
 @router.post("/print")
@@ -151,22 +192,68 @@ async def print_barcodes(
         if not product.barcode:
             continue
         
-        barcode_image = generate_barcode_image(product.barcode)
-        
-        label = BarcodeLabelData(
-            store_name=store_name,
-            product_no=product.product_no,
-            product_name=product.product_name,
-            barcode=product.barcode,
-            mrp=f"₹{product.mrp:.2f}" if product.mrp else "N/A",
-            barcode_image=barcode_image
-        )
-        
+        label = build_label(product, store_name)
+
         # Add copies
         for _ in range(request.copies):
             labels.append(label)
     
     return {"labels": labels, "count": len(labels)}
+
+
+@router.post("/packed-labels")
+async def print_packed_labels(
+    request: PackedLabelRequest,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Generate Legal Metrology labels for goods packed in-store
+    """
+    product = db.query(Product).filter(
+        Product.id == request.product_id,
+        Product.tenant_id == context.tenant_id
+    ).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not product.barcode:
+        raise HTTPException(status_code=400, detail="Product has no barcode")
+    if product.is_loose:
+        raise HTTPException(
+            status_code=400,
+            detail="Create a packed product (e.g. 'Toor Dal 1 kg') for packed-goods labels"
+        )
+
+    mrp = request.mrp or product.mrp
+    if not mrp:
+        raise HTTPException(status_code=400, detail="MRP is required for packed-goods labels")
+
+    store = build_store_settings(db, context.tenant_id)
+    if not store.store_address:
+        raise HTTPException(
+            status_code=400,
+            detail="Set the store address in Settings (required as packer address)"
+        )
+
+    label = PackedLabelData(
+        store_name=store.store_name or "Store",
+        store_address=store.store_address or "",
+        store_phone=store.store_phone or "",
+        store_email=store.store_email or "",
+        fssai_license=store.fssai_license or "",
+        product_name=product.product_name,
+        barcode=product.barcode,
+        barcode_image=generate_barcode_image(product.barcode),
+        net_quantity=format_net_quantity(request.net_quantity, request.net_unit),
+        mrp=f"₹{mrp:.2f}",
+        unit_sale_price=unit_sale_price(mrp, request.net_quantity, request.net_unit),
+        packed_date=request.packed_date.strftime("%d/%m/%Y"),
+        best_before_date=(
+            request.best_before_date.strftime("%d/%m/%Y") if request.best_before_date else None
+        ),
+        batch_no=request.batch_no or None
+    )
+    return {"labels": [label] * request.copies, "count": request.copies}
 
 
 @router.post("/generate-code")
@@ -187,8 +274,10 @@ async def generate_new_barcode(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     
-    # Generate barcode based on tenant and product ID
-    new_barcode = f"{context.tenant_id:03d}{product.id:09d}"
+    if product.barcode:
+        return {"barcode": product.barcode, "message": "Product already has a barcode"}
+
+    new_barcode = generate_instore_barcode(product.id)
     
     # Check if barcode already exists
     existing = db.query(Product).filter(

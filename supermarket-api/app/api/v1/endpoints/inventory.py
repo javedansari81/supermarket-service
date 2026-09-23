@@ -59,11 +59,14 @@ async def get_stock_summary(
     items = []
     for p in products:
         items.append(StockSummary(
+            id=p.id,
             product_id=p.id,
             product_no=p.product_no,
             product_name=p.product_name,
+            barcode=p.barcode,
             category_name=p.category.category_name if p.category else None,
             current_stock=p.stock_quantity or Decimal("0"),
+            stock_quantity=p.stock_quantity or Decimal("0"),
             reorder_level=p.reorder_level or Decimal("0"),
             unit_type=p.unit_type or "pcs",
             is_low_stock=(p.stock_quantity or 0) <= (p.reorder_level or 0)
@@ -107,7 +110,9 @@ async def list_stock_movements(
     """
     List stock movements
     """
-    query = db.query(StockMovement).filter(StockMovement.tenant_id == context.tenant_id)
+    query = db.query(StockMovement).options(joinedload(StockMovement.product)).filter(
+        StockMovement.tenant_id == context.tenant_id
+    )
     
     if product_id:
         query = query.filter(StockMovement.product_id == product_id)
@@ -158,6 +163,11 @@ async def adjust_stock(
     if adjustment.adjustment_type in ["adjustment_in"]:
         product.stock_quantity = (product.stock_quantity or 0) + adjustment.quantity
     else:
+        if adjustment.quantity > (product.stock_quantity or 0):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot remove {adjustment.quantity}; only {product.stock_quantity or 0} in stock"
+            )
         product.stock_quantity = (product.stock_quantity or 0) - adjustment.quantity
     
     # Create stock movement

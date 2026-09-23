@@ -3,6 +3,7 @@ Supplier management endpoints
 """
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.supplier import Supplier
@@ -10,6 +11,33 @@ from app.schemas.supplier import SupplierCreate, SupplierUpdate, SupplierRespons
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
+
+
+def generate_supplier_code(db: Session, tenant_id: int) -> str:
+    """Generate next sequential supplier code (SUP0001, SUP0002, ...)"""
+    last_seq = db.query(
+        func.max(cast(func.substring(Supplier.supplier_code, 4), Integer))
+    ).filter(
+        Supplier.tenant_id == tenant_id,
+        Supplier.supplier_code.op("~")("^SUP[0-9]+$")
+    ).scalar() or 0
+    return f"SUP{last_seq + 1:04d}"
+
+
+def ensure_unique_gst_no(db: Session, tenant_id: int, gst_no: Optional[str], exclude_id: int = 0):
+    """Reject a GSTIN already used by another supplier"""
+    if not gst_no:
+        return
+    duplicate = db.query(Supplier).filter(
+        Supplier.tenant_id == tenant_id,
+        Supplier.gst_no == gst_no,
+        Supplier.id != exclude_id
+    ).first()
+    if duplicate:
+        raise HTTPException(
+            status_code=400,
+            detail=f"GSTIN already used by supplier {duplicate.supplier_name}"
+        )
 
 
 @router.get("", response_model=SupplierListResponse)
@@ -92,18 +120,24 @@ async def create_supplier(
     """
     Create a new supplier (admin only)
     """
+    data = supplier_data.model_dump()
+    data["supplier_code"] = (data.get("supplier_code") or "").strip().upper() \
+        or generate_supplier_code(db, context.tenant_id)
+
     # Check if supplier code already exists
     existing = db.query(Supplier).filter(
         Supplier.tenant_id == context.tenant_id,
-        Supplier.supplier_code == supplier_data.supplier_code
+        Supplier.supplier_code == data["supplier_code"]
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="Supplier code already exists")
-    
+
+    ensure_unique_gst_no(db, context.tenant_id, data.get("gst_no"))
+
     supplier = Supplier(
         tenant_id=context.tenant_id,
-        **supplier_data.model_dump(),
+        **data,
         created_by=context.user_id
     )
     
@@ -134,12 +168,37 @@ async def update_supplier(
         raise HTTPException(status_code=404, detail="Supplier not found")
     
     update_data = supplier_data.model_dump(exclude_unset=True)
+    if "gst_no" in update_data:
+        ensure_unique_gst_no(db, context.tenant_id, update_data["gst_no"], supplier.id)
     for field, value in update_data.items():
         setattr(supplier, field, value)
-    
+
     supplier.updated_by = context.user_id
     db.commit()
     db.refresh(supplier)
-    
+
     return SupplierResponse.model_validate(supplier)
+
+
+@router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_supplier(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Deactivate a supplier (admin only). Soft delete keeps purchase history intact.
+    """
+    supplier = db.query(Supplier).filter(
+        Supplier.id == supplier_id,
+        Supplier.tenant_id == context.tenant_id
+    ).first()
+
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+
+    supplier.status = "inactive"
+    supplier.updated_by = context.user_id
+    db.commit()
 

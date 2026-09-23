@@ -1,7 +1,7 @@
 """
 Product model for inventory items
 """
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, Date
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, Date, Boolean
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin, StatusMixin
@@ -24,8 +24,10 @@ class Product(Base, TimestampMixin, StatusMixin):
     selling_price = Column(Numeric(10, 2))
     tax_percent = Column(Numeric(5, 2), default=0)
     unit_type = Column(String(50), default='pcs')
-    stock_quantity = Column(Numeric(10, 2), default=0)
-    reorder_level = Column(Numeric(10, 2), default=0)
+    is_loose = Column(Boolean, nullable=False, default=False)
+    hsn_code = Column(String(20))
+    stock_quantity = Column(Numeric(12, 3), default=0)
+    reorder_level = Column(Numeric(12, 3), default=0)
     expiry_date = Column(Date)
     description = Column(Text)
     created_by = Column(Integer, ForeignKey('users.id'))

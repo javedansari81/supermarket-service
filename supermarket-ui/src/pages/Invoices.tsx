@@ -15,8 +15,9 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api';
 import { Invoice, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+import { InvoicePrintData, fetchInvoicePrintData, printReceipt } from '../services/receipt';
 
-interface InvoiceDetail extends Invoice { sale_date: string; payment_mode: string; items: any[]; subtotal: number; tax_amount: number; discount_amount: number; }
+const money = (n: number) => Number(n || 0).toFixed(2);
 
 const Invoices: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -28,7 +29,7 @@ const Invoices: React.FC = () => {
   const [fromDate, setFromDate] = useState<Dayjs | null>(dayjs().startOf('month'));
   const [toDate, setToDate] = useState<Dayjs | null>(dayjs());
   const [viewOpen, setViewOpen] = useState(false);
-  const [selectedInvoice, setSelectedInvoice] = useState<InvoiceDetail | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<InvoicePrintData | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -47,29 +48,23 @@ const Invoices: React.FC = () => {
 
   const handleView = async (invoice: Invoice) => {
     try {
-      const response = await api.get<InvoiceDetail>(`${API_ENDPOINTS.INVOICES}/${invoice.id}`);
-      setSelectedInvoice(response.data);
+      setSelectedInvoice(await fetchInvoicePrintData(invoice.id));
       setViewOpen(true);
     } catch (error) { toast.error('Failed to fetch invoice details'); }
   };
 
   const handlePrint = async (invoiceId: number) => {
     try {
-      const response = await api.get(`${API_ENDPOINTS.INVOICES}/${invoiceId}/print`);
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(response.data.html_content || '<pre>' + JSON.stringify(response.data, null, 2) + '</pre>');
-        printWindow.document.close();
-        printWindow.print();
-      }
+      await printReceipt(invoiceId);
     } catch (error) { toast.error('Failed to print invoice'); }
   };
 
   const columns: GridColDef[] = [
     { field: 'invoice_no', headerName: 'Invoice No', width: 130 },
-    { field: 'invoice_date', headerName: 'Date', width: 110 },
+    { field: 'invoice_date', headerName: 'Date', width: 160, renderCell: (params: GridRenderCellParams) =>
+      params.value ? dayjs(params.value + (String(params.value).endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '' },
     { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 150 },
-    { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => `₹${params.value?.toFixed(2)}` },
+    { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => `₹${money(params.value)}` },
     { field: 'actions', headerName: 'Actions', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => (
       <>
         <IconButton size="small" onClick={() => handleView(params.row)}><Visibility fontSize="small" /></IconButton>
@@ -105,33 +100,53 @@ const Invoices: React.FC = () => {
           {selectedInvoice && (
             <Box>
               <Box sx={{ mb: 2 }}>
-                <Typography><strong>Date:</strong> {selectedInvoice.invoice_date}</Typography>
+                <Typography><strong>Date:</strong> {dayjs(selectedInvoice.invoice_date).format('DD/MM/YYYY hh:mm A')}</Typography>
                 <Typography><strong>Customer:</strong> {selectedInvoice.customer_name || 'Walk-in'}</Typography>
+                {selectedInvoice.customer_gstin && <Typography><strong>Customer GSTIN:</strong> {selectedInvoice.customer_gstin}</Typography>}
+                {selectedInvoice.place_of_supply && <Typography><strong>Place of Supply:</strong> {selectedInvoice.place_of_supply}</Typography>}
                 <Typography><strong>Payment:</strong> <Chip label={selectedInvoice.payment_mode} size="small" /></Typography>
               </Box>
               <Divider sx={{ my: 2 }} />
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
-                  <TableHead><TableRow><TableCell>Item</TableCell><TableCell>Qty</TableCell><TableCell>Price</TableCell><TableCell>Total</TableCell></TableRow></TableHead>
+                  <TableHead><TableRow><TableCell>Item</TableCell><TableCell>HSN</TableCell><TableCell>GST%</TableCell><TableCell>Qty</TableCell><TableCell>Price</TableCell><TableCell>Total</TableCell></TableRow></TableHead>
                   <TableBody>
-                    {selectedInvoice.items?.map((item, i) => (
-                      <TableRow key={i}><TableCell>{item.product_name}</TableCell><TableCell>{item.quantity}</TableCell>
-                        <TableCell>₹{item.unit_price}</TableCell><TableCell>₹{item.line_total?.toFixed(2)}</TableCell></TableRow>
+                    {selectedInvoice.items.map((item, i) => (
+                      <TableRow key={i}><TableCell>{item.product_name}</TableCell><TableCell>{item.hsn_code}</TableCell>
+                        <TableCell>{item.tax_percent}</TableCell>
+                        <TableCell>{item.quantity}{item.unit_type && !Number.isInteger(item.quantity) ? ` ${item.unit_type}` : ''}</TableCell>
+                        <TableCell>₹{money(item.unit_price)}</TableCell><TableCell>₹{money(item.line_total)}</TableCell></TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Typography variant="subtitle2" sx={{ mt: 2 }}>GST Summary</Typography>
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead><TableRow><TableCell>HSN</TableCell><TableCell>GST%</TableCell><TableCell>Taxable</TableCell>
+                    {selectedInvoice.is_interstate ? <TableCell>IGST</TableCell> : <><TableCell>CGST</TableCell><TableCell>SGST</TableCell></>}</TableRow></TableHead>
+                  <TableBody>
+                    {selectedInvoice.hsn_summary.map((h, i) => (
+                      <TableRow key={i}><TableCell>{h.hsn_code || '-'}</TableCell><TableCell>{h.tax_percent}</TableCell><TableCell>₹{money(h.taxable_value)}</TableCell>
+                        {selectedInvoice.is_interstate ? <TableCell>₹{money(h.igst_amount)}</TableCell>
+                          : <><TableCell>₹{money(h.cgst_amount)}</TableCell><TableCell>₹{money(h.sgst_amount)}</TableCell></>}</TableRow>
                     ))}
                   </TableBody>
                 </Table>
               </TableContainer>
               <Box sx={{ mt: 2, textAlign: 'right' }}>
-                <Typography>Subtotal: ₹{selectedInvoice.subtotal?.toFixed(2)}</Typography>
-                <Typography>Tax: ₹{selectedInvoice.tax_amount?.toFixed(2)}</Typography>
-                <Typography variant="h6">Total: ₹{selectedInvoice.total_amount?.toFixed(2)}</Typography>
+                <Typography>Taxable Value: ₹{money(selectedInvoice.subtotal - selectedInvoice.discount_amount)}</Typography>
+                {selectedInvoice.is_interstate
+                  ? <Typography>IGST: ₹{money(selectedInvoice.igst_amount)}</Typography>
+                  : <><Typography>CGST: ₹{money(selectedInvoice.cgst_amount)}</Typography><Typography>SGST: ₹{money(selectedInvoice.sgst_amount)}</Typography></>}
+                <Typography variant="h6">Total: ₹{money(selectedInvoice.total_amount)}</Typography>
               </Box>
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewOpen(false)}>Close</Button>
-          <Button variant="contained" startIcon={<Print />} onClick={() => selectedInvoice && handlePrint(selectedInvoice.id)}>Print</Button>
+          <Button variant="contained" startIcon={<Print />} onClick={() => selectedInvoice && handlePrint(selectedInvoice.invoice_id)}>Print</Button>
         </DialogActions>
       </Dialog>
     </Box>

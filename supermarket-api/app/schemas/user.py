@@ -3,7 +3,7 @@ User schemas
 """
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.schemas.base import BaseSchema, TimestampSchema
 
 
@@ -17,8 +17,16 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """Schema for creating a user"""
-    password: str
+    password: str = Field(..., min_length=6)
     role_id: int
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("Username must be at least 3 characters")
+        return v
 
 
 class UserUpdate(BaseModel):

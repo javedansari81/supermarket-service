@@ -41,7 +41,9 @@ export const API_ENDPOINTS = {
   // Barcode
   BARCODE_CONFIGS: '/barcode/configs',
   BARCODE_GENERATE: '/barcode/generate',
+  BARCODE_GENERATE_CODE: '/barcode/generate-code',
   BARCODE_PRINT: '/barcode/print',
+  BARCODE_PACKED_LABELS: '/barcode/packed-labels',
   
   // Sales
   SALES: '/sales',

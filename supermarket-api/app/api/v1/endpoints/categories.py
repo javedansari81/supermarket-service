@@ -25,16 +25,16 @@ async def list_categories(
     List categories for current tenant
     """
     query = db.query(Category).filter(Category.tenant_id == context.tenant_id)
-    
+
     if status:
         query = query.filter(Category.status == status)
-    
+
     if search:
         query = query.filter(Category.category_name.ilike(f"%{search}%"))
-    
+
     total = query.count()
     items = query.order_by(Category.category_name).offset((page - 1) * page_size).limit(page_size).all()
-    
+
     return CategoryListResponse(
         items=[CategoryResponse.model_validate(item) for item in items],
         total=total,
@@ -55,7 +55,7 @@ async def list_active_categories(
         Category.tenant_id == context.tenant_id,
         Category.status == "active"
     ).order_by(Category.category_name).all()
-    
+
     return [{"id": c.id, "category_name": c.category_name} for c in categories]
 
 
@@ -72,10 +72,10 @@ async def get_category(
         Category.id == category_id,
         Category.tenant_id == context.tenant_id
     ).first()
-    
+
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    
+
     return CategoryResponse.model_validate(category)
 
 
@@ -94,21 +94,21 @@ async def create_category(
         Category.tenant_id == context.tenant_id,
         Category.category_name == category_data.category_name
     ).first()
-    
+
     if existing:
         raise HTTPException(status_code=400, detail="Category name already exists")
-    
+
     category = Category(
         tenant_id=context.tenant_id,
         category_name=category_data.category_name,
         description=category_data.description,
         created_by=context.user_id
     )
-    
+
     db.add(category)
     db.commit()
     db.refresh(category)
-    
+
     return CategoryResponse.model_validate(category)
 
 
@@ -127,10 +127,10 @@ async def update_category(
         Category.id == category_id,
         Category.tenant_id == context.tenant_id
     ).first()
-    
+
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
-    
+
     # Check for duplicate name if updating name
     if category_data.category_name and category_data.category_name != category.category_name:
         existing = db.query(Category).filter(
@@ -140,14 +140,37 @@ async def update_category(
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail="Category name already exists")
-    
+
     update_data = category_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(category, field, value)
-    
+
     category.updated_by = context.user_id
     db.commit()
     db.refresh(category)
-    
+
     return CategoryResponse.model_validate(category)
+
+
+@router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Deactivate a category (admin only). Soft delete keeps linked products intact.
+    """
+    category = db.query(Category).filter(
+        Category.id == category_id,
+        Category.tenant_id == context.tenant_id
+    ).first()
+
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    category.status = "inactive"
+    category.updated_by = context.user_id
+    db.commit()
 

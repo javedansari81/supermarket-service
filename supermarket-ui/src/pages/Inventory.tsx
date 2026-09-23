@@ -15,10 +15,10 @@ import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
 
-interface StockItem { id: number; product_no: string; product_name: string; barcode: string; category_name: string;
-  stock_quantity: number; reorder_level: number; status: string; }
-interface StockMovement { id: number; product_name: string; movement_type: string; quantity: number;
-  reference_no: string; created_at: string; notes: string; }
+interface StockItem { id: number; product_no: string; product_name: string; barcode: string | null; category_name: string | null;
+  stock_quantity: number | string; reorder_level: number | string; unit_type: string; }
+interface StockMovement { id: number; product_name: string | null; movement_type: string; quantity: number | string;
+  reference_type: string | null; reference_id: number | null; created_at: string; remarks: string | null; }
 
 const Inventory: React.FC = () => {
   const [tab, setTab] = useState(0);
@@ -31,7 +31,7 @@ const Inventory: React.FC = () => {
   const [search, setSearch] = useState('');
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
-  const [adjustType, setAdjustType] = useState('add');
+  const [adjustType, setAdjustType] = useState('adjustment_in');
   const [adjustQty, setAdjustQty] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
 
@@ -70,20 +70,24 @@ const Inventory: React.FC = () => {
       await api.post(API_ENDPOINTS.INVENTORY_ADJUST, {
         product_id: selectedItem.id,
         adjustment_type: adjustType,
-        quantity: parseInt(adjustQty),
-        reason: adjustReason
+        quantity: parseFloat(adjustQty),
+        remarks: adjustReason
       });
       toast.success('Stock adjusted');
       setAdjustOpen(false); setAdjustQty(''); setAdjustReason('');
       fetchStock();
-    } catch (error: any) { toast.error(error.response?.data?.detail || 'Failed to adjust stock'); }
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail
+        : Array.isArray(detail) ? detail.map((d: any) => d.msg).join('; ') : 'Failed to adjust stock');
+    }
   };
 
   const openAdjustDialog = (item: StockItem) => { setSelectedItem(item); setAdjustOpen(true); };
 
-  const getStockStatus = (qty: number, reorder: number) => {
-    if (qty <= 0) return { label: 'Out of Stock', color: 'error' as const };
-    if (qty <= reorder) return { label: 'Low Stock', color: 'warning' as const };
+  const getStockStatus = (qty: number | string, reorder: number | string) => {
+    if (Number(qty) <= 0) return { label: 'Out of Stock', color: 'error' as const };
+    if (Number(qty) <= Number(reorder)) return { label: 'Low Stock', color: 'warning' as const };
     return { label: 'In Stock', color: 'success' as const };
   };
 
@@ -92,10 +96,11 @@ const Inventory: React.FC = () => {
     { field: 'product_name', headerName: 'Product', flex: 1, minWidth: 200 },
     { field: 'barcode', headerName: 'Barcode', width: 130 },
     { field: 'category_name', headerName: 'Category', width: 120 },
-    { field: 'stock_quantity', headerName: 'Stock', width: 80, renderCell: (params: GridRenderCellParams) => (
-      <Typography fontWeight="bold" color={params.value <= params.row.reorder_level ? 'error' : 'inherit'}>{params.value}</Typography>
+    { field: 'stock_quantity', headerName: 'Stock', width: 110, renderCell: (params: GridRenderCellParams) => (
+      <Typography fontWeight="bold" color={Number(params.value) <= Number(params.row.reorder_level) ? 'error' : 'inherit'}>
+        {Number(params.value)} {params.row.unit_type}</Typography>
     )},
-    { field: 'reorder_level', headerName: 'Reorder', width: 80 },
+    { field: 'reorder_level', headerName: 'Reorder', width: 80, valueFormatter: (value) => Number(value) },
     { field: 'status_chip', headerName: 'Status', width: 110, renderCell: (params: GridRenderCellParams) => {
       const status = getStockStatus(params.row.stock_quantity, params.row.reorder_level);
       return <Chip label={status.label} size="small" color={status.color} />;
@@ -106,14 +111,15 @@ const Inventory: React.FC = () => {
   ];
 
   const movementColumns: GridColDef[] = [
-    { field: 'created_at', headerName: 'Date', width: 150 },
+    { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (value) => value ? new Date(value).toLocaleString() : '' },
     { field: 'product_name', headerName: 'Product', flex: 1, minWidth: 200 },
-    { field: 'movement_type', headerName: 'Type', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'in' ? 'success' : 'error'} />
+    { field: 'movement_type', headerName: 'Type', width: 130, renderCell: (params: GridRenderCellParams) => (
+      <Chip label={params.value} size="small" color={String(params.value).endsWith('_in') ? 'success' : 'error'} />
     )},
-    { field: 'quantity', headerName: 'Qty', width: 80 },
-    { field: 'reference_no', headerName: 'Reference', width: 130 },
-    { field: 'notes', headerName: 'Notes', flex: 1 },
+    { field: 'quantity', headerName: 'Qty', width: 80, valueFormatter: (value) => Number(value) },
+    { field: 'reference_type', headerName: 'Reference', width: 130,
+      valueGetter: (_value, row) => row.reference_type ? `${row.reference_type}${row.reference_id ? ` #${row.reference_id}` : ''}` : '' },
+    { field: 'remarks', headerName: 'Remarks', flex: 1 },
   ];
 
   return (
@@ -156,9 +162,10 @@ const Inventory: React.FC = () => {
           <Grid container spacing={2}>
             <Grid size={12}><FormControl fullWidth><InputLabel>Adjustment Type</InputLabel>
               <Select value={adjustType} label="Adjustment Type" onChange={(e) => setAdjustType(e.target.value)}>
-                <MenuItem value="add">Add Stock</MenuItem><MenuItem value="remove">Remove Stock</MenuItem>
+                <MenuItem value="adjustment_in">Add Stock</MenuItem><MenuItem value="adjustment_out">Remove Stock</MenuItem>
+                <MenuItem value="damage_out">Damaged / Spoiled</MenuItem><MenuItem value="expired_out">Expired</MenuItem>
               </Select></FormControl></Grid>
-            <Grid size={12}><TextField fullWidth label="Quantity" type="number" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} /></Grid>
+            <Grid size={12}><TextField fullWidth label="Quantity" type="number" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} /></Grid>
             <Grid size={12}><TextField fullWidth label="Reason" multiline rows={2} value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} /></Grid>
           </Grid>
         </DialogContent>
