@@ -67,7 +67,7 @@ jobs:
         run: python database-scripts/deploy.py status
 
   deploy:
-    name: Deploy to warsi_db
+    name: Deploy to production
     needs: validate
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -76,17 +76,26 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       DB_SCHEMA: mart
     steps:
+      - name: Skip when DATABASE_URL is not configured
+        if: env.DATABASE_URL == ''
+        run: echo "::notice::DATABASE_URL secret is not set in the 'production' environment. Skipping migration."
+
       - uses: actions/checkout@v4
+        if: env.DATABASE_URL != ''
 
       - uses: actions/setup-python@v5
+        if: env.DATABASE_URL != ''
         with:
           python-version: "3.11"
 
       - name: Install dependencies
+        if: env.DATABASE_URL != ''
         run: pip install psycopg2-binary==2.9.9 python-dotenv==1.0.0
 
       - name: Status before deploy
+        if: env.DATABASE_URL != ''
         run: python database-scripts/deploy.py status
 
       - name: Apply pending scripts
+        if: env.DATABASE_URL != ''
         run: python database-scripts/deploy.py migrate ${{ inputs.dry_run && '--dry-run' || '' }}

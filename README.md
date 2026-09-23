@@ -103,12 +103,13 @@ python database-scripts/deploy.py migrate            # apply pending scripts
 
 Applied scripts are recorded in `mart.schema_migrations` and are never run twice.
 Scripts run in the order `schema` → `indexes` → `seeds` → `migrations`, sorted by file name.
-Do not edit a script after it has been applied; add a new numbered file (e.g. `migrations/002_xxx.sql`) instead.
+Do not edit a script after it has been applied; add a new numbered file (e.g. `migrations/001_xxx.sql`) instead.
 Scripts must not contain `BEGIN`/`COMMIT`, as each script already runs in its own transaction.
 
 The GitHub Actions workflow `.github/workflows/database-deploy.yml` validates scripts on a fresh
-database for every change under `database-scripts/`, and deploys pending scripts on push to `main`
-using the `DATABASE_URL` secret of the `production` environment.
+database for every change under `database-scripts/`, then deploys pending scripts on push to `main`
+using the `DATABASE_URL` secret of the `production` environment. If that secret is not set, the
+deploy job skips migration. Local `warsi_db` is deployed manually with `deploy.py migrate`.
 
 ### Backend Setup
 ```bash
