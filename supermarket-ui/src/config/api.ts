@@ -48,6 +48,10 @@ export const API_ENDPOINTS = {
   // Sales
   SALES: '/sales',
   
+  // Customers
+  CUSTOMERS: '/customers',
+  CUSTOMER_LOOKUP: '/customers/lookup',
+
   // Invoices
   INVOICES: '/invoices',
   

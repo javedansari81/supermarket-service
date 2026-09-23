@@ -28,6 +28,7 @@ class Tenant(Base, TimestampMixin, StatusMixin):
     suppliers = relationship("Supplier", back_populates="tenant", cascade="all, delete-orphan")
     purchases = relationship("Purchase", back_populates="tenant", cascade="all, delete-orphan")
     sales = relationship("Sale", back_populates="tenant", cascade="all, delete-orphan")
+    customers = relationship("Customer", back_populates="tenant", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="tenant", cascade="all, delete-orphan")
     stock_movements = relationship("StockMovement", back_populates="tenant", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="tenant", cascade="all, delete-orphan")

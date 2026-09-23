@@ -46,8 +46,10 @@ import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 import { printReceipt } from '../services/receipt';
 import { stateNameFromCode } from '../config/gst';
+import { Customer } from '../types';
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const MOBILE_REGEX = /^[6-9][0-9]{9}$/;
 
 interface CartItem {
   product_id: number;
@@ -120,6 +122,9 @@ const Billing: React.FC = () => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerGstin, setCustomerGstin] = useState('');
+  const [knownCustomer, setKnownCustomer] = useState<Customer | null>(null);
+  const [customerLookup, setCustomerLookup] = useState<'idle' | 'loading' | 'found' | 'new'>('idle');
+  const autoFilled = useRef({ name: '', gstin: '' });
   const [deliverToCustomerState, setDeliverToCustomerState] = useState(false);
   const [storeStateCode, setStoreStateCode] = useState('');
   const [checkoutOpen, setCheckoutOpen] = useState(false);
@@ -151,6 +156,48 @@ const Billing: React.FC = () => {
   const gstinValid = !customerGstin || GSTIN_REGEX.test(customerGstin);
   const customerStateCode = GSTIN_REGEX.test(customerGstin) ? customerGstin.slice(0, 2) : '';
   const otherState = !!customerStateCode && !!storeStateCode && customerStateCode !== storeStateCode;
+  const mobileValid = !customerPhone || MOBILE_REGEX.test(customerPhone);
+
+  const handleMobileChange = (value: string) => {
+    let digits = value.replace(/\D/g, '');
+    if (digits.length === 12 && digits.startsWith('91')) digits = digits.slice(2);
+    else if (digits.length === 11 && digits.startsWith('0')) digits = digits.slice(1);
+    setCustomerPhone(digits.slice(0, 10));
+  };
+
+  useEffect(() => {
+    setKnownCustomer(null);
+    const filled = autoFilled.current;
+    autoFilled.current = { name: '', gstin: '' };
+    if (filled.name) setCustomerName((name) => (name === filled.name ? '' : name));
+    if (filled.gstin) setCustomerGstin((gstin) => (gstin === filled.gstin ? '' : gstin));
+    if (!MOBILE_REGEX.test(customerPhone)) {
+      setCustomerLookup('idle');
+      return;
+    }
+    let cancelled = false;
+    setCustomerLookup('loading');
+    api.get<Customer>(API_ENDPOINTS.CUSTOMER_LOOKUP, { params: { mobile: customerPhone } })
+      .then((res) => {
+        if (cancelled) return;
+        setKnownCustomer(res.data);
+        setCustomerLookup('found');
+        const savedName = res.data.customer_name || '';
+        const savedGstin = res.data.customer_gstin || '';
+        setCustomerName((name) => {
+          if (name.trim()) return name;
+          autoFilled.current.name = savedName;
+          return savedName;
+        });
+        setCustomerGstin((gstin) => {
+          if (gstin) return gstin;
+          autoFilled.current.gstin = savedGstin;
+          return savedGstin;
+        });
+      })
+      .catch(() => { if (!cancelled) setCustomerLookup('new'); });
+    return () => { cancelled = true; };
+  }, [customerPhone]);
 
   useEffect(() => {
     const term = searchInput.trim();
@@ -356,6 +403,10 @@ const Billing: React.FC = () => {
   };
 
   const completeSale = async () => {
+    if (!mobileValid) {
+      toast.error('Invalid mobile number (10 digits starting with 6-9)');
+      return;
+    }
     if (!gstinValid) {
       toast.error('Invalid customer GSTIN');
       return;
@@ -373,7 +424,7 @@ const Billing: React.FC = () => {
           discount_percent: item.discount_percent,
         })),
         payment_mode: paymentMode,
-        customer_name: customerName || undefined,
+        customer_name: customerName.trim() || undefined,
         customer_phone: customerPhone || undefined,
         customer_gstin: customerGstin || undefined,
         place_of_supply_code: otherState && deliverToCustomerState ? customerStateCode : undefined,
@@ -395,7 +446,10 @@ const Billing: React.FC = () => {
         printReceipt(response.data.invoice_id).catch(() => toast.error('Receipt printing failed. Reprint from Invoices.'));
       }
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Sale failed');
+      const detail = err.response?.data?.detail;
+      toast.error(Array.isArray(detail)
+        ? detail.map((d: any) => String(d.msg || '').replace(/^Value error, /, '')).join('; ')
+        : detail || 'Sale failed');
     } finally {
       setLoading(false);
     }
@@ -611,8 +665,29 @@ const Billing: React.FC = () => {
                 <MenuItem value="upi">UPI</MenuItem>
               </Select>
             </FormControl>
+            <TextField
+              fullWidth autoFocus label="Customer Mobile (Optional)" value={customerPhone}
+              onChange={(e) => handleMobileChange(e.target.value)}
+              error={!mobileValid}
+              helperText={!mobileValid ? 'Enter a 10-digit mobile number starting with 6-9'
+                : customerLookup === 'loading' ? 'Looking up customer...'
+                : customerLookup === 'new' ? 'New customer - will be saved with this bill'
+                : ''}
+              inputProps={{ inputMode: 'numeric' }}
+              InputProps={{
+                startAdornment: <InputAdornment position="start">+91</InputAdornment>,
+                endAdornment: customerLookup === 'loading' ? <CircularProgress size={18} /> : undefined,
+              }}
+              sx={{ mb: knownCustomer ? 1 : 2 }}
+            />
+            {knownCustomer && (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Returning customer{knownCustomer.customer_name ? `: ${knownCustomer.customer_name}` : ''} ·{' '}
+                {knownCustomer.visits} visit{knownCustomer.visits === 1 ? '' : 's'} · ₹{Number(knownCustomer.total_spent).toFixed(2)} spent
+                {knownCustomer.last_visit ? ` · last on ${new Date(knownCustomer.last_visit + 'Z').toLocaleDateString('en-IN')}` : ''}
+              </Alert>
+            )}
             <TextField fullWidth label="Customer Name (Optional)" value={customerName} onChange={(e) => setCustomerName(e.target.value)} sx={{ mb: 2 }} />
-            <TextField fullWidth label="Customer Phone (Optional)" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} sx={{ mb: 2 }} />
             <TextField
               fullWidth label="Customer GSTIN (for business buyers, optional)" value={customerGstin}
               onChange={(e) => setCustomerGstin(e.target.value.toUpperCase().trim())}

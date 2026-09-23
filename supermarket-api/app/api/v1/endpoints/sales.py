@@ -18,6 +18,7 @@ from app.schemas.sale import SaleCreate, SaleResponse, SaleListResponse
 from app.api.deps import get_current_user, get_tenant_context, TenantContext
 from app.api.v1.endpoints.settings import build_store_settings
 from app.api.v1.endpoints.invoices import create_invoice_for_sale, format_place_of_supply
+from app.api.v1.endpoints.customers import upsert_customer_for_sale
 
 router = APIRouter()
 
@@ -142,6 +143,14 @@ async def create_sale(
     if sale_data.customer_gstin and not sale_data.customer_name:
         raise HTTPException(status_code=400, detail="Customer name is required for a B2B (GSTIN) invoice")
 
+    customer = None
+    if sale_data.customer_phone:
+        customer = upsert_customer_for_sale(
+            db, context.tenant_id, sale_data.customer_phone,
+            sale_data.customer_name, sale_data.customer_gstin
+        )
+        db.flush()
+
     # Initialize totals
     subtotal = Decimal("0")
     total_tax = Decimal("0")
@@ -159,6 +168,7 @@ async def create_sale(
         customer_name=sale_data.customer_name,
         customer_phone=sale_data.customer_phone,
         customer_gstin=sale_data.customer_gstin,
+        customer_id=customer.id if customer else None,
         place_of_supply=format_place_of_supply(place_code),
         is_interstate=is_interstate,
         remarks=sale_data.remarks,

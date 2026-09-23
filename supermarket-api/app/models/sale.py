@@ -26,6 +26,7 @@ class Sale(Base, TimestampMixin):
     customer_name = Column(String(200))
     customer_phone = Column(String(20))
     customer_gstin = Column(String(15))
+    customer_id = Column(Integer, ForeignKey('customers.id'), index=True)
     place_of_supply = Column(String(100))
     is_interstate = Column(Boolean, default=False, nullable=False)
     cgst_amount = Column(Numeric(12, 2), default=0)
@@ -39,6 +40,7 @@ class Sale(Base, TimestampMixin):
     tenant = relationship("Tenant", back_populates="sales")
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
     invoice = relationship("Invoice", back_populates="sale", uselist=False)
+    customer = relationship("Customer", back_populates="sales")
     
     # Unique constraint on tenant_id + sale_no
     __table_args__ = (

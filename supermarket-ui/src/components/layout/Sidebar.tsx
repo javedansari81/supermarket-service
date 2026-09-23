@@ -28,6 +28,7 @@ import {
   People,
   QrCode,
   History,
+  Contacts,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -50,6 +51,7 @@ const navItems: NavItem[] = [
   { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },
   { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true },
   { title: 'Invoices', path: '/invoices', icon: <Receipt /> },
+  { title: 'Customers', path: '/customers', icon: <Contacts /> },
   { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true },
   { title: 'Users', path: '/users', icon: <People />, adminOnly: true },
   { title: 'Audit Logs', path: '/audit', icon: <History />, adminOnly: true },

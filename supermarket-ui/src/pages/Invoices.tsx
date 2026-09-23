@@ -64,6 +64,7 @@ const Invoices: React.FC = () => {
     { field: 'invoice_date', headerName: 'Date', width: 160, renderCell: (params: GridRenderCellParams) =>
       params.value ? dayjs(params.value + (String(params.value).endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '' },
     { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 150 },
+    { field: 'customer_phone', headerName: 'Mobile', width: 120 },
     { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => `₹${money(params.value)}` },
     { field: 'actions', headerName: 'Actions', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => (
       <>
@@ -81,7 +82,7 @@ const Invoices: React.FC = () => {
       </Box>
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField placeholder="Search invoice no..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1, minWidth: 200 }}
+          <TextField placeholder="Search invoice no, customer or mobile..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1, minWidth: 200 }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
           <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: 150 }} />
           <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: 150 }} />

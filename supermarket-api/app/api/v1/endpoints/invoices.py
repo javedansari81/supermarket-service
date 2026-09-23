@@ -114,7 +114,8 @@ async def list_invoices(
     if search:
         query = query.filter(
             (Invoice.invoice_no.ilike(f"%{search}%")) |
-            (Invoice.customer_name.ilike(f"%{search}%"))
+            (Invoice.customer_name.ilike(f"%{search}%")) |
+            (Invoice.customer_phone.ilike(f"%{search}%"))
         )
     
     total = query.count()

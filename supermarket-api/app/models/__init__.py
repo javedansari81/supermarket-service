@@ -10,6 +10,7 @@ from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
+from app.models.customer import Customer
 from app.models.sale import Sale, SaleItem
 from app.models.invoice import Invoice
 from app.models.audit_log import AuditLog
@@ -26,6 +27,7 @@ __all__ = [
     "Purchase",
     "PurchaseItem",
     "StockMovement",
+    "Customer",
     "Sale",
     "SaleItem",
     "Invoice",

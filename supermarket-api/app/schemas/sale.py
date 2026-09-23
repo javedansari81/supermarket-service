@@ -7,6 +7,7 @@ from decimal import Decimal
 from pydantic import BaseModel, field_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.settings import GSTIN_PATTERN, GST_STATE_CODES
+from app.schemas.customer import normalize_mobile
 
 
 class SaleItemCreate(BaseModel):
@@ -50,6 +51,16 @@ class SaleCreate(BaseModel):
     place_of_supply_code: Optional[str] = None
     remarks: Optional[str] = None
 
+    @field_validator("customer_phone")
+    @classmethod
+    def validate_customer_phone(cls, v: Optional[str]) -> Optional[str]:
+        return normalize_mobile(v)
+
+    @field_validator("customer_name")
+    @classmethod
+    def strip_customer_name(cls, v: Optional[str]) -> Optional[str]:
+        return (v or "").strip() or None
+
     @field_validator("customer_gstin")
     @classmethod
     def validate_customer_gstin(cls, v: Optional[str]) -> Optional[str]:
@@ -82,6 +93,7 @@ class SaleResponse(TimestampSchema):
     customer_name: Optional[str]
     customer_phone: Optional[str]
     customer_gstin: Optional[str] = None
+    customer_id: Optional[int] = None
     place_of_supply: Optional[str] = None
     is_interstate: Optional[bool] = False
     cgst_amount: Optional[Decimal] = Decimal("0")

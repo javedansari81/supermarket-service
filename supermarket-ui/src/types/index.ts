@@ -91,6 +91,32 @@ export interface Supplier {
   status: string;
 }
 
+// Customer types
+export interface Customer {
+  id: number;
+  mobile: string;
+  customer_name?: string;
+  customer_gstin?: string;
+  status: string;
+  visits: number;
+  total_spent: number;
+  first_visit?: string;
+  last_visit?: string;
+  created_at: string;
+}
+
+export interface CustomerSale {
+  sale_id: number;
+  sale_no: string;
+  sale_date: string;
+  invoice_id?: number;
+  invoice_no?: string;
+  item_count: number;
+  total_amount: number;
+  payment_mode?: string;
+  status: string;
+}
+
 // Sale types
 export interface SaleItem {
   product_id: number;
@@ -115,6 +141,7 @@ export interface Sale {
   customer_name?: string;
   customer_phone?: string;
   customer_gstin?: string;
+  customer_id?: number;
   place_of_supply?: string;
   is_interstate?: boolean;
   cgst_amount?: number;
@@ -134,6 +161,7 @@ export interface Invoice {
   sale_id: number;
   total_amount: number;
   customer_name?: string;
+  customer_phone?: string;
   customer_gstin?: string;
   cgst_amount?: number;
   sgst_amount?: number;

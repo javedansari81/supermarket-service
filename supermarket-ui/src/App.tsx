@@ -24,6 +24,7 @@ import Purchases from './pages/Purchases';
 import Inventory from './pages/Inventory';
 import Barcode from './pages/Barcode';
 import Invoices from './pages/Invoices';
+import Customers from './pages/Customers';
 import Reports from './pages/Reports';
 import Users from './pages/Users';
 import AuditLogs from './pages/AuditLogs';
@@ -55,6 +56,7 @@ function App() {
                 <Route path="inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
                 <Route path="barcode" element={<ProtectedRoute requireAdmin><Barcode /></ProtectedRoute>} />
                 <Route path="invoices" element={<Invoices />} />
+                <Route path="customers" element={<Customers />} />
                 <Route path="reports" element={<ProtectedRoute requireAdmin><Reports /></ProtectedRoute>} />
                 <Route path="users" element={<ProtectedRoute requireAdmin><Users /></ProtectedRoute>} />
                 <Route path="audit" element={<ProtectedRoute requireAdmin><AuditLogs /></ProtectedRoute>} />
