@@ -1,6 +1,6 @@
 -- =====================================================
 -- Supermarket Management System - Master Data Seeds
--- Database: sunrise_school_db
+-- Database: warsi_db
 -- Schema: mart
 -- =====================================================
 
@@ -31,23 +31,23 @@ INSERT INTO unit_types (unit_code, unit_name, description) VALUES
 ON CONFLICT (unit_code) DO NOTHING;
 
 -- =====================================================
--- FIRST TENANT: Sunrise Family Mart
+-- FIRST TENANT: Warsi Family Mart
 -- =====================================================
 
 INSERT INTO tenants (tenant_code, tenant_name, address, contact_no, email, gst_no, status)
 VALUES (
     'SFM001',
-    'Sunrise Family Mart',
+    'Warsi Family Mart',
     '123 Main Street, City Center',
     '+91-9876543210',
-    'contact@sunrisefamilymart.com',
+    'contact@warsi.in',
     'GSTIN1234567890',
     'active'
 )
 ON CONFLICT (tenant_code) DO NOTHING;
 
 -- =====================================================
--- TENANT SETTINGS FOR SUNRISE FAMILY MART
+-- TENANT SETTINGS FOR WARSI FAMILY MART
 -- =====================================================
 
 -- Get tenant ID
@@ -59,10 +59,10 @@ BEGIN
     
     -- Insert default settings
     INSERT INTO tenant_settings (tenant_id, setting_key, setting_value, setting_type, description) VALUES
-        (v_tenant_id, 'store_name', 'Sunrise Family Mart', 'string', 'Store display name'),
+        (v_tenant_id, 'store_name', 'Warsi Family Mart', 'string', 'Store display name'),
         (v_tenant_id, 'store_address', '123 Main Street, City Center', 'string', 'Store address for invoices'),
         (v_tenant_id, 'store_phone', '+91-9876543210', 'string', 'Store contact number'),
-        (v_tenant_id, 'store_email', 'contact@sunrisefamilymart.com', 'string', 'Store email'),
+        (v_tenant_id, 'store_email', 'contact@warsi.in', 'string', 'Store email'),
         (v_tenant_id, 'store_gst', 'GSTIN1234567890', 'string', 'GST number'),
         (v_tenant_id, 'invoice_prefix', 'INV', 'string', 'Invoice number prefix'),
         (v_tenant_id, 'invoice_footer', 'Thank you for shopping with us!', 'string', 'Invoice footer message'),
@@ -76,7 +76,7 @@ BEGIN
 END $$;
 
 -- =====================================================
--- DEFAULT ADMIN USER FOR SUNRISE FAMILY MART
+-- DEFAULT ADMIN USER FOR WARSI FAMILY MART
 -- Password: admin123 (hashed with bcrypt)
 -- =====================================================
 
@@ -93,7 +93,7 @@ BEGIN
         v_tenant_id,
         v_admin_role_id,
         'admin',
-        'admin@sunrisefamilymart.com',
+        'admin@warsi.in',
         '$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.VTtYWWQIqjSXHe', -- admin123
         'System Administrator',
         '+91-9876543210',
@@ -103,7 +103,7 @@ BEGIN
 END $$;
 
 -- =====================================================
--- DEFAULT BARCODE CONFIG FOR SUNRISE FAMILY MART
+-- DEFAULT BARCODE CONFIG FOR WARSI FAMILY MART
 -- =====================================================
 
 DO $$

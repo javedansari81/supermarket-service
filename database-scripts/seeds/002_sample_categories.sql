@@ -1,13 +1,13 @@
 -- =====================================================
 -- Supermarket Management System - Sample Categories
--- Database: sunrise_school_db
+-- Database: warsi_db
 -- Schema: mart
 -- =====================================================
 
 SET search_path TO mart, public;
 
 -- =====================================================
--- SAMPLE CATEGORIES FOR SUNRISE FAMILY MART
+-- SAMPLE CATEGORIES FOR WARSI FAMILY MART
 -- =====================================================
 
 DO $$

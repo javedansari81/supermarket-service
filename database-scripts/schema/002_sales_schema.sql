@@ -1,6 +1,6 @@
 -- =====================================================
 -- Supermarket Management System - Sales Schema
--- Database: sunrise_school_db
+-- Database: warsi_db
 -- Schema: mart
 -- =====================================================
 

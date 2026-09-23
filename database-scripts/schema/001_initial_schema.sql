@@ -1,6 +1,6 @@
 -- =====================================================
 -- Supermarket Management System - Initial Schema
--- Database: sunrise_school_db
+-- Database: warsi_db
 -- Schema: mart
 -- Multi-tenant ready with tenant_id based isolation
 -- =====================================================

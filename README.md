@@ -19,7 +19,7 @@ A comprehensive end-to-end supermarket software solution for product procurement
 ### Database
 - **Engine**: PostgreSQL
 - **Schema**: mart
-- **Database**: sunrise_school_db
+- **Database**: warsi_db
 - **Port**: 5432
 
 ## Project Structure
@@ -51,6 +51,10 @@ supermarket-management-system/
     ├── seeds/             # Seed data scripts
     └── indexes/           # Index creation scripts
 ```
+
+## User Guide
+
+Step-by-step instructions for every screen (login, POS, products, inventory, invoices, reports, and more) are in **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 ## Features
 
@@ -84,15 +88,27 @@ supermarket-management-system/
 
 ### Database Setup
 ```bash
-# Create database and user (if not exists)
+# Create database, user and schema (if not exists)
 psql -U postgres
-CREATE DATABASE sunrise_school_db;
-CREATE USER sunrise_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE sunrise_school_db TO sunrise_user;
+CREATE USER warsi_user WITH PASSWORD 'your_password';
+CREATE DATABASE warsi_db OWNER warsi_user;
+\c warsi_db
+CREATE SCHEMA mart AUTHORIZATION warsi_user;
 
-# Run schema scripts
-psql -U sunrise_user -d sunrise_school_db -f database-scripts/schema/001_initial_schema.sql
+# Deploy SQL scripts (reads DATABASE_URL / DB_SCHEMA from supermarket-api/.env)
+python database-scripts/deploy.py status             # applied / pending scripts
+python database-scripts/deploy.py migrate --dry-run  # preview
+python database-scripts/deploy.py migrate            # apply pending scripts
 ```
+
+Applied scripts are recorded in `mart.schema_migrations` and are never run twice.
+Scripts run in the order `schema` → `indexes` → `seeds` → `migrations`, sorted by file name.
+Do not edit a script after it has been applied; add a new numbered file (e.g. `migrations/002_xxx.sql`) instead.
+Scripts must not contain `BEGIN`/`COMMIT`, as each script already runs in its own transaction.
+
+The GitHub Actions workflow `.github/workflows/database-deploy.yml` validates scripts on a fresh
+database for every change under `database-scripts/`, and deploys pending scripts on push to `main`
+using the `DATABASE_URL` secret of the `production` environment.
 
 ### Backend Setup
 ```bash
