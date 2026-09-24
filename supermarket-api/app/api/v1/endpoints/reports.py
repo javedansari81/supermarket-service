@@ -19,7 +19,8 @@ from app.api.deps import get_current_admin_user, get_tenant_context, TenantConte
 router = APIRouter()
 
 # India Standard Time (no daylight saving)
-IST = timezone(timedelta(hours=5, minutes=30))
+IST_OFFSET = timedelta(hours=5, minutes=30)
+IST = timezone(IST_OFFSET)
 
 
 def ist_day_start_utc(day: date) -> datetime:
@@ -32,49 +33,115 @@ def validate_date_range(from_date: date, to_date: date) -> None:
         raise HTTPException(status_code=400, detail="From date cannot be after to date")
 
 
+def pct_change(current: float, previous: float) -> Optional[float]:
+    """Percentage change from previous to current; None when there is no baseline"""
+    if not previous:
+        return None
+    return round((current - previous) / previous * 100, 1)
+
+
 @router.get("/dashboard")
 async def get_dashboard(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
     """
-    Get dashboard summary data
+    Get dashboard summary data.
+    Admins see store-wide figures; other users see sales they billed themselves.
     """
+    now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
     today = datetime.now(IST).date()
     today_start = ist_day_start_utc(today)
     tomorrow_start = ist_day_start_utc(today + timedelta(days=1))
     month_start = ist_day_start_utc(today.replace(day=1))
+    prev_month_start = ist_day_start_utc((today.replace(day=1) - timedelta(days=1)).replace(day=1))
+    trend_start = today_start - timedelta(days=6)
+    ist_sale_date = Sale.sale_date + IST_OFFSET
 
-    # Today's sales
-    today_sales = db.query(
+    def sales_filter(start, end, statuses=("completed",)):
+        conditions = [
+            Sale.tenant_id == context.tenant_id,
+            Sale.sale_date >= start,
+            Sale.sale_date < end,
+            Sale.status.in_(statuses)
+        ]
+        if not context.is_admin:
+            conditions.append(Sale.created_by == context.user_id)
+        return conditions
+
+    def sales_totals(start, end):
+        total, count, discount = db.query(
+            func.coalesce(func.sum(Sale.total_amount), 0),
+            func.count(Sale.id),
+            func.coalesce(func.sum(Sale.discount_amount), 0)
+        ).filter(*sales_filter(start, end)).one()
+        return float(total or 0), int(count or 0), float(discount or 0)
+
+    today_sales, today_transactions, today_discount = sales_totals(today_start, tomorrow_start)
+    # Comparisons use the same elapsed time of day so a partial day is not compared to a full day
+    yesterday_sales, _, _ = sales_totals(today_start - timedelta(days=1), now_utc - timedelta(days=1))
+    last_week_sales, _, _ = sales_totals(today_start - timedelta(days=7), now_utc - timedelta(days=7))
+    mtd_sales, mtd_transactions, _ = sales_totals(month_start, tomorrow_start)
+    prev_mtd_sales, _, _ = sales_totals(
+        prev_month_start, min(prev_month_start + (now_utc - month_start), month_start)
+    )
+
+    today_line_items = db.query(func.count(SaleItem.id)).join(Sale).filter(
+        *sales_filter(today_start, tomorrow_start)
+    ).scalar() or 0
+
+    cancelled_count, cancelled_amount = db.query(
+        func.count(Sale.id),
         func.coalesce(func.sum(Sale.total_amount), 0)
-    ).filter(
-        Sale.tenant_id == context.tenant_id,
-        Sale.sale_date >= today_start,
-        Sale.sale_date < tomorrow_start,
-        Sale.status == "completed"
-    ).scalar()
+    ).filter(*sales_filter(today_start, tomorrow_start, ("cancelled", "refunded"))).one()
 
-    # Today's transactions count
-    today_transactions = db.query(
-        func.count(Sale.id)
-    ).filter(
-        Sale.tenant_id == context.tenant_id,
-        Sale.sale_date >= today_start,
-        Sale.sale_date < tomorrow_start,
-        Sale.status == "completed"
-    ).scalar()
-
-    # Month-to-date sales
-    mtd_sales = db.query(
+    payment_rows = db.query(
+        Sale.payment_mode,
+        func.count(Sale.id),
         func.coalesce(func.sum(Sale.total_amount), 0)
-    ).filter(
-        Sale.tenant_id == context.tenant_id,
-        Sale.sale_date >= month_start,
-        Sale.sale_date < tomorrow_start,
-        Sale.status == "completed"
-    ).scalar()
-    
+    ).filter(*sales_filter(today_start, tomorrow_start)).group_by(Sale.payment_mode).all()
+
+    hour_col = func.extract("hour", ist_sale_date)
+    hourly_rows = db.query(
+        hour_col,
+        func.count(Sale.id),
+        func.coalesce(func.sum(Sale.total_amount), 0)
+    ).filter(*sales_filter(today_start, tomorrow_start)).group_by(hour_col).all()
+    hourly_map = {int(h): (int(c), float(s)) for h, c, s in hourly_rows}
+
+    day_col = func.date(ist_sale_date)
+    daily_rows = db.query(
+        day_col,
+        func.count(Sale.id),
+        func.coalesce(func.sum(Sale.total_amount), 0)
+    ).filter(*sales_filter(trend_start, tomorrow_start)).group_by(day_col).all()
+    daily_map = {str(d): (int(c), float(s)) for d, c, s in daily_rows}
+
+    top_rows = db.query(
+        SaleItem.product_id,
+        SaleItem.product_name,
+        func.sum(SaleItem.quantity).label("quantity"),
+        func.sum(SaleItem.line_total).label("revenue")
+    ).join(Sale).filter(
+        *sales_filter(today_start, tomorrow_start)
+    ).group_by(
+        SaleItem.product_id, SaleItem.product_name
+    ).order_by(func.sum(SaleItem.line_total).desc()).limit(5).all()
+
+    today_customer_ids = [row[0] for row in db.query(Sale.customer_id).filter(
+        *sales_filter(today_start, tomorrow_start),
+        Sale.customer_id.isnot(None)
+    ).all()]
+    unique_customer_ids = set(today_customer_ids)
+    repeat_customers = 0
+    if unique_customer_ids:
+        repeat_customers = db.query(func.count(func.distinct(Sale.customer_id))).filter(
+            Sale.tenant_id == context.tenant_id,
+            Sale.status == "completed",
+            Sale.sale_date < today_start,
+            Sale.customer_id.in_(unique_customer_ids)
+        ).scalar() or 0
+
     # Low stock count
     low_stock_count = db.query(
         func.count(Product.id)
@@ -110,14 +177,154 @@ async def get_dashboard(
         Category.status == "active"
     ).scalar()
     
+    admin_data = None
+    if context.is_admin:
+        revenue_ex_tax, cost_of_goods = db.query(
+            func.coalesce(func.sum(SaleItem.taxable_value), 0),
+            func.coalesce(func.sum(SaleItem.quantity * Product.purchase_price), 0)
+        ).join(Sale, SaleItem.sale_id == Sale.id).join(
+            Product, SaleItem.product_id == Product.id
+        ).filter(
+            *sales_filter(today_start, tomorrow_start),
+            Product.purchase_price.isnot(None)
+        ).one()
+        revenue_ex_tax = float(revenue_ex_tax or 0)
+        gross_margin = revenue_ex_tax - float(cost_of_goods or 0)
+
+        stock_value = db.query(
+            func.coalesce(func.sum(Product.stock_quantity * Product.purchase_price), 0)
+        ).filter(
+            Product.tenant_id == context.tenant_id,
+            Product.status == "active",
+            Product.stock_quantity > 0
+        ).scalar()
+
+        in_stock_with_expiry = db.query(Product).filter(
+            Product.tenant_id == context.tenant_id,
+            Product.status == "active",
+            Product.stock_quantity > 0,
+            Product.expiry_date.isnot(None)
+        )
+        expired_count = in_stock_with_expiry.filter(Product.expiry_date < today).count()
+        expiring_7_count = in_stock_with_expiry.filter(
+            Product.expiry_date >= today, Product.expiry_date <= today + timedelta(days=7)
+        ).count()
+        expiring_items = in_stock_with_expiry.filter(
+            Product.expiry_date <= today + timedelta(days=30)
+        ).order_by(Product.expiry_date).limit(10).all()
+        expiring_30_count = in_stock_with_expiry.filter(
+            Product.expiry_date >= today, Product.expiry_date <= today + timedelta(days=30)
+        ).count()
+
+        reorder_items = db.query(Product).filter(
+            Product.tenant_id == context.tenant_id,
+            Product.status == "active",
+            Product.stock_quantity <= Product.reorder_level
+        ).order_by(Product.stock_quantity, Product.product_name).limit(10).all()
+
+        cashier_rows = db.query(
+            User.id,
+            User.full_name,
+            func.count(Sale.id),
+            func.coalesce(func.sum(Sale.total_amount), 0)
+        ).join(Sale, Sale.created_by == User.id).filter(
+            *sales_filter(today_start, tomorrow_start)
+        ).group_by(User.id, User.full_name).order_by(func.sum(Sale.total_amount).desc()).all()
+
+        admin_data = {
+            "gross_margin": round(gross_margin, 2),
+            "gross_margin_pct": (
+                round(gross_margin / revenue_ex_tax * 100, 1) if revenue_ex_tax else None
+            ),
+            "stock_value": float(stock_value or 0),
+            "expired_count": expired_count,
+            "expiring_7_count": expiring_7_count,
+            "expiring_30_count": expiring_30_count,
+            "expiring_items": [
+                {
+                    "product_id": p.id,
+                    "product_name": p.product_name,
+                    "expiry_date": str(p.expiry_date),
+                    "days_left": (p.expiry_date - today).days,
+                    "stock_quantity": float(p.stock_quantity or 0),
+                    "unit_type": p.unit_type
+                }
+                for p in expiring_items
+            ],
+            "reorder_items": [
+                {
+                    "product_id": p.id,
+                    "product_name": p.product_name,
+                    "stock_quantity": float(p.stock_quantity or 0),
+                    "reorder_level": float(p.reorder_level or 0),
+                    "unit_type": p.unit_type
+                }
+                for p in reorder_items
+            ],
+            "cashiers": [
+                {"user_id": uid, "full_name": name, "transactions": int(count), "sales": float(total)}
+                for uid, name, count, total in cashier_rows
+            ]
+        }
+
     return {
-        "today_sales": float(today_sales or 0),
-        "today_transactions": today_transactions or 0,
-        "mtd_sales": float(mtd_sales or 0),
+        "today_sales": today_sales,
+        "today_transactions": today_transactions,
+        "mtd_sales": mtd_sales,
         "low_stock_count": low_stock_count or 0,
         "out_of_stock_count": out_of_stock_count or 0,
         "total_products": total_products or 0,
-        "total_categories": total_categories or 0
+        "total_categories": total_categories or 0,
+        "scope": "store" if context.is_admin else "self",
+        "as_of": datetime.now(IST).isoformat(timespec="seconds"),
+        "today": {
+            "avg_bill": round(today_sales / today_transactions, 2) if today_transactions else 0,
+            "items_per_bill": round(today_line_items / today_transactions, 1) if today_transactions else 0,
+            "discount": today_discount,
+            "discount_pct": round(today_discount / (today_sales + today_discount) * 100, 1)
+            if (today_sales + today_discount) else 0,
+            "yesterday_sales": yesterday_sales,
+            "last_week_sales": last_week_sales,
+            "vs_yesterday_pct": pct_change(today_sales, yesterday_sales),
+            "vs_last_week_pct": pct_change(today_sales, last_week_sales)
+        },
+        "mtd": {
+            "transactions": mtd_transactions,
+            "prev_sales": prev_mtd_sales,
+            "vs_prev_pct": pct_change(mtd_sales, prev_mtd_sales)
+        },
+        "cancelled_today": {"count": int(cancelled_count or 0), "amount": float(cancelled_amount or 0)},
+        "payment_mix": [
+            {"mode": mode or "other", "transactions": int(count), "amount": float(total)}
+            for mode, count, total in payment_rows
+        ],
+        "hourly_sales": [
+            {"hour": h, "transactions": hourly_map.get(h, (0, 0.0))[0], "sales": hourly_map.get(h, (0, 0.0))[1]}
+            for h in range(24)
+        ],
+        "daily_trend": [
+            {
+                "date": str(d),
+                "transactions": daily_map.get(str(d), (0, 0.0))[0],
+                "sales": daily_map.get(str(d), (0, 0.0))[1]
+            }
+            for d in (today - timedelta(days=i) for i in range(6, -1, -1))
+        ],
+        "top_products": [
+            {
+                "product_id": p.product_id,
+                "product_name": p.product_name,
+                "quantity": float(p.quantity or 0),
+                "revenue": float(p.revenue or 0)
+            }
+            for p in top_rows
+        ],
+        "customers_today": {
+            "identified_bills": len(today_customer_ids),
+            "unique": len(unique_customer_ids),
+            "repeat": repeat_customers
+        },
+        "admin": admin_data
     }
 
 

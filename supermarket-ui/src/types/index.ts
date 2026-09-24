@@ -169,6 +169,31 @@ export interface Invoice {
 }
 
 // Dashboard types
+export interface DashboardAdminData {
+  gross_margin: number;
+  gross_margin_pct: number | null;
+  stock_value: number;
+  expired_count: number;
+  expiring_7_count: number;
+  expiring_30_count: number;
+  expiring_items: {
+    product_id: number;
+    product_name: string;
+    expiry_date: string;
+    days_left: number;
+    stock_quantity: number;
+    unit_type?: string;
+  }[];
+  reorder_items: {
+    product_id: number;
+    product_name: string;
+    stock_quantity: number;
+    reorder_level: number;
+    unit_type?: string;
+  }[];
+  cashiers: { user_id: number; full_name: string; transactions: number; sales: number }[];
+}
+
 export interface DashboardData {
   today_sales: number;
   today_transactions: number;
@@ -177,6 +202,26 @@ export interface DashboardData {
   out_of_stock_count: number;
   total_products: number;
   total_categories: number;
+  scope: 'store' | 'self';
+  as_of: string;
+  today: {
+    avg_bill: number;
+    items_per_bill: number;
+    discount: number;
+    discount_pct: number;
+    yesterday_sales: number;
+    last_week_sales: number;
+    vs_yesterday_pct: number | null;
+    vs_last_week_pct: number | null;
+  };
+  mtd: { transactions: number; prev_sales: number; vs_prev_pct: number | null };
+  cancelled_today: { count: number; amount: number };
+  payment_mix: { mode: string; transactions: number; amount: number }[];
+  hourly_sales: { hour: number; transactions: number; sales: number }[];
+  daily_trend: { date: string; transactions: number; sales: number }[];
+  top_products: { product_id: number; product_name: string; quantity: number; revenue: number }[];
+  customers_today: { identified_bills: number; unique: number; repeat: number };
+  admin: DashboardAdminData | null;
 }
 
 // Pagination

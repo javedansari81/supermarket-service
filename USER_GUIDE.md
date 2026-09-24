@@ -39,8 +39,8 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see
 
 | | Admin | Cashier |
 |---|--------|---------|
-| Dashboard (sales today / month) | Yes | Yes |
-| Low stock, out of stock, catalog counts | Yes | No |
+| Dashboard (sales today / month) | Yes (store-wide) | Yes (own bills only) |
+| Margin, stock value, reorder, expiry, cashier panels | Yes | No |
 | Billing / POS | Yes | Yes |
 | Products, categories, suppliers | Yes | No |
 | Purchases, inventory, barcodes | Yes | No |
@@ -51,20 +51,31 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see
 
 ## 3. Dashboard
 
-Home screen after login. Greeting uses your full name (or username).
+Home screen after login. Greeting uses your full name (or username). Admins see store-wide figures (**Store-wide** chip); cashiers see only the bills they created (**My sales** chip). Click the refresh icon to reload.
 
 **Everyone sees**
 
-- **Today's Sales** — rupee total and number of transactions today
-- **Month-to-Date Sales** — sales so far this month
+- **Today's Sales** — with % change vs the same time last week, and yesterday's sales up to the same time
+- **Bills Today** — bill count and average items per bill
+- **Average Bill Value** — plus discounts given today (₹ and %)
+- **Month-to-Date Sales** — with % change vs last month up to the same point
+- **Cancelled / Refunded** — count and amount today
+- **Sales by Hour** — today's hourly bars (current hour highlighted)
+- **Payment Mix** — Cash / UPI / Card share today
+- **Last 7 Days** — daily sales trend
+- **Customers Today** — identified, repeat and new customers, and share of bills with a mobile number
+- **Top Products Today** — top 5 by revenue
 
 **Admins also see**
 
-- **Low Stock Items** — quantity at or below reorder level
-- **Out of Stock** — quantity at zero
-- **Total Products** and **Categories**
+- **Gross Margin Today (est.)** — net sales minus cost, using each product's current purchase price
+- **Stock Value (at cost)** — plus active product and category counts
+- **Stock Alerts** — out-of-stock and low-stock counts
+- **Cashier Performance Today** — bills, sales and average bill per cashier
+- **Reorder Needed** — items at or below reorder level, with a shortcut to Purchases
+- **Expiry Watch** — expired and soon-to-expire items (7 / 30 days) that are still in stock
 
-Use this page at opening to check sales and (as admin) stock risk.
+Use this page at opening and during the day to track sales pace and (as admin) stock and expiry risk.
 
 ---
 

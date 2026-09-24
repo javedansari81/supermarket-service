@@ -33,6 +33,48 @@ def test_dashboard_uses_ist_day(client, db, product, cashier_headers):
     assert res["today_sales"] == 110
 
 
+def test_dashboard_admin_insights(client, db, product, admin_headers):
+    from datetime import datetime, timedelta
+    from app.api.v1.endpoints.reports import IST, ist_day_start_utc
+    from app.models import Sale
+    sell(client, product, admin_headers)
+    last_week = sell(client, product, admin_headers, qty=1).json()["id"]
+    db.get(Sale, last_week).sale_date = ist_day_start_utc(datetime.now(IST).date()) - timedelta(days=7)
+    db.commit()
+    res = client.get(f"{REP}/dashboard", headers=admin_headers).json()
+    assert res["scope"] == "store"
+    assert res["today"]["avg_bill"] == 110
+    assert res["today"]["items_per_bill"] == 1
+    assert res["today"]["last_week_sales"] == 55
+    assert res["today"]["vs_last_week_pct"] == 100
+    assert res["payment_mix"] == [{"mode": "cash", "transactions": 1, "amount": 110}]
+    assert len(res["hourly_sales"]) == 24 and sum(h["sales"] for h in res["hourly_sales"]) == 110
+    assert len(res["daily_trend"]) == 7 and res["daily_trend"][-1]["sales"] == 110
+    assert res["top_products"][0]["quantity"] == 2
+    assert res["admin"]["stock_value"] == 97 * 40
+    assert res["admin"]["gross_margin"] > 0
+    assert res["admin"]["reorder_items"] == []
+
+
+def test_dashboard_cashier_sees_own_sales_only(client, product, admin_headers, cashier_headers):
+    sell(client, product, admin_headers)
+    res = client.get(f"{REP}/dashboard", headers=cashier_headers).json()
+    assert res["scope"] == "self"
+    assert res["today_transactions"] == 0
+    assert res["admin"] is None
+
+
+def test_dashboard_expiring_and_reorder(client, db, product, admin_headers):
+    from datetime import date, timedelta
+    product.expiry_date = date.today() + timedelta(days=3)
+    product.stock_quantity = 5
+    db.commit()
+    admin = client.get(f"{REP}/dashboard", headers=admin_headers).json()["admin"]
+    assert admin["expiring_7_count"] == 1
+    assert admin["expiring_items"][0]["product_name"] == "Rice 1kg"
+    assert admin["reorder_items"][0]["stock_quantity"] == 5
+
+
 def test_sales_summary(client, product, admin_headers, admin_b_headers):
     sell(client, product, admin_headers)
     res = client.get(f"{REP}/sales-summary", params=WIDE, headers=admin_headers)
