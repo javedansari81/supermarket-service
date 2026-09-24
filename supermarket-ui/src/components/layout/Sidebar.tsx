@@ -14,9 +14,14 @@ import {
   Divider,
   Box,
   Typography,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
 import {
   Dashboard,
+  Sell,
+  ChevronLeft,
+  Menu as MenuIcon,
   ShoppingCart,
   Inventory,
   Category,
@@ -32,7 +37,13 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
-const DRAWER_WIDTH = 240;
+export const DRAWER_WIDTH = 240;
+export const COLLAPSED_DRAWER_WIDTH = 64;
+
+interface SidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
 
 interface NavItem {
   title: string;
@@ -44,7 +55,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { title: 'Dashboard', path: '/dashboard', icon: <Dashboard /> },
   { title: 'Billing / POS', path: '/billing', icon: <PointOfSale /> },
-  { title: 'Products', path: '/products', icon: <Inventory />, adminOnly: true },
+  { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true },
   { title: 'Categories', path: '/categories', icon: <Category />, adminOnly: true },
   { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true },
   { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true },
@@ -58,7 +69,7 @@ const navItems: NavItem[] = [
   { title: 'Settings', path: '/settings', icon: <Settings />, adminOnly: true },
 ];
 
-const Sidebar: React.FC = () => {
+const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin, user } = useAuth();
@@ -67,63 +78,94 @@ const Sidebar: React.FC = () => {
     (item) => !item.adminOnly || isAdmin
   );
 
+  const width = collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
+
   return (
     <Drawer
       variant="permanent"
       sx={{
-        width: DRAWER_WIDTH,
+        width,
         flexShrink: 0,
+        transition: (theme) => theme.transitions.create('width'),
         '& .MuiDrawer-paper': {
-          width: DRAWER_WIDTH,
+          width,
           boxSizing: 'border-box',
           backgroundColor: '#1a237e',
           color: 'white',
+          overflowX: 'hidden',
+          transition: (theme) => theme.transitions.create('width'),
         },
       }}
     >
-      <Toolbar>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <PointOfSale />
-          <Typography variant="h6" noWrap>
-            SuperMart
-          </Typography>
-        </Box>
+      <Toolbar
+        sx={{
+          justifyContent: collapsed ? 'center' : 'space-between',
+          px: collapsed ? 1 : 2,
+        }}
+      >
+        {!collapsed && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <PointOfSale />
+            <Typography variant="h6" noWrap>
+              SuperMart
+            </Typography>
+          </Box>
+        )}
+        <Tooltip title={collapsed ? 'Expand menu' : 'Collapse menu'} placement="right">
+          <IconButton
+            onClick={onToggle}
+            size="small"
+            aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
+            sx={{ color: 'inherit' }}
+          >
+            {collapsed ? <MenuIcon /> : <ChevronLeft />}
+          </IconButton>
+        </Tooltip>
       </Toolbar>
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
-      
-      <Box sx={{ px: 2, py: 1.5 }}>
-        <Typography variant="caption" sx={{ opacity: 0.7 }}>
-          {user?.tenant_name}
-        </Typography>
-      </Box>
-      
-      <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
-      
+
+      {!collapsed && (
+        <>
+          <Box sx={{ px: 2, py: 1.5 }}>
+            <Typography variant="caption" noWrap component="div" sx={{ opacity: 0.7 }}>
+              {user?.tenant_name}
+            </Typography>
+          </Box>
+
+          <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
+        </>
+      )}
+
       <List sx={{ pt: 1 }}>
         {filteredNavItems.map((item) => (
           <ListItem key={item.path} disablePadding sx={{ px: 1 }}>
-            <ListItemButton
-              onClick={() => navigate(item.path)}
-              selected={location.pathname === item.path}
-              sx={{
-                borderRadius: 2,
-                mb: 0.5,
-                '&.Mui-selected': {
-                  backgroundColor: 'rgba(255,255,255,0.15)',
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.2)',
+            <Tooltip title={collapsed ? item.title : ''} placement="right">
+              <ListItemButton
+                onClick={() => navigate(item.path)}
+                selected={location.pathname === item.path}
+                aria-label={item.title}
+                sx={{
+                  borderRadius: 2,
+                  mb: 0.5,
+                  justifyContent: collapsed ? 'center' : 'flex-start',
+                  px: collapsed ? 1.5 : 2,
+                  '&.Mui-selected': {
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                    '&:hover': {
+                      backgroundColor: 'rgba(255,255,255,0.2)',
+                    },
                   },
-                },
-                '&:hover': {
-                  backgroundColor: 'rgba(255,255,255,0.1)',
-                },
-              }}
-            >
-              <ListItemIcon sx={{ color: 'inherit', minWidth: 40 }}>
-                {item.icon}
-              </ListItemIcon>
-              <ListItemText primary={item.title} />
-            </ListItemButton>
+                  '&:hover': {
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                  },
+                }}
+              >
+                <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 40 }}>
+                  {item.icon}
+                </ListItemIcon>
+                {!collapsed && <ListItemText primary={item.title} />}
+              </ListItemButton>
+            </Tooltip>
           </ListItem>
         ))}
       </List>

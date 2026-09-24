@@ -22,13 +22,12 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
-const DRAWER_WIDTH = 240;
-
 interface HeaderProps {
   pageHeaderSlotRef: (el: HTMLElement | null) => void;
+  drawerWidth: number;
 }
 
-const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef }) => {
+const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -51,8 +50,9 @@ const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef }) => {
     <AppBar
       position="fixed"
       sx={{
-        width: `calc(100% - ${DRAWER_WIDTH}px)`,
-        ml: `${DRAWER_WIDTH}px`,
+        width: `calc(100% - ${drawerWidth}px)`,
+        ml: `${drawerWidth}px`,
+        transition: (theme) => theme.transitions.create(['width', 'margin']),
         backgroundColor: 'white',
         color: 'text.primary',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',

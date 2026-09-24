@@ -27,7 +27,7 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 
 | Area | What it does |
 |------|----------------|
-| Left sidebar | Menu. Shows your store name (tenant) under **SuperMart**. |
+| Left sidebar | Menu. Shows your store name (tenant) under **SuperMart**. Click the arrow next to **SuperMart** to collapse it to icons only (hover an icon to see its name); click the menu icon to expand it again. Your choice is remembered. On smaller screens it starts collapsed until you choose otherwise. |
 | Top bar | Current page title (with page actions such as refresh on the left), signed-in name, role (**Administrator** or **Cashier**), and avatar menu. |
 | Avatar menu | **Logout** — ends the session and returns to login. |
 | Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Supplier**, **New Purchase**, **Add User**. |
