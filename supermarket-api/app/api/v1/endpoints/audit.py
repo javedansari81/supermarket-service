@@ -71,6 +71,11 @@ def describe_audit(log: AuditLog, user_names: dict) -> Tuple[Optional[str], Opti
         return user_names.get(log.entity_id), "Logged out"
 
     if entity_type == "sale":
+        if new_value.get("status") == "cancelled" and old_value.get("status") != "cancelled":
+            summary = f"Voided ({format_money(values.get('total_amount'))})"
+            if new_value.get("void_reason"):
+                summary = f"{summary}: {new_value['void_reason']}"
+            return values.get("sale_no"), summary
         parts = [format_money(values.get("total_amount")), f"{len(values.get('items') or [])} item(s)"]
         if values.get("payment_mode"):
             parts.append(str(values["payment_mode"]).upper())
@@ -95,6 +100,17 @@ def describe_audit(log: AuditLog, user_names: dict) -> Tuple[Optional[str], Opti
         if values.get("sale_no"):
             parts.append(f"Sale {values['sale_no']}")
         return values.get("invoice_no"), " · ".join(parts)
+
+    if entity_type == "sale_return":
+        parts = [f"Refund {format_money(values.get('total_amount'))}",
+                 f"{len(values.get('items') or [])} item(s)"]
+        if values.get("sale_no"):
+            parts.append(f"Sale {values['sale_no']}")
+        if values.get("window_override"):
+            parts.append("Beyond 7-day window")
+        if values.get("reason"):
+            parts.append(f"Reason: {values['reason']}")
+        return values.get("return_no"), " · ".join(parts)
 
     if entity_type == "purchase":
         reference = values.get("purchase_no")
@@ -228,6 +244,7 @@ async def get_entity_types(current_user = Depends(get_current_admin_user)):
             {"value": "supplier", "label": "Supplier"},
             {"value": "purchase", "label": "Purchase"},
             {"value": "sale", "label": "Sale"},
+            {"value": "sale_return", "label": "Sale Return"},
             {"value": "invoice", "label": "Invoice"},
             {"value": "user", "label": "User"},
             {"value": "setting", "label": "Setting"}

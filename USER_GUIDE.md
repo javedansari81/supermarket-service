@@ -46,6 +46,8 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see
 | Products, categories, suppliers | Yes | No |
 | Purchases, inventory, barcodes | Yes | No |
 | Invoices (view / print) | Yes | Yes |
+| Return items | Yes (any time) | Yes (within 7 days of sale) |
+| Void a sale | Yes (any sale without returns) | Own same-day sales only |
 | Reports, users, audit logs, settings | Yes | No |
 
 ---
@@ -60,7 +62,8 @@ Home screen after login. Greeting uses your full name (or username). Admins see 
 - **Bills Today** — bill count and average items per bill
 - **Average Bill Value** — plus discounts given today (₹ and %)
 - **Month-to-Date Sales** — with % change vs last month up to the same point
-- **Cancelled / Refunded** — count and amount today
+- **Returns** — credit notes and amount refunded today
+- **Voided Sales** — count and amount voided today
 - **Sales by Hour** — today's hourly bars (current hour highlighted)
 - **Payment Mix** — Cash / UPI / Card share today
 - **Last 7 Days** — daily sales trend
@@ -249,14 +252,34 @@ Sales history for Admin and Cashier.
 - Search by invoice number
 - Filter **From** / **To** dates (defaults: start of month → today)
 - Refresh to reload
-- Columns: Invoice No, Date, Customer, Amount, Actions
+- Columns: Invoice No, Date, Customer, Amount, Status, Actions
+- Status: **Completed**, **Returned** (every item returned) or **Voided**
 
 ### View and print
 
-- Eye — detail dialog: date, customer (or **Walk-in**), payment mode, lines, subtotal, tax, total
+- Eye — detail dialog: date, customer (or **Walk-in**), payment mode, lines, subtotal, tax, total, plus any returns (credit notes) and void details
 - Printer icon (grid or dialog) — print-friendly invoice in a new window
 
 Walk-in sales have no customer name. Use this for reprints and end-of-day checks.
+
+### Return items (full or partial)
+
+1. Click the return icon on the row (or **Return** in the detail dialog).
+2. For each item, enter **Return now** (up to the quantity not yet returned). Loose items accept decimals.
+3. Leave **Restock** ticked to put the item back in stock. Untick it for damaged or expired goods.
+4. Pick a **Reason** (Damaged / defective item, Expired / near expiry, Wrong item given, Customer changed mind, or **Other** to type your own), choose the **Refund mode** (Cash / Card / UPI) and click **Save Return**.
+5. A credit note number (`CN…`) and the refund amount are shown. Refund the customer that amount.
+
+- A sale can have several partial returns. Once every item is returned, its status becomes **Returned**.
+- Cashiers can return items up to **7 days** after the sale. After that, an admin must process the return; it is marked **Override**.
+
+### Void a sale
+
+Use this for billing mistakes. Click the void icon (or **Void** in the detail dialog), pick a reason (Wrong items billed, Wrong quantity or price, Wrong payment mode, Customer cancelled purchase, or **Other** to type your own) and confirm.
+
+- The whole sale is cancelled and all items go back into stock. The invoice stays on record as **Voided**.
+- Cashiers can only void their own sales on the same day. Admins can void any sale.
+- A sale that already has returns cannot be voided. Return the remaining items instead.
 
 ---
 
@@ -266,7 +289,7 @@ Analytics for a date range (default: start of month → today). Changing dates r
 
 **Summary cards**
 
-- Total Sales
+- Net Sales (sales minus returns; voided sales excluded)
 - Transactions
 - Avg Transaction
 
@@ -366,6 +389,8 @@ Save after changes. Currency in the UI is **₹**.
 | Cashier cannot open Products | Expected. Only Dashboard, Billing, Invoices. |
 | No barcode in print list | Product has no barcode. Use **Generate** first. |
 | Invoice print window blank | Allow pop-ups for the site and try Print again. |
+| "Return window of 7 days has passed" | Ask an admin to process the return. |
+| Cannot void a sale | Cashiers can only void their own same-day sales. Sales with returns cannot be voided. |
 | Session lost | Sign in again. Logout clears the stored token. |
 
 ---

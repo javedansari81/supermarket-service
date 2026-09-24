@@ -35,12 +35,16 @@ class Sale(Base, TimestampMixin):
     remarks = Column(Text)
     status = Column(String(20), default='completed')
     created_by = Column(Integer, ForeignKey('users.id'))
-    
+    voided_at = Column(DateTime)
+    voided_by = Column(Integer, ForeignKey('users.id'))
+    void_reason = Column(Text)
+
     # Relationships
     tenant = relationship("Tenant", back_populates="sales")
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
     invoice = relationship("Invoice", back_populates="sale", uselist=False)
     customer = relationship("Customer", back_populates="sales")
+    returns = relationship("SaleReturn", back_populates="sale", order_by="SaleReturn.id")
     
     # Unique constraint on tenant_id + sale_no
     __table_args__ = (

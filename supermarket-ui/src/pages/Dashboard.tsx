@@ -32,6 +32,7 @@ import {
   LocalOffer,
   Inventory,
   Cancel,
+  AssignmentReturn,
   Refresh,
   ArrowUpward,
   ArrowDownward,
@@ -315,13 +316,22 @@ const Dashboard: React.FC = () => {
       },
     );
   }
-  kpis.push({
-    title: 'Cancelled / Refunded',
-    value: data.cancelled_today.count,
-    icon: <Cancel />,
-    color: '#d32f2f',
-    subtitle: `${formatCurrency(data.cancelled_today.amount)} today`,
-  });
+  kpis.push(
+    {
+      title: 'Returns',
+      value: data.returns_today.count,
+      icon: <AssignmentReturn />,
+      color: '#ed6c02',
+      subtitle: `${formatCurrency(data.returns_today.amount)} refunded today`,
+    },
+    {
+      title: 'Voided Sales',
+      value: data.cancelled_today.count,
+      icon: <Cancel />,
+      color: '#d32f2f',
+      subtitle: `${formatCurrency(data.cancelled_today.amount)} today`,
+    },
+  );
 
   return (
     <Box>

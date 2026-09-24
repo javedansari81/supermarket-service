@@ -142,3 +142,138 @@ def test_customer_get_update_and_sales(client, product, cashier_headers, admin_b
                       headers=cashier_headers).status_code == 422
     assert client.put(f"{CUST}/{cid}", json={"customer_name": "X"},
                       headers=admin_b_headers).status_code == 404
+
+
+# ---------- Returns and void ----------
+
+RETURNS = "/api/v1/sale-returns"
+
+
+def return_items(client, sale, headers, qty=1, restock=True, reason="Damaged pack"):
+    body = {"items": [{"sale_item_id": sale["items"][0]["id"], "quantity": qty, "restock": restock}],
+            "reason": reason}
+    return client.post(f"{SALES}/{sale['id']}/returns", json=body, headers=headers)
+
+
+def backdate(db, sale, days):
+    from datetime import datetime, timedelta
+    from app.models import Sale
+    db.query(Sale).filter(Sale.id == sale["id"]).update(
+        {Sale.sale_date: datetime.utcnow() - timedelta(days=days)})
+    db.commit()
+
+
+def test_partial_then_full_return(client, product, cashier_headers):
+    sale = sell(client, product, cashier_headers).json()
+    res = return_items(client, sale, cashier_headers)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["return_no"].startswith("CN")
+    assert float(body["total_amount"]) == 55
+    assert float(body["tax_amount"]) == 2.62
+    assert body["refund_mode"] == "cash" and body["window_override"] is False
+    assert stock_of(client, product, cashier_headers) == 99
+    assert client.get(f"{SALES}/{sale['id']}", headers=cashier_headers).json()["status"] == "completed"
+
+    info = client.get(f"{SALES}/{sale['id']}/returnable", headers=cashier_headers).json()
+    assert float(info["items"][0]["returnable_quantity"]) == 1
+    assert float(info["returned_amount"]) == 55
+    assert info["can_void"] is False
+
+    assert return_items(client, sale, cashier_headers, qty=2).status_code == 400
+    res = return_items(client, sale, cashier_headers)
+    assert res.status_code == 201 and float(res.json()["tax_amount"]) == 2.62
+    assert client.get(f"{SALES}/{sale['id']}", headers=cashier_headers).json()["status"] == "refunded"
+    assert return_items(client, sale, cashier_headers).status_code == 400
+    assert client.get(RETURNS, headers=cashier_headers).json()["total"] == 2
+
+
+def test_return_without_restock(client, product, cashier_headers):
+    sale = sell(client, product, cashier_headers).json()
+    assert return_items(client, sale, cashier_headers, restock=False).status_code == 201
+    assert stock_of(client, product, cashier_headers) == 98
+
+
+def test_return_rejects_bad_input(client, product, cashier_headers, admin_b_headers):
+    sale = sell(client, product, cashier_headers).json()
+    assert return_items(client, sale, cashier_headers, qty=0.5).status_code == 400
+    assert return_items(client, sale, cashier_headers, qty=0).status_code == 422
+    assert return_items(client, sale, cashier_headers, reason=" ").status_code == 422
+    assert return_items(client, sale, admin_b_headers).status_code == 404
+    body = {"items": [{"sale_item_id": 99999, "quantity": 1}], "reason": "x"}
+    assert client.post(f"{SALES}/{sale['id']}/returns", json=body, headers=cashier_headers).status_code == 400
+
+
+def test_return_window_cashier_vs_admin(client, db, product, cashier_headers, admin_headers):
+    sale = sell(client, product, cashier_headers).json()
+    backdate(db, sale, 7)
+    assert return_items(client, sale, cashier_headers).status_code == 201
+    backdate(db, sale, 8)
+    info = client.get(f"{SALES}/{sale['id']}/returnable", headers=cashier_headers).json()
+    assert info["within_window"] is False and info["can_return"] is False
+    assert return_items(client, sale, cashier_headers).status_code == 403
+    res = return_items(client, sale, admin_headers)
+    assert res.status_code == 201 and res.json()["window_override"] is True
+
+
+def test_void_sale_restores_stock(client, product, cashier_headers):
+    sale = sell(client, product, cashier_headers).json()
+    res = client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Wrong item billed"},
+                      headers=cashier_headers)
+    assert res.status_code == 200
+    assert res.json()["status"] == "cancelled" and res.json()["void_reason"] == "Wrong item billed"
+    assert stock_of(client, product, cashier_headers) == 100
+    assert client.post(f"{SALES}/{sale['id']}/void", json={"reason": "again"},
+                       headers=cashier_headers).status_code == 400
+    assert return_items(client, sale, cashier_headers).status_code == 400
+
+
+def test_void_rules(client, db, product, cashier_headers, admin_headers, admin_b_headers):
+    void = {"reason": "Mistake"}
+    admin_sale = sell(client, product, admin_headers).json()
+    assert client.post(f"{SALES}/{admin_sale['id']}/void", json=void, headers=cashier_headers).status_code == 403
+    assert client.post(f"{SALES}/{admin_sale['id']}/void", json=void, headers=admin_b_headers).status_code == 404
+    assert client.post(f"{SALES}/{admin_sale['id']}/void", json={"reason": ""},
+                       headers=admin_headers).status_code == 422
+
+    old_sale = sell(client, product, cashier_headers).json()
+    backdate(db, old_sale, 1)
+    assert client.post(f"{SALES}/{old_sale['id']}/void", json=void, headers=cashier_headers).status_code == 403
+    assert client.post(f"{SALES}/{old_sale['id']}/void", json=void, headers=admin_headers).status_code == 200
+
+    returned_sale = sell(client, product, cashier_headers).json()
+    return_items(client, returned_sale, cashier_headers)
+    assert client.post(f"{SALES}/{returned_sale['id']}/void", json=void,
+                       headers=admin_headers).status_code == 400
+
+
+def test_reports_customers_and_audit_use_net_sales(client, product, cashier_headers, admin_headers):
+    from datetime import date
+    sale = sell(client, product, cashier_headers, customer_phone=MOBILE).json()
+    voided = sell(client, product, cashier_headers).json()
+    client.post(f"{SALES}/{voided['id']}/void", json={"reason": "Mistake"}, headers=cashier_headers)
+    return_items(client, sale, cashier_headers)
+
+    dash = client.get("/api/v1/reports/dashboard", headers=cashier_headers).json()
+    assert dash["today_sales"] == 55 and dash["today_transactions"] == 1
+    assert dash["returns_today"] == {"count": 1, "amount": 55}
+    assert dash["cancelled_today"]["count"] == 1
+
+    today = str(date.today())
+    params = {"from_date": today, "to_date": today}
+    summary = client.get("/api/v1/reports/sales-summary", params=params,
+                         headers=admin_headers).json()["summary"]
+    assert summary["gross_sales"] == 110 and summary["total_returns"] == 55
+    assert summary["total_sales"] == 55
+    top = client.get("/api/v1/reports/top-products", params=params, headers=admin_headers).json()
+    assert top["products"][0]["total_quantity"] == 1
+
+    customer = client.get(CUST, headers=cashier_headers).json()["items"][0]
+    assert float(customer["total_spent"]) == 55
+
+    logs = client.get("/api/v1/audit", params={"entity_type": "sale_return"},
+                      headers=admin_headers).json()["items"]
+    assert logs and logs[0]["reference"].startswith("CN")
+    logs = client.get("/api/v1/audit", params={"entity_type": "sale", "entity_id": voided["id"]},
+                      headers=admin_headers).json()["items"]
+    assert any(log["summary"].startswith("Voided") for log in logs)

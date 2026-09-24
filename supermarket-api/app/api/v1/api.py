@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     inventory,
     barcode,
     sales,
+    sale_returns,
     customers,
     invoices,
     reports,
@@ -51,6 +52,10 @@ api_router.include_router(barcode.router, prefix="/barcode", tags=["Barcode"])
 
 # Sales/Billing
 api_router.include_router(sales.router, prefix="/sales", tags=["Sales"])
+
+# Sale returns (credit notes) and void sale
+api_router.include_router(sale_returns.sales_router, prefix="/sales", tags=["Sale Returns"])
+api_router.include_router(sale_returns.router, prefix="/sale-returns", tags=["Sale Returns"])
 
 # Customers
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])

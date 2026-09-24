@@ -8,17 +8,25 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Divider,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Search, Refresh, Print, Visibility } from '@mui/icons-material';
+import { Search, Refresh, Print, Visibility, AssignmentReturn, Block } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
-import { Invoice, PaginatedResponse } from '../types';
+import { Invoice, PaginatedResponse, ReturnableSale } from '../types';
 import toast from 'react-hot-toast';
 import { InvoicePrintData, fetchInvoicePrintData, printReceipt } from '../services/receipt';
+import SaleReturnDialog, { SaleActionMode } from '../components/sales/SaleReturnDialog';
 
 const money = (n: number) => Number(n || 0).toFixed(2);
+const utc = (value: string) => dayjs(value.endsWith('Z') ? value : `${value}Z`);
+
+const STATUS_CHIPS: Record<string, { label: string; color: 'success' | 'warning' | 'error' | 'default' }> = {
+  completed: { label: 'Completed', color: 'success' },
+  refunded: { label: 'Returned', color: 'warning' },
+  cancelled: { label: 'Voided', color: 'error' },
+};
 
 const Invoices: React.FC = () => {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -31,6 +39,9 @@ const Invoices: React.FC = () => {
   const [toDate, setToDate] = useState<Dayjs | null>(dayjs());
   const [viewOpen, setViewOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState<InvoicePrintData | null>(null);
+  const [selectedSale, setSelectedSale] = useState<ReturnableSale | null>(null);
+  const [actionSaleId, setActionSaleId] = useState<number | null>(null);
+  const [actionMode, setActionMode] = useState<SaleActionMode>('return');
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -49,9 +60,27 @@ const Invoices: React.FC = () => {
 
   const handleView = async (invoice: Invoice) => {
     try {
-      setSelectedInvoice(await fetchInvoicePrintData(invoice.id));
+      const [printData, saleInfo] = await Promise.all([
+        fetchInvoicePrintData(invoice.id),
+        api.get<ReturnableSale>(`${API_ENDPOINTS.SALES}/${invoice.sale_id}/returnable`).then((r) => r.data),
+      ]);
+      setSelectedInvoice(printData);
+      setSelectedSale(saleInfo);
       setViewOpen(true);
     } catch (error) { toast.error('Failed to fetch invoice details'); }
+  };
+
+  const openAction = (saleId: number, mode: SaleActionMode) => {
+    setViewOpen(false);
+    setActionMode(mode);
+    setActionSaleId(saleId);
+  };
+
+  const closeAction = useCallback(() => setActionSaleId(null), []);
+
+  const handleActionDone = () => {
+    setActionSaleId(null);
+    fetchInvoices();
   };
 
   const handlePrint = async (invoiceId: number) => {
@@ -67,10 +96,24 @@ const Invoices: React.FC = () => {
     { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 150 },
     { field: 'customer_phone', headerName: 'Mobile', width: 120 },
     { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => `₹${money(params.value)}` },
-    { field: 'actions', headerName: 'Actions', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'sale_status', headerName: 'Status', width: 120, renderCell: (params: GridRenderCellParams) => {
+      const chip = STATUS_CHIPS[params.value] || { label: params.value || '-', color: 'default' as const };
+      return <Chip size="small" label={chip.label} color={chip.color} />;
+    }},
+    { field: 'actions', headerName: 'Actions', width: 180, sortable: false, renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" onClick={() => handleView(params.row)}><Visibility fontSize="small" /></IconButton>
-        <IconButton size="small" onClick={() => handlePrint(params.row.id)}><Print fontSize="small" /></IconButton>
+        <IconButton size="small" title="View" onClick={() => handleView(params.row)}><Visibility fontSize="small" /></IconButton>
+        <IconButton size="small" title="Print" onClick={() => handlePrint(params.row.id)}><Print fontSize="small" /></IconButton>
+        {params.row.sale_status !== 'cancelled' && params.row.sale_status !== 'refunded' && (
+          <IconButton size="small" title="Return items" onClick={() => openAction(params.row.sale_id, 'return')}>
+            <AssignmentReturn fontSize="small" />
+          </IconButton>
+        )}
+        {params.row.sale_status !== 'cancelled' && (
+          <IconButton size="small" title="Void sale" color="error" onClick={() => openAction(params.row.sale_id, 'void')}>
+            <Block fontSize="small" />
+          </IconButton>
+        )}
       </>
     )},
   ];
@@ -140,14 +183,50 @@ const Invoices: React.FC = () => {
                   : <><Typography>CGST: ₹{money(selectedInvoice.cgst_amount)}</Typography><Typography>SGST: ₹{money(selectedInvoice.sgst_amount)}</Typography></>}
                 <Typography variant="h6">Total: ₹{money(selectedInvoice.total_amount)}</Typography>
               </Box>
+              {selectedSale?.status === 'cancelled' && (
+                <Typography color="error" sx={{ mt: 2 }}>
+                  <strong>Voided</strong>{selectedSale.voided_at && ` on ${utc(selectedSale.voided_at).format('DD/MM/YYYY hh:mm A')}`}
+                  {selectedSale.void_reason && `: ${selectedSale.void_reason}`}
+                </Typography>
+              )}
+              {!!selectedSale?.returns.length && (
+                <>
+                  <Typography variant="subtitle2" sx={{ mt: 2 }}>Returns</Typography>
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead><TableRow><TableCell>Credit Note</TableCell><TableCell>Date</TableCell><TableCell>Items</TableCell>
+                        <TableCell>By</TableCell><TableCell align="right">Refund</TableCell></TableRow></TableHead>
+                      <TableBody>
+                        {selectedSale.returns.map((r) => (
+                          <TableRow key={r.id}>
+                            <TableCell>{r.return_no}{r.window_override && <Chip size="small" label="Override" sx={{ ml: 1 }} />}</TableCell>
+                            <TableCell>{utc(r.return_date).format('DD/MM/YYYY')}</TableCell>
+                            <TableCell>{r.items.map((i) => `${i.product_name} × ${Number(i.quantity)}`).join(', ')}</TableCell>
+                            <TableCell>{r.created_by_name || '-'}</TableCell>
+                            <TableCell align="right">₹{money(r.total_amount)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                  <Typography sx={{ mt: 1, textAlign: 'right' }}>Returned: ₹{money(selectedSale.returned_amount)}</Typography>
+                </>
+              )}
             </Box>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewOpen(false)}>Close</Button>
+          {selectedSale && selectedSale.status !== 'cancelled' && (
+            <Button color="error" startIcon={<Block />} onClick={() => openAction(selectedSale.sale_id, 'void')}>Void</Button>
+          )}
+          {selectedSale && selectedSale.status !== 'cancelled' && selectedSale.status !== 'refunded' && (
+            <Button startIcon={<AssignmentReturn />} onClick={() => openAction(selectedSale.sale_id, 'return')}>Return</Button>
+          )}
           <Button variant="contained" startIcon={<Print />} onClick={() => selectedInvoice && handlePrint(selectedInvoice.invoice_id)}>Print</Button>
         </DialogActions>
       </Dialog>
+      <SaleReturnDialog saleId={actionSaleId} mode={actionMode} onClose={closeAction} onDone={handleActionDone} />
     </Box>
   );
 };

@@ -101,6 +101,9 @@ class SaleResponse(TimestampSchema):
     igst_amount: Optional[Decimal] = Decimal("0")
     remarks: Optional[str]
     status: str
+    voided_at: Optional[datetime] = None
+    voided_by: Optional[int] = None
+    void_reason: Optional[str] = None
     items: List[SaleItemResponse] = []
     cashier_name: Optional[str] = None
     invoice_id: Optional[int] = None

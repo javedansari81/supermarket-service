@@ -123,8 +123,17 @@ async def list_invoices(
     total = query.count()
     items = query.order_by(Invoice.invoice_date.desc()).offset((page - 1) * page_size).limit(page_size).all()
     
+    sale_statuses = dict(db.query(Sale.id, Sale.status).filter(
+        Sale.id.in_([item.sale_id for item in items])
+    ).all()) if items else {}
+    responses = []
+    for item in items:
+        response = InvoiceResponse.model_validate(item)
+        response.sale_status = sale_statuses.get(item.sale_id)
+        responses.append(response)
+
     return InvoiceListResponse(
-        items=[InvoiceResponse.model_validate(item) for item in items],
+        items=responses,
         total=total,
         page=page,
         page_size=page_size

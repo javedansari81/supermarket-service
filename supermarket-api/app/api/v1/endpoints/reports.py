@@ -6,9 +6,10 @@ from datetime import datetime, date, time, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_, union_all
 from app.core.database import get_db
 from app.models.sale import Sale, SaleItem
+from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.product import Product
 from app.models.purchase import Purchase
 from app.models.category import Category
@@ -21,6 +22,9 @@ router = APIRouter()
 # India Standard Time (no daylight saving)
 IST_OFFSET = timedelta(hours=5, minutes=30)
 IST = timezone(IST_OFFSET)
+
+# Sales that count as billed; voided sales are 'cancelled'. Returns are subtracted separately.
+BILLED_STATUSES = ("completed", "refunded")
 
 
 def ist_day_start_utc(day: date) -> datetime:
@@ -38,6 +42,32 @@ def pct_change(current: float, previous: float) -> Optional[float]:
     if not previous:
         return None
     return round((current - previous) / previous * 100, 1)
+
+
+def net_product_lines(db: Session, tenant_id: int, from_date: date, to_date: date):
+    """Sold lines (by sale date) minus returned lines (by return date) as one subquery"""
+    sold = db.query(
+        SaleItem.product_id.label("product_id"),
+        SaleItem.product_name.label("product_name"),
+        SaleItem.quantity.label("quantity"),
+        SaleItem.line_total.label("amount")
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id,
+        func.date(Sale.sale_date) >= from_date,
+        func.date(Sale.sale_date) <= to_date,
+        Sale.status.in_(BILLED_STATUSES)
+    )
+    returned = db.query(
+        SaleReturnItem.product_id,
+        SaleReturnItem.product_name,
+        -SaleReturnItem.quantity,
+        -SaleReturnItem.line_total
+    ).join(SaleReturn).filter(
+        SaleReturn.tenant_id == tenant_id,
+        func.date(SaleReturn.return_date) >= from_date,
+        func.date(SaleReturn.return_date) <= to_date
+    )
+    return union_all(sold, returned).subquery()
 
 
 @router.get("/dashboard")
@@ -58,7 +88,7 @@ async def get_dashboard(
     trend_start = today_start - timedelta(days=6)
     ist_sale_date = Sale.sale_date + IST_OFFSET
 
-    def sales_filter(start, end, statuses=("completed",)):
+    def sales_filter(start, end, statuses=BILLED_STATUSES):
         conditions = [
             Sale.tenant_id == context.tenant_id,
             Sale.sale_date >= start,
@@ -69,15 +99,36 @@ async def get_dashboard(
             conditions.append(Sale.created_by == context.user_id)
         return conditions
 
+    def returns_filter(start, end):
+        conditions = [
+            SaleReturn.tenant_id == context.tenant_id,
+            SaleReturn.return_date >= start,
+            SaleReturn.return_date < end
+        ]
+        if not context.is_admin:
+            conditions.append(SaleReturn.created_by == context.user_id)
+        return conditions
+
+    def returns_totals(start, end):
+        total, count, discount = db.query(
+            func.coalesce(func.sum(SaleReturn.total_amount), 0),
+            func.count(SaleReturn.id),
+            func.coalesce(func.sum(SaleReturn.discount_amount), 0)
+        ).filter(*returns_filter(start, end)).one()
+        return float(total or 0), int(count or 0), float(discount or 0)
+
     def sales_totals(start, end):
+        """Net sales (billed minus returns), bill count and net discount"""
         total, count, discount = db.query(
             func.coalesce(func.sum(Sale.total_amount), 0),
             func.count(Sale.id),
             func.coalesce(func.sum(Sale.discount_amount), 0)
         ).filter(*sales_filter(start, end)).one()
-        return float(total or 0), int(count or 0), float(discount or 0)
+        returned, _, returned_discount = returns_totals(start, end)
+        return float(total or 0) - returned, int(count or 0), float(discount or 0) - returned_discount
 
     today_sales, today_transactions, today_discount = sales_totals(today_start, tomorrow_start)
+    returns_today_amount, returns_today_count, _ = returns_totals(today_start, tomorrow_start)
     # Comparisons use the same elapsed time of day so a partial day is not compared to a full day
     yesterday_sales, _, _ = sales_totals(today_start - timedelta(days=1), now_utc - timedelta(days=1))
     last_week_sales, _, _ = sales_totals(today_start - timedelta(days=7), now_utc - timedelta(days=7))
@@ -93,7 +144,7 @@ async def get_dashboard(
     cancelled_count, cancelled_amount = db.query(
         func.count(Sale.id),
         func.coalesce(func.sum(Sale.total_amount), 0)
-    ).filter(*sales_filter(today_start, tomorrow_start, ("cancelled", "refunded"))).one()
+    ).filter(*sales_filter(today_start, tomorrow_start, ("cancelled",))).one()
 
     payment_rows = db.query(
         Sale.payment_mode,
@@ -137,7 +188,7 @@ async def get_dashboard(
     if unique_customer_ids:
         repeat_customers = db.query(func.count(func.distinct(Sale.customer_id))).filter(
             Sale.tenant_id == context.tenant_id,
-            Sale.status == "completed",
+            Sale.status.in_(BILLED_STATUSES),
             Sale.sale_date < today_start,
             Sale.customer_id.in_(unique_customer_ids)
         ).scalar() or 0
@@ -188,8 +239,17 @@ async def get_dashboard(
             *sales_filter(today_start, tomorrow_start),
             Product.purchase_price.isnot(None)
         ).one()
-        revenue_ex_tax = float(revenue_ex_tax or 0)
-        gross_margin = revenue_ex_tax - float(cost_of_goods or 0)
+        returned_ex_tax, returned_cost = db.query(
+            func.coalesce(func.sum(SaleReturnItem.taxable_value), 0),
+            func.coalesce(func.sum(SaleReturnItem.quantity * Product.purchase_price), 0)
+        ).join(SaleReturn, SaleReturnItem.return_id == SaleReturn.id).join(
+            Product, SaleReturnItem.product_id == Product.id
+        ).filter(
+            *returns_filter(today_start, tomorrow_start),
+            Product.purchase_price.isnot(None)
+        ).one()
+        revenue_ex_tax = float(revenue_ex_tax or 0) - float(returned_ex_tax or 0)
+        gross_margin = revenue_ex_tax - (float(cost_of_goods or 0) - float(returned_cost or 0))
 
         stock_value = db.query(
             func.coalesce(func.sum(Product.stock_quantity * Product.purchase_price), 0)
@@ -294,6 +354,7 @@ async def get_dashboard(
             "vs_prev_pct": pct_change(mtd_sales, prev_mtd_sales)
         },
         "cancelled_today": {"count": int(cancelled_count or 0), "amount": float(cancelled_amount or 0)},
+        "returns_today": {"count": returns_today_count, "amount": returns_today_amount},
         "payment_mix": [
             {"mode": mode or "other", "transactions": int(count), "amount": float(total)}
             for mode, count, total in payment_rows
@@ -345,24 +406,31 @@ async def get_sales_summary(
         Sale.tenant_id == context.tenant_id,
         func.date(Sale.sale_date) >= from_date,
         func.date(Sale.sale_date) <= to_date,
-        Sale.status == "completed"
+        Sale.status.in_(BILLED_STATUSES)
     )
-    
-    # Total summary
-    total_sales = base_query.with_entities(
-        func.coalesce(func.sum(Sale.total_amount), 0)
-    ).scalar()
-    
-    total_tax = base_query.with_entities(
-        func.coalesce(func.sum(Sale.tax_amount), 0)
-    ).scalar()
-    
-    total_discount = base_query.with_entities(
+    returns_query = db.query(SaleReturn).filter(
+        SaleReturn.tenant_id == context.tenant_id,
+        func.date(SaleReturn.return_date) >= from_date,
+        func.date(SaleReturn.return_date) <= to_date
+    )
+
+    # Total summary (net = billed minus returns processed in the range)
+    gross_sales, gross_tax, gross_discount = base_query.with_entities(
+        func.coalesce(func.sum(Sale.total_amount), 0),
+        func.coalesce(func.sum(Sale.tax_amount), 0),
         func.coalesce(func.sum(Sale.discount_amount), 0)
-    ).scalar()
-    
+    ).one()
+    returns_amount, returns_tax, returns_discount, returns_count = returns_query.with_entities(
+        func.coalesce(func.sum(SaleReturn.total_amount), 0),
+        func.coalesce(func.sum(SaleReturn.tax_amount), 0),
+        func.coalesce(func.sum(SaleReturn.discount_amount), 0),
+        func.count(SaleReturn.id)
+    ).one()
+    total_sales = float(gross_sales or 0) - float(returns_amount or 0)
+    total_tax = float(gross_tax or 0) - float(returns_tax or 0)
+    total_discount = float(gross_discount or 0) - float(returns_discount or 0)
     total_transactions = base_query.count()
-    
+
     # Daily breakdown
     daily_data = db.query(
         func.date(Sale.sale_date).label("date"),
@@ -373,26 +441,42 @@ async def get_sales_summary(
         Sale.tenant_id == context.tenant_id,
         func.date(Sale.sale_date) >= from_date,
         func.date(Sale.sale_date) <= to_date,
-        Sale.status == "completed"
-    ).group_by(func.date(Sale.sale_date)).order_by(func.date(Sale.sale_date)).all()
-    
+        Sale.status.in_(BILLED_STATUSES)
+    ).group_by(func.date(Sale.sale_date)).all()
+    daily_returns = returns_query.with_entities(
+        func.date(SaleReturn.return_date).label("date"),
+        func.sum(SaleReturn.total_amount).label("total_returns"),
+        func.sum(SaleReturn.tax_amount).label("total_tax")
+    ).group_by(func.date(SaleReturn.return_date)).all()
+
+    days = {}
+    for d in daily_data:
+        days[str(d.date)] = {
+            "date": str(d.date), "transactions": d.transactions,
+            "total_sales": float(d.total_sales or 0), "total_tax": float(d.total_tax or 0),
+            "total_returns": 0.0
+        }
+    for r in daily_returns:
+        day = days.setdefault(str(r.date), {
+            "date": str(r.date), "transactions": 0,
+            "total_sales": 0.0, "total_tax": 0.0, "total_returns": 0.0
+        })
+        day["total_returns"] = float(r.total_returns or 0)
+        day["total_sales"] -= day["total_returns"]
+        day["total_tax"] -= float(r.total_tax or 0)
+
     return {
         "summary": {
-            "total_sales": float(total_sales or 0),
-            "total_tax": float(total_tax or 0),
-            "total_discount": float(total_discount or 0),
+            "gross_sales": float(gross_sales or 0),
+            "total_returns": float(returns_amount or 0),
+            "returns_count": int(returns_count or 0),
+            "total_sales": total_sales,
+            "total_tax": total_tax,
+            "total_discount": total_discount,
             "total_transactions": total_transactions or 0,
-            "average_sale": float(total_sales / total_transactions) if total_transactions else 0
+            "average_sale": total_sales / total_transactions if total_transactions else 0
         },
-        "daily_data": [
-            {
-                "date": str(d.date),
-                "transactions": d.transactions,
-                "total_sales": float(d.total_sales or 0),
-                "total_tax": float(d.total_tax or 0)
-            }
-            for d in daily_data
-        ],
+        "daily_data": [days[key] for key in sorted(days)],
         "from_date": str(from_date),
         "to_date": str(to_date)
     }
@@ -411,20 +495,16 @@ async def get_top_products(
     Get top selling products (admin only)
     """
     validate_date_range(from_date, to_date)
+    lines = net_product_lines(db, context.tenant_id, from_date, to_date)
     top_products = db.query(
-        SaleItem.product_id,
-        SaleItem.product_name,
-        func.sum(SaleItem.quantity).label("total_quantity"),
-        func.sum(SaleItem.line_total).label("total_revenue")
-    ).join(Sale).filter(
-        Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) >= from_date,
-        func.date(Sale.sale_date) <= to_date,
-        Sale.status == "completed"
+        lines.c.product_id,
+        func.max(lines.c.product_name).label("product_name"),
+        func.sum(lines.c.quantity).label("total_quantity"),
+        func.sum(lines.c.amount).label("total_revenue")
     ).group_by(
-        SaleItem.product_id, SaleItem.product_name
+        lines.c.product_id
     ).order_by(
-        func.sum(SaleItem.line_total).desc()
+        func.sum(lines.c.amount).desc()
     ).limit(limit).all()
 
     return {
@@ -454,16 +534,12 @@ async def get_category_sales(
     Get sales by category (admin only)
     """
     validate_date_range(from_date, to_date)
+    lines = net_product_lines(db, context.tenant_id, from_date, to_date)
     product_sales = db.query(
-        SaleItem.product_id,
-        func.sum(SaleItem.line_total).label("total_sales"),
-        func.sum(SaleItem.quantity).label("total_quantity")
-    ).join(Sale).filter(
-        Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) >= from_date,
-        func.date(Sale.sale_date) <= to_date,
-        Sale.status == "completed"
-    ).group_by(SaleItem.product_id).subquery()
+        lines.c.product_id.label("product_id"),
+        func.sum(lines.c.amount).label("total_sales"),
+        func.sum(lines.c.quantity).label("total_quantity")
+    ).group_by(lines.c.product_id).subquery()
 
     category_sales = db.query(
         Category.id,
@@ -516,12 +592,20 @@ async def get_cashier_performance(
             Sale.created_by == User.id,
             func.date(Sale.sale_date) >= from_date,
             func.date(Sale.sale_date) <= to_date,
-            Sale.status == "completed"
+            Sale.status.in_(BILLED_STATUSES)
         )
     ).filter(
         User.tenant_id == context.tenant_id,
         User.status == "active"
     ).group_by(User.id, User.full_name).all()
+    returns_by_user = dict(db.query(
+        SaleReturn.created_by,
+        func.coalesce(func.sum(SaleReturn.total_amount), 0)
+    ).filter(
+        SaleReturn.tenant_id == context.tenant_id,
+        func.date(SaleReturn.return_date) >= from_date,
+        func.date(SaleReturn.return_date) <= to_date
+    ).group_by(SaleReturn.created_by).all())
 
     return {
         "cashiers": [
@@ -529,7 +613,8 @@ async def get_cashier_performance(
                 "user_id": c.id,
                 "full_name": c.full_name,
                 "total_transactions": c.total_transactions or 0,
-                "total_sales": float(c.total_sales or 0)
+                "total_returns": float(returns_by_user.get(c.id) or 0),
+                "total_sales": float(c.total_sales or 0) - float(returns_by_user.get(c.id) or 0)
             }
             for c in cashier_data
         ],

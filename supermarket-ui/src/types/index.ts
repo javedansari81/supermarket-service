@@ -148,9 +148,83 @@ export interface Sale {
   sgst_amount?: number;
   igst_amount?: number;
   status: string;
+  voided_at?: string;
+  voided_by?: number;
+  void_reason?: string;
   items: SaleItem[];
   invoice_id?: number;
   invoice_no?: string;
+}
+
+// Sale return (credit note) types
+export interface SaleReturnItem {
+  id: number;
+  sale_item_id: number;
+  product_id: number;
+  product_name: string;
+  unit_type?: string;
+  quantity: number;
+  unit_price: number;
+  taxable_value: number;
+  tax_percent: number;
+  tax_amount: number;
+  line_total: number;
+  restock: boolean;
+}
+
+export interface SaleReturn {
+  id: number;
+  sale_id: number;
+  return_no: string;
+  return_date: string;
+  subtotal: number;
+  tax_amount: number;
+  discount_amount: number;
+  total_amount: number;
+  refund_mode: string;
+  reason?: string;
+  window_override: boolean;
+  created_by_name?: string;
+  sale_no?: string;
+  invoice_no?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  items: SaleReturnItem[];
+}
+
+export interface ReturnableItem {
+  sale_item_id: number;
+  product_id: number;
+  product_name: string;
+  unit_type?: string;
+  is_loose: boolean;
+  unit_price: number;
+  line_total: number;
+  sold_quantity: number;
+  returned_quantity: number;
+  returnable_quantity: number;
+}
+
+export interface ReturnableSale {
+  sale_id: number;
+  sale_no: string;
+  sale_date: string;
+  invoice_no?: string;
+  status: string;
+  payment_mode?: string;
+  total_amount: number;
+  returned_amount: number;
+  days_since_sale: number;
+  return_window_days: number;
+  within_window: boolean;
+  can_return: boolean;
+  return_block_reason?: string;
+  can_void: boolean;
+  void_block_reason?: string;
+  void_reason?: string;
+  voided_at?: string;
+  items: ReturnableItem[];
+  returns: SaleReturn[];
 }
 
 // Invoice types
@@ -166,6 +240,7 @@ export interface Invoice {
   cgst_amount?: number;
   sgst_amount?: number;
   igst_amount?: number;
+  sale_status?: string;
 }
 
 // Dashboard types
@@ -216,6 +291,7 @@ export interface DashboardData {
   };
   mtd: { transactions: number; prev_sales: number; vs_prev_pct: number | null };
   cancelled_today: { count: number; amount: number };
+  returns_today: { count: number; amount: number };
   payment_mix: { mode: string; transactions: number; amount: number }[];
   hourly_sales: { hour: number; transactions: number; sales: number }[];
   daily_trend: { date: string; transactions: number; sales: number }[];

@@ -10,6 +10,7 @@ from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.models.customer import Customer
 from app.models.sale import Sale, SaleItem
+from app.models.sale_return import SaleReturn
 from app.models.invoice import Invoice
 from app.schemas.customer import (
     CustomerUpdate, CustomerResponse, CustomerListResponse,
@@ -46,16 +47,22 @@ def upsert_customer_for_sale(db: Session, tenant_id: int, mobile: str,
 
 
 def _stats_subquery(db: Session, tenant_id: int):
+    returned = db.query(
+        SaleReturn.sale_id.label("sale_id"),
+        func.sum(SaleReturn.total_amount).label("returned"),
+    ).filter(SaleReturn.tenant_id == tenant_id).group_by(SaleReturn.sale_id).subquery()
     return db.query(
         Sale.customer_id.label("customer_id"),
         func.count(Sale.id).label("visits"),
-        func.coalesce(func.sum(Sale.total_amount), 0).label("total_spent"),
+        func.coalesce(
+            func.sum(Sale.total_amount - func.coalesce(returned.c.returned, 0)), 0
+        ).label("total_spent"),
         func.min(Sale.sale_date).label("first_visit"),
         func.max(Sale.sale_date).label("last_visit"),
-    ).filter(
+    ).outerjoin(returned, returned.c.sale_id == Sale.id).filter(
         Sale.tenant_id == tenant_id,
         Sale.customer_id.isnot(None),
-        Sale.status == "completed",
+        Sale.status.in_(("completed", "refunded")),
     ).group_by(Sale.customer_id).subquery()
 
 

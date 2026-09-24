@@ -43,6 +43,7 @@ class InvoiceResponse(BaseModel):
     printed_count: Optional[int] = 0
     last_printed_at: Optional[datetime] = None
     created_at: datetime
+    sale_status: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

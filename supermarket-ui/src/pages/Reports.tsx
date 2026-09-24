@@ -14,7 +14,7 @@ import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 
-interface SalesSummary { total_sales: number; total_transactions: number; average_sale: number; }
+interface SalesSummary { total_sales: number; total_transactions: number; average_sale: number; gross_sales?: number; total_returns?: number; }
 interface TopProduct { product_name: string; total_quantity: number; total_revenue: number; }
 interface CategorySales { category_name: string; total_sales: number; total_quantity: number; }
 interface CashierPerf { full_name: string; total_transactions: number; total_sales: number; }
@@ -68,8 +68,13 @@ const Reports: React.FC = () => {
         <Grid container spacing={2} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12, md: 4 }}>
             <Card><CardContent>
-              <Typography color="text.secondary">Total Sales</Typography>
+              <Typography color="text.secondary">Net Sales</Typography>
               <Typography variant="h4">₹{salesSummary.total_sales?.toLocaleString()}</Typography>
+              {!!salesSummary.total_returns && (
+                <Typography variant="caption" color="text.secondary">
+                  Gross ₹{salesSummary.gross_sales?.toLocaleString()} − Returns ₹{salesSummary.total_returns.toLocaleString()}
+                </Typography>
+              )}
             </CardContent></Card>
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
