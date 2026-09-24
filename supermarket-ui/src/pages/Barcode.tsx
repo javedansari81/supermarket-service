@@ -220,7 +220,7 @@ const Barcode: React.FC = () => {
             <CardContent>
               <Typography variant="h6" gutterBottom>Add Products to Print</Typography>
               <Grid container spacing={2} alignItems="center">
-                <Grid size={6}>
+                <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth>
                     <InputLabel>Select Product</InputLabel>
                     <Select value={selectedProduct} label="Select Product" onChange={(e) => setSelectedProduct(e.target.value)}>
@@ -230,10 +230,10 @@ const Barcode: React.FC = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <TextField fullWidth label="Quantity" type="number" value={printQty} onChange={(e) => setPrintQty(e.target.value)} />
                 </Grid>
-                <Grid size={3}>
+                <Grid size={{ xs: 6, sm: 3 }}>
                   <Button fullWidth variant="outlined" startIcon={<Add />} onClick={handleAddItem}>Add</Button>
                 </Grid>
               </Grid>
@@ -282,14 +282,14 @@ const Barcode: React.FC = () => {
                     </Select>
                   </FormControl>
                 </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
+                <Grid size={{ xs: 12, sm: 3 }}>
                   <TextField fullWidth label="MRP (₹)" type="number" value={packed.mrp} onChange={(e) => setPackedField('mrp', e.target.value)} />
                 </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
+                <Grid size={{ xs: 12, sm: 3 }}>
                   <TextField fullWidth label="Packed On" type="date" value={packed.packed_date}
                     onChange={(e) => setPackedField('packed_date', e.target.value)} InputLabelProps={{ shrink: true }} />
                 </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
+                <Grid size={{ xs: 12, sm: 3 }}>
                   <TextField fullWidth label="Best Before" type="date" value={packed.best_before_date}
                     onChange={(e) => setPackedField('best_before_date', e.target.value)} InputLabelProps={{ shrink: true }}
                     inputProps={{ min: packed.packed_date }} />

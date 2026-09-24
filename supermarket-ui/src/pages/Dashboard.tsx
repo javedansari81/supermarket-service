@@ -335,7 +335,7 @@ const Dashboard: React.FC = () => {
               color={data.scope === 'store' ? 'primary' : 'default'}
               label={data.scope === 'store' ? 'Store-wide' : 'My sales'}
             />
-            <Typography variant="caption" color="text.secondary">
+            <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'inline' } }}>
               Updated {data.as_of.slice(11, 16)}
             </Typography>
             <Tooltip title="Refresh">

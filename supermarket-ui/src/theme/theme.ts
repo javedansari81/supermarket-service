@@ -77,6 +77,27 @@ const theme = createTheme({
         },
       },
     },
+    MuiDialog: {
+      styleOverrides: {
+        paper: ({ theme }) => ({
+          [theme.breakpoints.down('sm')]: {
+            margin: 0,
+            width: '100%',
+            maxWidth: '100%',
+            height: '100%',
+            maxHeight: '100%',
+            borderRadius: 0,
+          },
+        }),
+      },
+    },
+    MuiTabs: {
+      defaultProps: {
+        variant: 'scrollable',
+        scrollButtons: 'auto',
+        allowScrollButtonsMobile: true,
+      },
+    },
   },
 });
 

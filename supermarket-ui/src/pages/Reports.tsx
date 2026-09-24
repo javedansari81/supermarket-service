@@ -59,9 +59,9 @@ const Reports: React.FC = () => {
     <Box>
       <PageHeader title="Reports" />
       <Card sx={{ mb: 3, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <DatePicker label="From" value={fromDate} onChange={setFromDate} />
-          <DatePicker label="To" value={toDate} onChange={setToDate} />
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'stretch', sm: 'center' } }}>
+          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
+          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
         </Box>
       </Card>
       {salesSummary && (

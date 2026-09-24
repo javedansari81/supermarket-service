@@ -246,13 +246,13 @@ const Purchases: React.FC = () => {
           </Grid>
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Add Items</Typography>
           <Grid container spacing={1} alignItems="center">
-            <Grid size={5}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
+            <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
               <Select value={selectedProduct} label="Product" onChange={(e) => setSelectedProduct(e.target.value)}>
                 {products.map(p => <MenuItem key={p.id} value={p.id}>{p.product_name}</MenuItem>)}
               </Select></FormControl></Grid>
-            <Grid size={2}><TextField size="small" label="Qty" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-            <Grid size={3}><TextField size="small" label="Unit Price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} fullWidth /></Grid>
-            <Grid size={2}><Button variant="outlined" onClick={handleAddItem} fullWidth>Add</Button></Grid>
+            <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} fullWidth /></Grid>
+            <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleAddItem} fullWidth>Add</Button></Grid>
           </Grid>
           {items.length > 0 && (
             <TableContainer component={Paper} sx={{ mt: 2 }}>
@@ -335,17 +335,17 @@ const Purchases: React.FC = () => {
           </Grid>
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Items</Typography>
           <Grid container spacing={1} alignItems="center">
-            <Grid size={5}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
+            <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
               <Select value={editProduct} label="Product" onChange={(e) => setEditProduct(e.target.value)}>
                 {products.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}</MenuItem>)}
               </Select></FormControl></Grid>
-            <Grid size={2}><TextField size="small" label="Qty" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-            <Grid size={3}><TextField size="small" label="Unit Price" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-            <Grid size={2}><Button variant="outlined" onClick={handleEditAddItem} disabled={!editProduct} fullWidth>Add</Button></Grid>
+            <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Price" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+            <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleEditAddItem} disabled={!editProduct} fullWidth>Add</Button></Grid>
           </Grid>
           <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
             <Table size="small">
-              <TableHead><TableRow><TableCell>Product</TableCell><TableCell width={130}>Qty</TableCell><TableCell width={140}>Unit Price</TableCell><TableCell align="right">Total</TableCell><TableCell /></TableRow></TableHead>
+              <TableHead><TableRow><TableCell sx={{ minWidth: 120 }}>Product</TableCell><TableCell width={130}>Qty</TableCell><TableCell width={140}>Unit Price</TableCell><TableCell align="right">Total</TableCell><TableCell /></TableRow></TableHead>
               <TableBody>
                 {editItems.map((item, index) => (
                   <TableRow key={index}>

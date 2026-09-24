@@ -43,6 +43,9 @@ export const COLLAPSED_DRAWER_WIDTH = 64;
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  mobile?: boolean;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 interface NavItem {
@@ -69,7 +72,13 @@ const navItems: NavItem[] = [
   { title: 'Settings', path: '/settings', icon: <Settings />, adminOnly: true },
 ];
 
-const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
+const Sidebar: React.FC<SidebarProps> = ({
+  collapsed: collapsedProp,
+  onToggle,
+  mobile = false,
+  mobileOpen = false,
+  onMobileClose,
+}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin, user } = useAuth();
@@ -78,11 +87,22 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
     (item) => !item.adminOnly || isAdmin
   );
 
+  const collapsed = !mobile && collapsedProp;
   const width = collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
+
+  const handleToggle = mobile ? onMobileClose : onToggle;
+
+  const handleNavigate = (path: string) => {
+    navigate(path);
+    if (mobile) onMobileClose?.();
+  };
 
   return (
     <Drawer
-      variant="permanent"
+      variant={mobile ? 'temporary' : 'permanent'}
+      open={mobile ? mobileOpen : true}
+      onClose={onMobileClose}
+      ModalProps={{ keepMounted: true }}
       sx={{
         width,
         flexShrink: 0,
@@ -113,7 +133,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
         )}
         <Tooltip title={collapsed ? 'Expand menu' : 'Collapse menu'} placement="right">
           <IconButton
-            onClick={onToggle}
+            onClick={handleToggle}
             size="small"
             aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
             sx={{ color: 'inherit' }}
@@ -141,7 +161,7 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggle }) => {
           <ListItem key={item.path} disablePadding sx={{ px: 1 }}>
             <Tooltip title={collapsed ? item.title : ''} placement="right">
               <ListItemButton
-                onClick={() => navigate(item.path)}
+                onClick={() => handleNavigate(item.path)}
                 selected={location.pathname === item.path}
                 aria-label={item.title}
                 sx={{

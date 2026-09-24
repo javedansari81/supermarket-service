@@ -82,7 +82,7 @@ const AuditLogs: React.FC = () => {
       <PageHeader title="Audit Logs" actions={<IconButton onClick={fetchLogs}><Refresh /></IconButton>} />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-          <FormControl sx={{ minWidth: 120 }}>
+          <FormControl sx={{ minWidth: 120, flex: { xs: '1 1 calc(50% - 8px)', sm: '0 0 auto' } }}>
             <InputLabel>Action</InputLabel>
             <Select value={action} label="Action" onChange={(e) => setAction(e.target.value)}>
               <MenuItem value="">All</MenuItem>
@@ -94,7 +94,7 @@ const AuditLogs: React.FC = () => {
               <MenuItem value="print">Print</MenuItem>
             </Select>
           </FormControl>
-          <FormControl sx={{ minWidth: 140 }}>
+          <FormControl sx={{ minWidth: 140, flex: { xs: '1 1 calc(50% - 8px)', sm: '0 0 auto' } }}>
             <InputLabel>Entity Type</InputLabel>
             <Select value={entityType} label="Entity Type" onChange={(e) => setEntityType(e.target.value)}>
               <MenuItem value="">All</MenuItem>
@@ -108,8 +108,8 @@ const AuditLogs: React.FC = () => {
               <MenuItem value="setting">Setting</MenuItem>
             </Select>
           </FormControl>
-          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: 150 }} />
-          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: 150 }} />
+          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
+          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
         </Box>
       </Card>
       <Card>

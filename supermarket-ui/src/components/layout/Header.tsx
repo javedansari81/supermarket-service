@@ -17,6 +17,7 @@ import {
 import {
   AccountCircle,
   Logout,
+  Menu as MenuIcon,
   Person,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
@@ -25,9 +26,10 @@ import { useNavigate } from 'react-router-dom';
 interface HeaderProps {
   pageHeaderSlotRef: (el: HTMLElement | null) => void;
   drawerWidth: number;
+  onMenuClick?: () => void;
 }
 
-const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth }) => {
+const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth, onMenuClick }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -58,11 +60,22 @@ const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth }) => {
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
       }}
     >
-      <Toolbar>
-        <Box ref={pageHeaderSlotRef} sx={{ flexGrow: 1, minWidth: 0, mr: 2 }} />
+      <Toolbar sx={{ px: { xs: 1, sm: 2 } }}>
+        {onMenuClick && (
+          <IconButton
+            onClick={onMenuClick}
+            edge="start"
+            aria-label="Open menu"
+            sx={{ mr: 1 }}
+          >
+            <MenuIcon />
+          </IconButton>
+        )}
 
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-          <Box sx={{ textAlign: 'right' }}>
+        <Box ref={pageHeaderSlotRef} sx={{ flexGrow: 1, minWidth: 0, mr: { xs: 1, sm: 2 } }} />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1, sm: 2 }, flexShrink: 0 }}>
+          <Box sx={{ textAlign: 'right', display: { xs: 'none', sm: 'block' } }}>
             <Typography variant="body2" fontWeight="bold">
               {user?.full_name || user?.username}
             </Typography>

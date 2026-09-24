@@ -14,6 +14,8 @@ const MainLayout: React.FC = () => {
   const [pageHeaderSlot, setPageHeaderSlot] = useState<HTMLElement | null>(null);
   const theme = useTheme();
   const isNarrow = useMediaQuery(theme.breakpoints.down('lg'), { noSsr: true });
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true });
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const getDefaultCollapsed = () => {
     const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
@@ -33,18 +35,33 @@ const MainLayout: React.FC = () => {
     localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
   };
 
-  const drawerWidth = collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
+  useEffect(() => {
+    if (!isMobile) setMobileOpen(false);
+  }, [isMobile]);
+
+  const drawerWidth = isMobile ? 0 : collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
 
   return (
     <PageHeaderSlotProvider value={pageHeaderSlot}>
       <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-        <Sidebar collapsed={collapsed} onToggle={handleToggle} />
-        <Header pageHeaderSlotRef={setPageHeaderSlot} drawerWidth={drawerWidth} />
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={handleToggle}
+          mobile={isMobile}
+          mobileOpen={mobileOpen}
+          onMobileClose={() => setMobileOpen(false)}
+        />
+        <Header
+          pageHeaderSlotRef={setPageHeaderSlot}
+          drawerWidth={drawerWidth}
+          onMenuClick={isMobile ? () => setMobileOpen(true) : undefined}
+        />
         <Box
           component="main"
           sx={{
             flexGrow: 1,
-            p: 3,
+            p: { xs: 1.5, sm: 2, md: 3 },
+            minWidth: 0,
             width: `calc(100% - ${drawerWidth}px)`,
             transition: (t) => t.transitions.create('width'),
             backgroundColor: 'background.default',

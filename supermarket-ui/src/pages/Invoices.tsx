@@ -82,8 +82,8 @@ const Invoices: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <TextField placeholder="Search invoice no, customer or mobile..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1, minWidth: 200 }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
-          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: 150 }} />
-          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: 150 }} />
+          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
+          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
         </Box>
       </Card>
       <Card>
