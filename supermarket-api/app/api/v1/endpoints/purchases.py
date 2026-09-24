@@ -4,10 +4,12 @@ Purchase/Procurement management endpoints
 from typing import Optional
 from datetime import date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.product import Product
 from app.models.supplier import Supplier
@@ -29,6 +31,11 @@ def generate_purchase_no(db: Session, tenant_id: int) -> str:
         Purchase.purchase_no.op("~")("^PO[0-9]+$")
     ).scalar() or 0
     return f"PO{last_seq + 1:06d}"
+
+
+def purchase_snapshot(purchase: Purchase) -> dict:
+    """Purchase header with its line items for audit logging"""
+    return {**snapshot(purchase), "items": [snapshot(item) for item in purchase.items]}
 
 
 @router.get("", response_model=PurchaseListResponse)
@@ -99,6 +106,7 @@ async def get_purchase(
 @router.post("", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)
 async def create_purchase(
     purchase_data: PurchaseCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -175,6 +183,10 @@ async def create_purchase(
         db.add(stock_movement)
     
     purchase.total_amount = total_amount
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "purchase", purchase.id,
+                 new_value={**snapshot(purchase), "items": purchase_data.model_dump()["items"]})
     db.commit()
     db.refresh(purchase)
 
@@ -256,6 +268,7 @@ def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: 
 async def update_purchase(
     purchase_id: int,
     purchase_data: PurchaseUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -283,12 +296,16 @@ async def update_purchase(
         if supplier.status != "active":
             raise HTTPException(status_code=400, detail=f"Supplier {supplier.supplier_name} is inactive")
 
+    old_value = purchase_snapshot(purchase)
     for field, value in update_data.items():
         setattr(purchase, field, value)
 
     if purchase_data.items is not None:
         replace_purchase_items(db, purchase, purchase_data.items, context)
 
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "purchase", purchase.id, old_value=old_value, new_value=purchase_snapshot(purchase))
     db.commit()
     return PurchaseResponse.model_validate(get_tenant_purchase(db, purchase_id, context.tenant_id))
 
@@ -297,6 +314,7 @@ async def update_purchase(
 async def cancel_purchase(
     purchase_id: int,
     cancel_data: PurchaseCancel,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -308,6 +326,7 @@ async def cancel_purchase(
     if purchase.status == "cancelled":
         raise HTTPException(status_code=400, detail="Purchase is already cancelled")
 
+    old_value = snapshot(purchase)
     reason = (cancel_data.reason or "").strip()
     remarks = f"Cancelled purchase {purchase.purchase_no}" + (f": {reason}" if reason else "")
 
@@ -339,6 +358,9 @@ async def cancel_purchase(
     purchase.status = "cancelled"
     if reason:
         purchase.remarks = f"{purchase.remarks}\n{remarks}" if purchase.remarks else remarks
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "purchase", purchase.id, old_value=old_value, new_value=snapshot(purchase))
     db.commit()
     return PurchaseResponse.model_validate(get_tenant_purchase(db, purchase_id, context.tenant_id))
 

@@ -19,6 +19,9 @@ class AuditLogResponse(BaseModel):
     ip_address: Optional[str] = None
     user_agent: Optional[str] = None
     created_at: datetime
+    user_name: Optional[str] = None
+    reference: Optional[str] = None
+    summary: Optional[str] = None
     
     model_config = {"from_attributes": True}
 

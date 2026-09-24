@@ -2,10 +2,12 @@
 Supplier management endpoints
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.supplier import Supplier
 from app.schemas.supplier import SupplierCreate, SupplierUpdate, SupplierResponse, SupplierListResponse
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
@@ -113,6 +115,7 @@ async def get_supplier(
 @router.post("", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)
 async def create_supplier(
     supplier_data: SupplierCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -142,9 +145,12 @@ async def create_supplier(
     )
     
     db.add(supplier)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "supplier", supplier.id, new_value=snapshot(supplier))
     db.commit()
     db.refresh(supplier)
-    
+
     return SupplierResponse.model_validate(supplier)
 
 
@@ -152,6 +158,7 @@ async def create_supplier(
 async def update_supplier(
     supplier_id: int,
     supplier_data: SupplierUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -170,10 +177,14 @@ async def update_supplier(
     update_data = supplier_data.model_dump(exclude_unset=True)
     if "gst_no" in update_data:
         ensure_unique_gst_no(db, context.tenant_id, update_data["gst_no"], supplier.id)
+    old_value = snapshot(supplier)
     for field, value in update_data.items():
         setattr(supplier, field, value)
 
     supplier.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "supplier", supplier.id, old_value=old_value, new_value=snapshot(supplier))
     db.commit()
     db.refresh(supplier)
 
@@ -183,6 +194,7 @@ async def update_supplier(
 @router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_supplier(
     supplier_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -198,7 +210,11 @@ async def delete_supplier(
     if not supplier:
         raise HTTPException(status_code=404, detail="Supplier not found")
 
+    old_value = snapshot(supplier)
     supplier.status = "inactive"
     supplier.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_DELETE,
+                 "supplier", supplier.id, old_value=old_value, new_value=snapshot(supplier))
     db.commit()
 

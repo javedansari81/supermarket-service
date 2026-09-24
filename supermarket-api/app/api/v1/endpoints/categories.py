@@ -2,9 +2,11 @@
 Category management endpoints
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryListResponse
 from app.api.deps import get_current_user, get_current_admin_user, get_tenant_context, TenantContext
@@ -82,6 +84,7 @@ async def get_category(
 @router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_category(
     category_data: CategoryCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -106,6 +109,9 @@ async def create_category(
     )
 
     db.add(category)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "category", category.id, new_value=snapshot(category))
     db.commit()
     db.refresh(category)
 
@@ -116,6 +122,7 @@ async def create_category(
 async def update_category(
     category_id: int,
     category_data: CategoryUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -141,11 +148,15 @@ async def update_category(
         if existing:
             raise HTTPException(status_code=400, detail="Category name already exists")
 
+    old_value = snapshot(category)
     update_data = category_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(category, field, value)
 
     category.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "category", category.id, old_value=old_value, new_value=snapshot(category))
     db.commit()
     db.refresh(category)
 
@@ -155,6 +166,7 @@ async def update_category(
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_category(
     category_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -170,7 +182,11 @@ async def delete_category(
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
 
+    old_value = snapshot(category)
     category.status = "inactive"
     category.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_DELETE,
+                 "category", category.id, old_value=old_value, new_value=snapshot(category))
     db.commit()
 

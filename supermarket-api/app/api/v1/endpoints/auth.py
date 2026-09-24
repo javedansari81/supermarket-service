@@ -2,12 +2,14 @@
 Authentication endpoints
 """
 from datetime import datetime, timedelta
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import verify_password, create_access_token
 from app.core.config import settings
+from app.core.audit import record_audit
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.schemas.auth import Token, LoginRequest
@@ -18,6 +20,7 @@ router = APIRouter()
 
 @router.post("/login", response_model=Token)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
@@ -59,6 +62,7 @@ async def login(
     
     # Update last login
     user.last_login = datetime.utcnow()
+    record_audit(db, request, user.tenant_id, user.id, AuditLog.ACTION_LOGIN, "user", user.id)
     db.commit()
     
     # Create access token
@@ -86,10 +90,17 @@ async def login(
 
 
 @router.post("/logout")
-async def logout(current_user: User = Depends(get_current_user)):
+async def logout(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     """
     Logout endpoint (client should discard token)
     """
+    record_audit(db, request, current_user.tenant_id, current_user.id,
+                 AuditLog.ACTION_LOGOUT, "user", current_user.id)
+    db.commit()
     return {"message": "Successfully logged out"}
 
 

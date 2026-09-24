@@ -2,10 +2,12 @@
 Product management endpoints
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.product import Product
 from app.models.category import Category
 from app.schemas.product import (
@@ -157,6 +159,7 @@ async def get_product(
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
 async def create_product(
     product_data: ProductCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -199,6 +202,9 @@ async def create_product(
     db.flush()
     if not product.barcode:
         product.barcode = generate_instore_barcode(product.id)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "product", product.id, new_value=snapshot(product))
     db.commit()
     db.refresh(product)
 
@@ -209,6 +215,7 @@ async def create_product(
 async def update_product(
     product_id: int,
     product_data: ProductUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -248,10 +255,14 @@ async def update_product(
     if is_loose and unit_type not in LOOSE_UNITS:
         raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
 
+    old_value = snapshot(product)
     for field, value in update_data.items():
         setattr(product, field, value)
 
     product.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "product", product.id, old_value=old_value, new_value=snapshot(product))
     db.commit()
     db.refresh(product)
 
@@ -261,6 +272,7 @@ async def update_product(
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_product(
     product_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -276,7 +288,11 @@ async def delete_product(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    old_value = snapshot(product)
     product.status = "inactive"
     product.updated_by = context.user_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_DELETE,
+                 "product", product.id, old_value=old_value, new_value=snapshot(product))
     db.commit()
 

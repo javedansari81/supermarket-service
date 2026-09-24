@@ -122,7 +122,7 @@ uvicorn main:app --reload
 
 ### Frontend Setup
 ```bash
-cd supermarket-web
+cd supermarket-ui
 npm install
 npm start
 ```

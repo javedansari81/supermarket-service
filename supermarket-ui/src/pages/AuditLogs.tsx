@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Card, TextField, IconButton, InputAdornment,
-  FormControl, InputLabel, Select, MenuItem, Chip,
+  FormControl, InputLabel, Select, MenuItem, Chip, Tooltip,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Search, Refresh } from '@mui/icons-material';
@@ -15,7 +15,14 @@ import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
 
-interface AuditLog { id: number; action: string; entity_type: string; entity_id: number; user_id: number; ip_address: string; created_at: string; }
+interface AuditLog {
+  id: number; action: string; entity_type: string; entity_id: number; user_id: number; ip_address: string; created_at: string;
+  user_name?: string; reference?: string; summary?: string;
+}
+
+const fmtDateTime = (v?: string) =>
+  v ? dayjs(v + (v.endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '';
+const capitalize = (v?: string) => (v ? v.charAt(0).toUpperCase() + v.slice(1) : '');
 
 const AuditLogs: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -54,14 +61,19 @@ const AuditLogs: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
-    { field: 'created_at', headerName: 'Timestamp', width: 180 },
+    { field: 'created_at', headerName: 'Date & Time', width: 170, renderCell: (params: GridRenderCellParams) => fmtDateTime(params.value) },
+    { field: 'user_name', headerName: 'User', width: 140, renderCell: (params: GridRenderCellParams) =>
+      params.value || (params.row.user_id ? `User #${params.row.user_id}` : '') },
     { field: 'action', headerName: 'Action', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={getActionColor(params.value) as any} />
+      <Chip label={capitalize(params.value)} size="small" color={getActionColor(params.value) as any} />
     )},
-    { field: 'entity_type', headerName: 'Entity Type', width: 120 },
-    { field: 'entity_id', headerName: 'Entity ID', width: 90 },
-    { field: 'user_id', headerName: 'User ID', width: 80 },
-    { field: 'ip_address', headerName: 'IP Address', width: 130 },
+    { field: 'entity_type', headerName: 'Type', width: 100, renderCell: (params: GridRenderCellParams) => capitalize(params.value) },
+    { field: 'reference', headerName: 'Reference', width: 170, renderCell: (params: GridRenderCellParams) =>
+      params.value || (params.row.entity_id ? `#${params.row.entity_id}` : '') },
+    { field: 'summary', headerName: 'Details', flex: 1, minWidth: 250, renderCell: (params: GridRenderCellParams) => (
+      <Tooltip title={params.value || ''}><span>{params.value}</span></Tooltip>
+    )},
+    { field: 'ip_address', headerName: 'IP Address', width: 120 },
   ];
 
   return (
@@ -80,6 +92,8 @@ const AuditLogs: React.FC = () => {
               <MenuItem value="update">Update</MenuItem>
               <MenuItem value="delete">Delete</MenuItem>
               <MenuItem value="login">Login</MenuItem>
+              <MenuItem value="logout">Logout</MenuItem>
+              <MenuItem value="print">Print</MenuItem>
             </Select>
           </FormControl>
           <FormControl sx={{ minWidth: 140 }}>
@@ -88,8 +102,12 @@ const AuditLogs: React.FC = () => {
               <MenuItem value="">All</MenuItem>
               <MenuItem value="product">Product</MenuItem>
               <MenuItem value="category">Category</MenuItem>
+              <MenuItem value="supplier">Supplier</MenuItem>
+              <MenuItem value="purchase">Purchase</MenuItem>
               <MenuItem value="sale">Sale</MenuItem>
+              <MenuItem value="invoice">Invoice</MenuItem>
               <MenuItem value="user">User</MenuItem>
+              <MenuItem value="setting">Setting</MenuItem>
             </Select>
           </FormControl>
           <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: 150 }} />

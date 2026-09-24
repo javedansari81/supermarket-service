@@ -4,10 +4,12 @@ Sales/Billing endpoints
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product
 from app.models.stock_movement import StockMovement
@@ -119,6 +121,7 @@ async def get_sale(
 @router.post("", response_model=SaleResponse, status_code=status.HTTP_201_CREATED)
 async def create_sale(
     sale_data: SaleCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user: User = Depends(get_current_user)
@@ -178,6 +181,7 @@ async def create_sale(
     db.flush()
     
     # Process items
+    sale_items = []
     for item_data in sale_data.items:
         product = db.query(Product).filter(
             Product.id == item_data.product_id,
@@ -249,7 +253,8 @@ async def create_sale(
             line_total=line_total
         )
         db.add(sale_item)
-        
+        sale_items.append(sale_item)
+
         # Update totals (subtotal excludes tax, before discount)
         subtotal += line_total - tax_amount + discount_amount
         total_tax += tax_amount
@@ -284,8 +289,14 @@ async def create_sale(
     db.flush()
 
     # Create tax invoice
-    create_invoice_for_sale(db, sale, context.tenant_id)
+    invoice = create_invoice_for_sale(db, sale, context.tenant_id)
 
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "sale", sale.id,
+                 new_value={**snapshot(sale), "invoice_no": invoice.invoice_no,
+                            "items": [snapshot(i) for i in sale_items]})
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "invoice", invoice.id, new_value={**snapshot(invoice), "sale_no": sale.sale_no})
     db.commit()
     db.refresh(sale)
 

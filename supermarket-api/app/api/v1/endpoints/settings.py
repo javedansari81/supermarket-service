@@ -2,9 +2,11 @@
 Settings management endpoints
 """
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
+from app.core.audit import record_audit
+from app.models.audit_log import AuditLog
 from app.models.tenant_setting import TenantSetting
 from app.models.tenant import Tenant
 from app.schemas.settings import (
@@ -119,6 +121,7 @@ async def get_store_settings(
 @router.put("/store", response_model=StoreSettings)
 async def update_store_settings(
     store_settings: StoreSettings,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -126,7 +129,8 @@ async def update_store_settings(
     """
     Update store settings (admin only)
     """
-    upsert_settings(db, context.tenant_id, {
+    old_value = get_settings_dict(db, context.tenant_id, STORE_KEYS)
+    new_value = {
         "store_name": store_settings.store_name,
         "store_address": store_settings.store_address,
         "store_phone": store_settings.store_phone,
@@ -134,7 +138,10 @@ async def update_store_settings(
         "gstin": store_settings.gstin,
         "store_state": store_settings.store_state,
         "fssai_license": store_settings.fssai_license
-    })
+    }
+    upsert_settings(db, context.tenant_id, new_value)
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "setting", old_value=old_value, new_value=new_value)
     db.commit()
     return build_store_settings(db, context.tenant_id)
 
@@ -161,6 +168,7 @@ async def get_billing_settings(
 @router.put("/billing", response_model=BillingSettings)
 async def update_billing_settings(
     billing_settings: BillingSettings,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -168,13 +176,17 @@ async def update_billing_settings(
     """
     Update billing settings (admin only)
     """
-    upsert_settings(db, context.tenant_id, {
+    old_value = get_settings_dict(db, context.tenant_id, BILLING_KEYS)
+    new_value = {
         "currency_symbol": billing_settings.currency_symbol,
         "tax_inclusive_pricing": str(billing_settings.tax_inclusive_pricing).lower(),
         "default_tax_percent": str(billing_settings.default_tax_percent),
         "invoice_prefix": billing_settings.invoice_prefix,
         "invoice_footer": billing_settings.invoice_footer
-    })
+    }
+    upsert_settings(db, context.tenant_id, new_value)
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "setting", old_value=old_value, new_value=new_value)
     db.commit()
     return billing_settings
 

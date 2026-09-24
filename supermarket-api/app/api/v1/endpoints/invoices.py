@@ -4,10 +4,12 @@ Invoice management endpoints
 from typing import Optional
 from datetime import datetime, date
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.core.database import get_db
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.invoice import Invoice
 from app.models.sale import Sale, SaleItem
 from app.models.tenant import Tenant
@@ -152,6 +154,7 @@ async def get_invoice(
 @router.get("/{invoice_id}/print", response_model=InvoicePrintData)
 async def get_invoice_print_data(
     invoice_id: int,
+    request: Request,
     mark_printed: bool = False,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -232,6 +235,11 @@ async def get_invoice_print_data(
     if mark_printed:
         invoice.printed_count = (invoice.printed_count or 0) + 1
         invoice.last_printed_at = datetime.utcnow()
+        record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_PRINT,
+                     "invoice", invoice.id,
+                     new_value={"invoice_no": invoice.invoice_no,
+                                "printed_count": invoice.printed_count,
+                                "total_amount": invoice.total_amount})
         db.commit()
 
     return InvoicePrintData(
@@ -272,6 +280,7 @@ async def get_invoice_print_data(
 @router.post("/from-sale/{sale_id}", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
 async def create_invoice_from_sale(
     sale_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user: User = Depends(get_current_user)
@@ -288,7 +297,11 @@ async def create_invoice_from_sale(
     if not sale:
         raise HTTPException(status_code=404, detail="Sale not found")
     
+    already_invoiced = db.query(Invoice.id).filter(Invoice.sale_id == sale.id).first() is not None
     invoice = create_invoice_for_sale(db, sale, context.tenant_id)
+    if not already_invoiced:
+        record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                     "invoice", invoice.id, new_value=snapshot(invoice))
     db.commit()
     db.refresh(invoice)
     

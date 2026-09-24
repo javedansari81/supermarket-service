@@ -2,10 +2,12 @@
 User management endpoints
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from app.core.database import get_db
 from app.core.security import get_password_hash
+from app.core.audit import record_audit, snapshot
+from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.role import Role
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, UserListResponse
@@ -90,6 +92,7 @@ async def get_user(
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
     user_data: UserCreate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -123,6 +126,9 @@ async def create_user(
     )
 
     db.add(user)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
+                 "user", user.id, new_value=snapshot(user))
     db.commit()
     db.refresh(user)
 
@@ -133,6 +139,7 @@ async def create_user(
 async def update_user(
     user_id: int,
     user_data: UserUpdate,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -159,9 +166,13 @@ async def update_user(
     if user.id == context.user_id and update_data.get("status", user.status) != "active":
         raise HTTPException(status_code=400, detail="You cannot deactivate your own account")
 
+    old_value = snapshot(user)
     for field, value in update_data.items():
         setattr(user, field, value)
 
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "user", user.id, old_value=old_value, new_value=snapshot(user))
     db.commit()
     db.refresh(user)
 
@@ -172,6 +183,7 @@ async def update_user(
 async def reset_user_password(
     user_id: int,
     password_data: PasswordReset,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -188,6 +200,8 @@ async def reset_user_password(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.password_hash = get_password_hash(password_data.new_password)
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "user", user.id, new_value={"password_reset": True})
     db.commit()
 
     return {"message": "Password reset successfully"}
@@ -196,6 +210,7 @@ async def reset_user_password(
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -214,6 +229,10 @@ async def delete_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    old_value = snapshot(user)
     user.status = "inactive"
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_DELETE,
+                 "user", user.id, old_value=old_value, new_value=snapshot(user))
     db.commit()
 
