@@ -24,7 +24,11 @@ import { useNavigate } from 'react-router-dom';
 
 const DRAWER_WIDTH = 240;
 
-const Header: React.FC = () => {
+interface HeaderProps {
+  pageHeaderSlotRef: (el: HTMLElement | null) => void;
+}
+
+const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef }) => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -55,9 +59,9 @@ const Header: React.FC = () => {
       }}
     >
       <Toolbar>
-        <Box sx={{ flexGrow: 1 }} />
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box ref={pageHeaderSlotRef} sx={{ flexGrow: 1, minWidth: 0, mr: 2 }} />
+
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
           <Box sx={{ textAlign: 'right' }}>
             <Typography variant="body2" fontWeight="bold">
               {user?.full_name || user?.username}

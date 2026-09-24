@@ -10,10 +10,12 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Add, Block, Delete, Edit, Refresh, Visibility } from '@mui/icons-material';
+import { Block, Delete, Edit, Refresh, Visibility } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
+import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, Product, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -215,13 +217,7 @@ const Purchases: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Purchases</Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <IconButton onClick={fetchPurchases}><Refresh /></IconButton>
-          <Button variant="contained" startIcon={<Add />} onClick={() => setDialogOpen(true)}>New Purchase</Button>
-        </Box>
-      </Box>
+      <PageHeader title="Purchases" actions={<IconButton onClick={fetchPurchases}><Refresh /></IconButton>} />
       <Card>
         <DataGrid rows={purchases} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
@@ -229,6 +225,7 @@ const Purchases: React.FC = () => {
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
           pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
       </Card>
+      <PageFab label="New Purchase" onClick={() => setDialogOpen(true)} />
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>New Purchase Entry</DialogTitle>
         <DialogContent>

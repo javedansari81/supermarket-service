@@ -12,6 +12,7 @@ import { Search, Refresh, Print, Visibility } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { Invoice, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -76,10 +77,7 @@ const Invoices: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Invoices</Typography>
-        <IconButton onClick={fetchInvoices}><Refresh /></IconButton>
-      </Box>
+      <PageHeader title="Invoices" actions={<IconButton onClick={fetchInvoices}><Refresh /></IconButton>} />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <TextField placeholder="Search invoice no, customer or mobile..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1, minWidth: 200 }}

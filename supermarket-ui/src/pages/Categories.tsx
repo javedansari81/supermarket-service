@@ -3,14 +3,16 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, Chip,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Add, Edit, Delete, Refresh } from '@mui/icons-material';
+import { Edit, Delete, Refresh } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
+import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
 import { Category, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -97,13 +99,7 @@ const Categories: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Categories</Typography>
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <IconButton onClick={fetchCategories}><Refresh /></IconButton>
-          <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add Category</Button>
-        </Box>
-      </Box>
+      <PageHeader title="Categories" actions={<IconButton onClick={fetchCategories}><Refresh /></IconButton>} />
 
       <Card>
         <DataGrid rows={categories} columns={columns} loading={loading} rowCount={total}
@@ -112,6 +108,7 @@ const Categories: React.FC = () => {
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
           pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
       </Card>
+      <PageFab label="Add Category" onClick={() => handleOpenDialog()} />
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editCategory ? 'Edit Category' : 'Add Category'}</DialogTitle>

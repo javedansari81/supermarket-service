@@ -28,8 +28,9 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 | Area | What it does |
 |------|----------------|
 | Left sidebar | Menu. Shows your store name (tenant) under **SuperMart**. |
-| Top bar | Signed-in name, role (**Administrator** or **Cashier**), and avatar menu. |
+| Top bar | Current page title (with page actions such as refresh on the left), signed-in name, role (**Administrator** or **Cashier**), and avatar menu. |
 | Avatar menu | **Logout** — ends the session and returns to login. |
+| Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Supplier**, **New Purchase**, **Add User**. |
 
 Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see the full menu.
 

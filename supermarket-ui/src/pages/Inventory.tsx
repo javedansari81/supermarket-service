@@ -11,6 +11,7 @@ import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Search, Refresh, Edit } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -124,7 +125,7 @@ const Inventory: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Inventory</Typography>
+      <PageHeader title="Inventory" />
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
         <Tab label="Stock Overview" /><Tab label="Stock Movements" />
       </Tabs>

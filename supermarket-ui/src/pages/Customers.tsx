@@ -12,6 +12,7 @@ import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Search, Refresh, Visibility, Edit, Print } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { Customer, CustomerSale, PaginatedResponse } from '../types';
 import { printReceipt } from '../services/receipt';
@@ -108,9 +109,7 @@ const Customers: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Customers</Typography>
-      </Box>
+      <PageHeader title="Customers" />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <TextField placeholder="Search by mobile or name..." value={search}

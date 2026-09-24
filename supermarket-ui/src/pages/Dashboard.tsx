@@ -40,6 +40,7 @@ import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api';
 import { DashboardData } from '../types';
 import { useAuth } from '../context/AuthContext';
+import PageHeader from '../components/layout/PageHeader';
 
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
@@ -205,6 +206,7 @@ const Dashboard: React.FC = () => {
   if (loading) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+        <PageHeader title="Dashboard" />
         <CircularProgress />
       </Box>
     );
@@ -213,6 +215,7 @@ const Dashboard: React.FC = () => {
   if (!data) {
     return (
       <Box textAlign="center" mt={8}>
+        <PageHeader title="Dashboard" />
         <Typography color="text.secondary" gutterBottom>
           Could not load dashboard data.
         </Typography>
@@ -322,33 +325,29 @@ const Dashboard: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 3 }}>
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Dashboard
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Welcome back, {user?.full_name || user?.username}!
-          </Typography>
-        </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Chip
-            size="small"
-            color={data.scope === 'store' ? 'primary' : 'default'}
-            label={data.scope === 'store' ? 'Store-wide' : 'My sales'}
-          />
-          <Typography variant="caption" color="text.secondary">
-            Updated {data.as_of.slice(11, 16)}
-          </Typography>
-          <Tooltip title="Refresh">
-            <span>
-              <IconButton onClick={fetchDashboard} disabled={refreshing} size="small">
-                <Refresh />
-              </IconButton>
-            </span>
-          </Tooltip>
-        </Box>
-      </Box>
+      <PageHeader
+        title="Dashboard"
+        subtitle={`Welcome back, ${user?.full_name || user?.username}!`}
+        actions={
+          <>
+            <Chip
+              size="small"
+              color={data.scope === 'store' ? 'primary' : 'default'}
+              label={data.scope === 'store' ? 'Store-wide' : 'My sales'}
+            />
+            <Typography variant="caption" color="text.secondary">
+              Updated {data.as_of.slice(11, 16)}
+            </Typography>
+            <Tooltip title="Refresh">
+              <span>
+                <IconButton onClick={fetchDashboard} disabled={refreshing} size="small">
+                  <Refresh />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </>
+        }
+      />
 
       <Grid container spacing={3}>
         {kpis.map((kpi) => (

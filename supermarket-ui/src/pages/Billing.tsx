@@ -42,6 +42,7 @@ import {
 import Grid from '@mui/material/Grid';
 import { Delete, Add, Remove, Print, Search } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 import { printReceipt } from '../services/receipt';
@@ -480,7 +481,7 @@ const Billing: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Billing / POS</Typography>
+      <PageHeader title="Billing / POS" />
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 

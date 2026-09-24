@@ -9,6 +9,7 @@ import {
 import Grid from '@mui/material/Grid';
 import { Save } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { INDIAN_STATES, stateNameFromCode } from '../config/gst';
 import toast from 'react-hot-toast';
@@ -85,7 +86,7 @@ const Settings: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Settings</Typography>
+      <PageHeader title="Settings" />
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
         <Tab label="Store Settings" />
         <Tab label="Billing Settings" />

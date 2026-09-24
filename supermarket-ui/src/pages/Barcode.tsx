@@ -11,6 +11,7 @@ import {
 import Grid from '@mui/material/Grid';
 import { Print, Delete, Add, QrCode } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { Product, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -212,7 +213,7 @@ const Barcode: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Barcode Management</Typography>
+      <PageHeader title="Barcode Management" />
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ mb: 2 }}>

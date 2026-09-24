@@ -10,6 +10,7 @@ import Grid from '@mui/material/Grid';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 
@@ -56,7 +57,7 @@ const Reports: React.FC = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Reports</Typography>
+      <PageHeader title="Reports" />
       <Card sx={{ mb: 3, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
           <DatePicker label="From" value={fromDate} onChange={setFromDate} />

@@ -3,14 +3,16 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, Chip, InputAdornment,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Add, Edit, Delete, Search, Refresh } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
+import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -121,10 +123,7 @@ const Suppliers: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Suppliers</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add Supplier</Button>
-      </Box>
+      <PageHeader title="Suppliers" />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2 }}>
           <TextField placeholder="Search suppliers..." value={search} onChange={(e) => setSearch(e.target.value)}
@@ -139,6 +138,7 @@ const Suppliers: React.FC = () => {
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
           pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
       </Card>
+      <PageFab label="Add Supplier" onClick={() => handleOpenDialog()} />
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editSupplier ? 'Edit Supplier' : 'Add Supplier'}</DialogTitle>
         <DialogContent>

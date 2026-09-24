@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Card, TextField, IconButton, InputAdornment,
+  Box, Card, TextField, IconButton, InputAdornment,
   FormControl, InputLabel, Select, MenuItem, Chip, Tooltip,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -11,6 +11,7 @@ import { Search, Refresh } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -78,10 +79,7 @@ const AuditLogs: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Audit Logs</Typography>
-        <IconButton onClick={fetchLogs}><Refresh /></IconButton>
-      </Box>
+      <PageHeader title="Audit Logs" actions={<IconButton onClick={fetchLogs}><Refresh /></IconButton>} />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <FormControl sx={{ minWidth: 120 }}>

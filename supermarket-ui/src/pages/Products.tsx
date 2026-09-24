@@ -3,15 +3,17 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, ToggleButtonGroup, Divider, Autocomplete,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Add, Edit, Delete, Search, Refresh } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh } from '@mui/icons-material';
 import api from '../services/api';
+import PageHeader from '../components/layout/PageHeader';
+import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
 import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
 import { Product, Category, PaginatedResponse } from '../types';
@@ -174,10 +176,7 @@ const Products: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Products</Typography>
-        <Button variant="contained" startIcon={<Add />} onClick={() => handleOpenDialog()}>Add Product</Button>
-      </Box>
+      <PageHeader title="Products" />
 
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2 }}>
@@ -194,6 +193,7 @@ const Products: React.FC = () => {
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
           pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
       </Card>
+      <PageFab label="Add Product" onClick={() => handleOpenDialog()} />
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
