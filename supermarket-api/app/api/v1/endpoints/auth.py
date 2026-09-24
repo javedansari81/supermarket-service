@@ -27,18 +27,14 @@ async def login(
     """
     OAuth2 compatible token login
     """
-    # Find user by username
-    user = db.query(User).filter(User.username == form_data.username).first()
-    
+    # Usernames are unique per tenant, so match the account whose password verifies
+    candidates = db.query(User).filter(User.username == form_data.username).all()
+    user = next(
+        (u for u in candidates if verify_password(form_data.password, u.password_hash)),
+        None
+    )
+
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # Verify password
-    if not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",

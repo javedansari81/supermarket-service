@@ -2,7 +2,7 @@
 Reports endpoints
 """
 from typing import Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, time, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -18,6 +18,19 @@ from app.api.deps import get_current_admin_user, get_tenant_context, TenantConte
 
 router = APIRouter()
 
+# India Standard Time (no daylight saving)
+IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def ist_day_start_utc(day: date) -> datetime:
+    """Start of an IST calendar day as a naive UTC datetime (how sale_date is stored)"""
+    return datetime.combine(day, time.min, tzinfo=IST).astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def validate_date_range(from_date: date, to_date: date) -> None:
+    if from_date > to_date:
+        raise HTTPException(status_code=400, detail="From date cannot be after to date")
+
 
 @router.get("/dashboard")
 async def get_dashboard(
@@ -27,33 +40,38 @@ async def get_dashboard(
     """
     Get dashboard summary data
     """
-    today = date.today()
-    start_of_month = today.replace(day=1)
-    
+    today = datetime.now(IST).date()
+    today_start = ist_day_start_utc(today)
+    tomorrow_start = ist_day_start_utc(today + timedelta(days=1))
+    month_start = ist_day_start_utc(today.replace(day=1))
+
     # Today's sales
     today_sales = db.query(
         func.coalesce(func.sum(Sale.total_amount), 0)
     ).filter(
         Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) == today,
+        Sale.sale_date >= today_start,
+        Sale.sale_date < tomorrow_start,
         Sale.status == "completed"
     ).scalar()
-    
+
     # Today's transactions count
     today_transactions = db.query(
         func.count(Sale.id)
     ).filter(
         Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) == today,
+        Sale.sale_date >= today_start,
+        Sale.sale_date < tomorrow_start,
         Sale.status == "completed"
     ).scalar()
-    
+
     # Month-to-date sales
     mtd_sales = db.query(
         func.coalesce(func.sum(Sale.total_amount), 0)
     ).filter(
         Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) >= start_of_month,
+        Sale.sale_date >= month_start,
+        Sale.sale_date < tomorrow_start,
         Sale.status == "completed"
     ).scalar()
     
@@ -115,6 +133,7 @@ async def get_sales_summary(
     """
     Get sales summary report (admin only)
     """
+    validate_date_range(from_date, to_date)
     base_query = db.query(Sale).filter(
         Sale.tenant_id == context.tenant_id,
         func.date(Sale.sale_date) >= from_date,
@@ -184,6 +203,7 @@ async def get_top_products(
     """
     Get top selling products (admin only)
     """
+    validate_date_range(from_date, to_date)
     top_products = db.query(
         SaleItem.product_id,
         SaleItem.product_name,
@@ -226,22 +246,27 @@ async def get_category_sales(
     """
     Get sales by category (admin only)
     """
+    validate_date_range(from_date, to_date)
+    product_sales = db.query(
+        SaleItem.product_id,
+        func.sum(SaleItem.line_total).label("total_sales"),
+        func.sum(SaleItem.quantity).label("total_quantity")
+    ).join(Sale).filter(
+        Sale.tenant_id == context.tenant_id,
+        func.date(Sale.sale_date) >= from_date,
+        func.date(Sale.sale_date) <= to_date,
+        Sale.status == "completed"
+    ).group_by(SaleItem.product_id).subquery()
+
     category_sales = db.query(
         Category.id,
         Category.category_name,
-        func.coalesce(func.sum(SaleItem.line_total), 0).label("total_sales"),
-        func.coalesce(func.sum(SaleItem.quantity), 0).label("total_quantity")
+        func.coalesce(func.sum(product_sales.c.total_sales), 0).label("total_sales"),
+        func.coalesce(func.sum(product_sales.c.total_quantity), 0).label("total_quantity")
     ).outerjoin(
         Product, Product.category_id == Category.id
     ).outerjoin(
-        SaleItem, SaleItem.product_id == Product.id
-    ).outerjoin(
-        Sale, and_(
-            Sale.id == SaleItem.sale_id,
-            func.date(Sale.sale_date) >= from_date,
-            func.date(Sale.sale_date) <= to_date,
-            Sale.status == "completed"
-        )
+        product_sales, product_sales.c.product_id == Product.id
     ).filter(
         Category.tenant_id == context.tenant_id,
         Category.status == "active"
@@ -273,6 +298,7 @@ async def get_cashier_performance(
     """
     Get cashier performance report (admin only)
     """
+    validate_date_range(from_date, to_date)
     cashier_data = db.query(
         User.id,
         User.full_name,

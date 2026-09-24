@@ -22,9 +22,9 @@ async def list_tenants(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    List all tenants (admin only)
+    List tenants visible to the admin (own tenant only)
     """
-    query = db.query(Tenant)
+    query = db.query(Tenant).filter(Tenant.id == current_user.tenant_id)
     
     if status:
         query = query.filter(Tenant.status == status)
@@ -67,9 +67,12 @@ async def get_tenant(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    Get tenant by ID (admin only)
+    Get tenant by ID (admin only, own tenant)
     """
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    tenant = db.query(Tenant).filter(
+        Tenant.id == tenant_id,
+        Tenant.id == current_user.tenant_id
+    ).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return TenantResponse.model_validate(tenant)
@@ -105,13 +108,18 @@ async def update_tenant(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    Update a tenant (admin only)
+    Update a tenant (admin only, own tenant)
     """
-    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    tenant = db.query(Tenant).filter(
+        Tenant.id == tenant_id,
+        Tenant.id == current_user.tenant_id
+    ).first()
     if not tenant:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    
+
     update_data = tenant_data.model_dump(exclude_unset=True)
+    if update_data.get("status", tenant.status) != "active":
+        raise HTTPException(status_code=400, detail="You cannot deactivate your own tenant")
     for field, value in update_data.items():
         setattr(tenant, field, value)
     

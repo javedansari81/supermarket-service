@@ -200,7 +200,7 @@ async def list_audit_logs(
 
 
 @router.get("/actions")
-async def get_audit_actions():
+async def get_audit_actions(current_user = Depends(get_current_admin_user)):
     """
     Get list of possible audit actions
     """
@@ -217,7 +217,7 @@ async def get_audit_actions():
 
 
 @router.get("/entity-types")
-async def get_entity_types():
+async def get_entity_types(current_user = Depends(get_current_admin_user)):
     """
     Get list of possible entity types
     """

@@ -32,6 +32,18 @@ def generate_product_no(db: Session, tenant_id: int) -> str:
     return f"P{last_seq + 1:05d}"
 
 
+def ensure_category_in_tenant(db: Session, tenant_id: int, category_id: Optional[int]):
+    """Reject a category that does not belong to the tenant"""
+    if category_id is None:
+        return
+    exists = db.query(Category.id).filter(
+        Category.id == category_id,
+        Category.tenant_id == tenant_id
+    ).first()
+    if not exists:
+        raise HTTPException(status_code=400, detail="Invalid category")
+
+
 def ean13_check_digit(code12: str) -> str:
     """Compute EAN-13 check digit for a 12-digit string"""
     total = sum(int(d) * (3 if i % 2 else 1) for i, d in enumerate(code12))
@@ -182,6 +194,7 @@ async def create_product(
 
     if product_data.is_loose and product_data.unit_type not in LOOSE_UNITS:
         raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
 
     # Check if barcode already exists (if provided)
     if product_data.barcode:
@@ -254,6 +267,8 @@ async def update_product(
     unit_type = update_data.get("unit_type", product.unit_type)
     if is_loose and unit_type not in LOOSE_UNITS:
         raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    if "category_id" in update_data:
+        ensure_category_in_tenant(db, context.tenant_id, update_data["category_id"])
 
     old_value = snapshot(product)
     for field, value in update_data.items():

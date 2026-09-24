@@ -54,8 +54,8 @@ class BarcodeConfigListResponse(BaseModel):
 
 class BarcodePrintRequest(BaseModel):
     """Schema for barcode print request"""
-    product_ids: List[int]
-    copies: int = 1
+    product_ids: List[int] = Field(..., min_length=1)
+    copies: int = Field(1, ge=1, le=500)
     config_id: Optional[int] = None
 
 

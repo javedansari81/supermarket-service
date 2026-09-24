@@ -1,7 +1,7 @@
 """
 Tenant schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, EmailStr
 from app.schemas.base import BaseSchema, TimestampSchema
@@ -29,7 +29,7 @@ class TenantUpdate(BaseModel):
     contact_no: Optional[str] = None
     email: Optional[str] = None
     gst_no: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["active", "inactive"]] = None
 
 
 class TenantResponse(TenantBase, TimestampSchema):

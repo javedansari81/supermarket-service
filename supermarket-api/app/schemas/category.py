@@ -1,7 +1,7 @@
 """
 Category schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from pydantic import BaseModel
 from app.schemas.base import TimestampSchema
 
@@ -21,7 +21,7 @@ class CategoryUpdate(BaseModel):
     """Schema for updating a category"""
     category_name: Optional[str] = None
     description: Optional[str] = None
-    status: Optional[str] = None
+    status: Optional[Literal["active", "inactive"]] = None
 
 
 class CategoryResponse(CategoryBase, TimestampSchema):

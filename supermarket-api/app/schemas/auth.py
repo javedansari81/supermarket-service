@@ -2,7 +2,7 @@
 Authentication schemas
 """
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class Token(BaseModel):
@@ -34,10 +34,10 @@ class LoginRequest(BaseModel):
 class PasswordChange(BaseModel):
     """Password change request"""
     current_password: str
-    new_password: str
+    new_password: str = Field(..., min_length=6)
 
 
 class PasswordReset(BaseModel):
     """Password reset by admin"""
-    new_password: str
+    new_password: str = Field(..., min_length=6)
 

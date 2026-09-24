@@ -4,7 +4,7 @@ Product schemas
 from typing import Optional, List
 from datetime import date
 from decimal import Decimal
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.category import CategoryResponse
 
@@ -12,25 +12,25 @@ from app.schemas.category import CategoryResponse
 class ProductBase(BaseModel):
     """Base product schema"""
     product_no: Optional[str] = None
-    product_name: str
+    product_name: str = Field(..., min_length=1)
     category_id: Optional[int] = None
     brand: Optional[str] = None
     barcode: Optional[str] = None
-    purchase_price: Optional[Decimal] = None
-    mrp: Optional[Decimal] = None
-    selling_price: Optional[Decimal] = None
-    tax_percent: Optional[Decimal] = Decimal("0")
+    purchase_price: Optional[Decimal] = Field(None, ge=0)
+    mrp: Optional[Decimal] = Field(None, ge=0)
+    selling_price: Optional[Decimal] = Field(None, ge=0)
+    tax_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
     unit_type: Optional[str] = "pcs"
     is_loose: bool = False
     hsn_code: Optional[str] = None
-    reorder_level: Optional[Decimal] = Decimal("0")
+    reorder_level: Optional[Decimal] = Field(Decimal("0"), ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None
 
 
 class ProductCreate(ProductBase):
     """Schema for creating a product"""
-    stock_quantity: Optional[Decimal] = Decimal("0")
+    stock_quantity: Optional[Decimal] = Field(Decimal("0"), ge=0)
 
     @model_validator(mode="after")
     def check_price_not_above_mrp(self):
@@ -41,18 +41,18 @@ class ProductCreate(ProductBase):
 
 class ProductUpdate(BaseModel):
     """Schema for updating a product"""
-    product_name: Optional[str] = None
+    product_name: Optional[str] = Field(None, min_length=1)
     category_id: Optional[int] = None
     brand: Optional[str] = None
     barcode: Optional[str] = None
-    purchase_price: Optional[Decimal] = None
-    mrp: Optional[Decimal] = None
-    selling_price: Optional[Decimal] = None
-    tax_percent: Optional[Decimal] = None
+    purchase_price: Optional[Decimal] = Field(None, ge=0)
+    mrp: Optional[Decimal] = Field(None, ge=0)
+    selling_price: Optional[Decimal] = Field(None, ge=0)
+    tax_percent: Optional[Decimal] = Field(None, ge=0, le=100)
     unit_type: Optional[str] = None
     is_loose: Optional[bool] = None
     hsn_code: Optional[str] = None
-    reorder_level: Optional[Decimal] = None
+    reorder_level: Optional[Decimal] = Field(None, ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None
     status: Optional[str] = None

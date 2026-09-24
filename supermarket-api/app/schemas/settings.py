@@ -3,7 +3,7 @@ Settings schemas
 """
 import re
 from typing import Optional, List
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
@@ -106,7 +106,7 @@ class BillingSettings(BaseModel):
     """Schema for billing settings"""
     currency_symbol: Optional[str] = "₹"
     tax_inclusive_pricing: bool = True
-    default_tax_percent: float = 0
+    default_tax_percent: float = Field(0, ge=0, le=100)
     invoice_prefix: Optional[str] = "INV"
     invoice_footer: Optional[str] = "Thank you for shopping!"
 

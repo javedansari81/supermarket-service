@@ -187,7 +187,7 @@ async def create_sale(
             Product.id == item_data.product_id,
             Product.tenant_id == context.tenant_id,
             Product.status == "active"
-        ).first()
+        ).with_for_update().first()
         
         if not product:
             raise HTTPException(status_code=400, detail=f"Product {item_data.product_id} not found")

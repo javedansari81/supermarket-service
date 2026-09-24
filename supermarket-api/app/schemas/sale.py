@@ -1,10 +1,10 @@
 """
 Sale schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.settings import GSTIN_PATTERN, GST_STATE_CODES
 from app.schemas.customer import normalize_mobile
@@ -14,7 +14,7 @@ class SaleItemCreate(BaseModel):
     """Schema for creating a sale item"""
     product_id: int
     quantity: Decimal
-    discount_percent: Optional[Decimal] = Decimal("0")
+    discount_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
 
 
 class SaleItemResponse(BaseModel):
@@ -44,7 +44,7 @@ class SaleItemResponse(BaseModel):
 class SaleCreate(BaseModel):
     """Schema for creating a sale"""
     items: List[SaleItemCreate]
-    payment_mode: Optional[str] = "cash"
+    payment_mode: Literal["cash", "card", "upi"] = "cash"
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     customer_gstin: Optional[str] = None

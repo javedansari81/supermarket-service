@@ -1,7 +1,7 @@
 """
 User schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field, field_validator
 from app.schemas.base import BaseSchema, TimestampSchema
@@ -35,7 +35,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     contact_no: Optional[str] = None
     role_id: Optional[int] = None
-    status: Optional[str] = None
+    status: Optional[Literal["active", "inactive"]] = None
 
 
 class RoleResponse(BaseModel):

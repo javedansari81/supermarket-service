@@ -154,11 +154,11 @@ async def adjust_stock(
     product = db.query(Product).filter(
         Product.id == adjustment.product_id,
         Product.tenant_id == context.tenant_id
-    ).first()
-    
+    ).with_for_update().first()
+
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     # Update stock
     if adjustment.adjustment_type in ["adjustment_in"]:
         product.stock_quantity = (product.stock_quantity or 0) + adjustment.quantity

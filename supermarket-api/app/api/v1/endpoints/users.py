@@ -60,7 +60,10 @@ async def list_users(
 
 
 @router.get("/roles")
-async def list_roles(db: Session = Depends(get_db)):
+async def list_roles(
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_admin_user)
+):
     """
     List all available roles
     """
