@@ -6,11 +6,11 @@ import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, InputAdornment,
-  Chip, ToggleButton, ToggleButtonGroup, Divider, Autocomplete,
+  Chip, ToggleButton, ToggleButtonGroup, Divider, Autocomplete, Typography,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh, Visibility } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -41,6 +41,7 @@ const Products: React.FC = () => {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [gstRef, setGstRef] = useState<GstRateRef | null>(null);
+  const [viewProduct, setViewProduct] = useState<Product | null>(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -166,10 +167,11 @@ const Products: React.FC = () => {
     { field: 'status', headerName: 'Status', width: 90, renderCell: (params: GridRenderCellParams) => (
       <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 100, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: 'Actions', width: 130, sortable: false, renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        <IconButton size="small" title="View" onClick={() => setViewProduct(params.row)}><Visibility fontSize="small" /></IconButton>
+        <IconButton size="small" title="Edit" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
+        <IconButton size="small" title="Delete" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
       </>
     )},
   ];
@@ -305,6 +307,44 @@ const Products: React.FC = () => {
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleSave}>Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!viewProduct} onClose={() => setViewProduct(null)} maxWidth="md" fullWidth>
+        <DialogTitle>{viewProduct?.product_name} ({viewProduct?.product_no})</DialogTitle>
+        <DialogContent>
+          {viewProduct && (
+            <Grid container spacing={2} sx={{ pt: 1 }}>
+              {[
+                ['Product No', viewProduct.product_no],
+                ['Name', viewProduct.product_name],
+                ['Type', viewProduct.is_loose ? 'Loose' : 'Packed'],
+                ['Status', viewProduct.status],
+                ['Brand', viewProduct.brand || '-'],
+                ['Barcode', viewProduct.barcode || '-'],
+                ['Category', viewProduct.category?.category_name ?? viewProduct.category_name ?? '-'],
+                ['HSN Code', viewProduct.hsn_code || '-'],
+                ['MRP', viewProduct.mrp != null ? `₹${Number(viewProduct.mrp).toFixed(2)}` : '-'],
+                ['Selling Price', `₹${Number(viewProduct.selling_price || 0).toFixed(2)}${viewProduct.is_loose ? `/${viewProduct.unit_type}` : ''}`],
+                ['Purchase Price', viewProduct.purchase_price != null ? `₹${Number(viewProduct.purchase_price).toFixed(2)}` : '-'],
+                ['GST %', `${Number(viewProduct.tax_percent ?? 0)}%`],
+                ['Stock', `${Number(viewProduct.stock_quantity || 0)} ${viewProduct.unit_type || ''}`],
+                ['Reorder Level', `${Number(viewProduct.reorder_level ?? 0)} ${viewProduct.unit_type || ''}`],
+                ['Unit', viewProduct.unit_type || '-'],
+                ['Expiry Date', viewProduct.expiry_date || '-'],
+              ].map(([label, value]) => (
+                <Grid key={label} size={{ xs: 6, md: 3 }}>
+                  <Typography variant="caption" color="text.secondary">{label}</Typography>
+                  <Typography>{value}</Typography>
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setViewProduct(null)}>Close</Button>
+          <Button variant="contained" startIcon={<Edit />}
+            onClick={() => { const p = viewProduct; setViewProduct(null); if (p) handleOpenDialog(p); }}>Edit</Button>
         </DialogActions>
       </Dialog>
     </Box>

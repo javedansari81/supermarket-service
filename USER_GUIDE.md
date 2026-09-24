@@ -136,8 +136,9 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 The form also holds category, MRP, selling price, purchase price, tax %, reorder level, unit type, and status. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
 
-### Edit or delete
+### View, edit or delete
 
+- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP, selling price, purchase price, GST %, stock, reorder level, unit and expiry date; click **Edit** to open the edit form
 - Pencil — edit and **Save**
 - Trash — confirm **Delete this product?**
 
