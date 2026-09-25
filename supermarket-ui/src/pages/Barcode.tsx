@@ -13,11 +13,25 @@ import { Print, Delete, Add, QrCode } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
-import { Product, PaginatedResponse } from '../types';
+import { Product, PaginatedResponse, ProductBatch } from '../types';
 import toast from 'react-hot-toast';
 import dayjs from 'dayjs';
 
-interface PrintItem { product_id: number; product_name: string; barcode: string; price: number; quantity: number; }
+interface PrintItem { product_id: number; batch_id?: number; product_name: string; barcode: string; price: number; quantity: number; }
+
+const batchLabel = (b: ProductBatch) => [
+  b.batch_no || `Batch #${b.id}`,
+  b.mrp != null ? `MRP ₹${Number(b.mrp).toFixed(2)}` : null,
+  b.expiry_date ? `Exp ${b.expiry_date}` : null,
+  `Left ${Number(b.quantity_left)}`,
+].filter(Boolean).join(' · ');
+
+const fetchBatches = async (productId: number): Promise<ProductBatch[]> => {
+  try {
+    const response = await api.get<ProductBatch[]>(`${API_ENDPOINTS.PRODUCTS}/${productId}/batches`);
+    return response.data;
+  } catch (error) { console.error('Failed to fetch batches'); return []; }
+};
 
 interface LabelData {
   store_name: string; product_no: string; product_name: string; barcode: string;
@@ -112,19 +126,39 @@ const buildLabelsHtml = (labels: LabelData[], size: string) => {
 const Barcode: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState('');
+  const [printBatches, setPrintBatches] = useState<ProductBatch[]>([]);
+  const [printBatchId, setPrintBatchId] = useState('');
+  const [packedBatches, setPackedBatches] = useState<ProductBatch[]>([]);
   const [printQty, setPrintQty] = useState('1');
   const [printItems, setPrintItems] = useState<PrintItem[]>([]);
   const [labelSize, setLabelSize] = useState('small');
   const [packed, setPacked] = useState({
     product_id: '', net_quantity: '', net_unit: 'g', mrp: '', packed_date: dayjs().format('YYYY-MM-DD'),
-    best_before_date: '', batch_no: '', copies: '1',
+    best_before_date: '', batch_no: '', copies: '1', batch_id: '',
   });
   const setPackedField = (field: keyof typeof packed, value: string) => setPacked((p) => ({ ...p, [field]: value }));
-  const packedProducts = products.filter((p) => p.barcode && !p.is_loose);
+  const packedProducts = products.filter((p) => !p.is_loose);
 
-  const handlePackedProductChange = (productId: string) => {
+  const handlePackedProductChange = async (productId: string) => {
     const product = products.find((p) => p.id === parseInt(productId));
-    setPacked((p) => ({ ...p, product_id: productId, mrp: product?.mrp ? String(product.mrp) : '' }));
+    setPacked((p) => ({ ...p, product_id: productId, batch_id: '', mrp: product?.mrp ? String(product.mrp) : '' }));
+    setPackedBatches(productId ? await fetchBatches(parseInt(productId)) : []);
+  };
+
+  const handlePackedBatchChange = (batchId: string) => {
+    const batch = packedBatches.find((b) => b.id === parseInt(batchId));
+    const product = products.find((p) => p.id === parseInt(packed.product_id));
+    setPacked((p) => ({
+      ...p, batch_id: batchId,
+      mrp: batch?.mrp != null ? String(Number(batch.mrp)) : product?.mrp ? String(product.mrp) : '',
+      best_before_date: batch?.expiry_date || '', batch_no: '',
+    }));
+  };
+
+  const handlePrintProductChange = async (productId: string) => {
+    setSelectedProduct(productId); setPrintBatchId('');
+    const product = products.find(p => p.id === parseInt(productId));
+    setPrintBatches(product && !product.is_loose ? await fetchBatches(product.id) : []);
   };
 
   const handlePrintPacked = async () => {
@@ -137,6 +171,7 @@ const Barcode: React.FC = () => {
     try {
       const response = await api.post<{ labels: PackedLabelData[]; count: number }>(API_ENDPOINTS.BARCODE_PACKED_LABELS, {
         product_id: parseInt(packed.product_id),
+        batch_id: packed.batch_id ? parseInt(packed.batch_id) : undefined,
         net_quantity: netQty,
         net_unit: packed.net_unit,
         mrp: parseFloat(packed.mrp),
@@ -166,20 +201,23 @@ const Barcode: React.FC = () => {
   const handleAddItem = () => {
     if (!selectedProduct) return;
     const product = products.find(p => p.id === parseInt(selectedProduct));
-    if (!product || !product.barcode) { toast.error('Product must have a barcode'); return; }
-    
+    const batch = printBatches.find(b => b.id === parseInt(printBatchId));
+    if (!product || (!batch && !product.barcode)) { toast.error('Product must have a barcode'); return; }
+
     const qty = parseInt(printQty);
     if (!qty || qty < 1) { toast.error('Enter a valid label quantity'); return; }
-    const existingIndex = printItems.findIndex(i => i.product_id === product.id);
+    const existingIndex = printItems.findIndex(i => i.product_id === product.id && i.batch_id === batch?.id);
     if (existingIndex >= 0) {
       setPrintItems(printItems.map((i, idx) => idx === existingIndex ? { ...i, quantity: i.quantity + qty } : i));
     } else {
       setPrintItems([...printItems, {
-        product_id: product.id, product_name: product.product_name,
-        barcode: product.barcode, price: product.selling_price || 0, quantity: qty
+        product_id: product.id, batch_id: batch?.id,
+        product_name: batch ? `${product.product_name} (${batchLabel(batch)})` : product.product_name,
+        barcode: batch ? batch.barcode || 'Batch barcode' : product.barcode!,
+        price: Number(batch ? batch.selling_price ?? batch.mrp ?? 0 : product.selling_price || 0), quantity: qty
       }]);
     }
-    setSelectedProduct(''); setPrintQty('1');
+    setSelectedProduct(''); setPrintQty('1'); setPrintBatchId(''); setPrintBatches([]);
   };
 
   const handleRemoveItem = (index: number) => setPrintItems(printItems.filter((_, i) => i !== index));
@@ -191,13 +229,17 @@ const Barcode: React.FC = () => {
         api.post<{ labels: LabelData[]; count: number }>(API_ENDPOINTS.BARCODE_PRINT, {
           product_ids: [item.product_id],
           copies: item.quantity,
+          batch_id: item.batch_id,
         })
       ));
       const labels = responses.flatMap(r => r.data.labels);
       if (labels.length === 0) { toast.error('No printable labels'); return; }
       printHtml(buildLabelsHtml(labels, labelSize));
       toast.success(`${labels.length} labels ready`);
-    } catch (error) { toast.error('Failed to print barcodes'); }
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to print barcodes');
+    }
   };
 
   const generateBarcode = async (productId: number) => {
@@ -223,13 +265,24 @@ const Barcode: React.FC = () => {
                 <Grid size={{ xs: 12, sm: 6 }}>
                   <FormControl fullWidth>
                     <InputLabel>Select Product</InputLabel>
-                    <Select value={selectedProduct} label="Select Product" onChange={(e) => setSelectedProduct(e.target.value)}>
-                      {products.filter(p => p.barcode).map(p => (
-                        <MenuItem key={p.id} value={p.id}>{p.product_name} - {p.barcode}</MenuItem>
+                    <Select value={selectedProduct} label="Select Product" onChange={(e) => handlePrintProductChange(String(e.target.value))}>
+                      {products.filter(p => p.barcode || !p.is_loose).map(p => (
+                        <MenuItem key={p.id} value={String(p.id)}>{p.product_name}{p.barcode ? ` - ${p.barcode}` : ''}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
                 </Grid>
+                {printBatches.length > 0 && (
+                  <Grid size={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Label For</InputLabel>
+                      <Select value={printBatchId} label="Label For" onChange={(e) => setPrintBatchId(String(e.target.value))}>
+                        <MenuItem value="">Product barcode (current MRP)</MenuItem>
+                        {printBatches.map(b => <MenuItem key={b.id} value={String(b.id)}>Batch barcode: {batchLabel(b)}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                )}
                 <Grid size={{ xs: 6, sm: 3 }}>
                   <TextField fullWidth label="Quantity" type="number" value={printQty} onChange={(e) => setPrintQty(e.target.value)} />
                 </Grid>
@@ -265,10 +318,21 @@ const Barcode: React.FC = () => {
                   <FormControl fullWidth>
                     <InputLabel>Packed Product</InputLabel>
                     <Select value={packed.product_id} label="Packed Product" onChange={(e) => handlePackedProductChange(e.target.value)}>
-                      {packedProducts.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.product_name} - {p.barcode}</MenuItem>)}
+                      {packedProducts.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}{p.barcode ? ` - ${p.barcode}` : ''}</MenuItem>)}
                     </Select>
                   </FormControl>
                 </Grid>
+                {packedBatches.length > 0 && (
+                  <Grid size={12}>
+                    <FormControl fullWidth>
+                      <InputLabel>Batch</InputLabel>
+                      <Select value={packed.batch_id} label="Batch" onChange={(e) => handlePackedBatchChange(String(e.target.value))}>
+                        <MenuItem value="">Product barcode (no batch)</MenuItem>
+                        {packedBatches.map((b) => <MenuItem key={b.id} value={String(b.id)}>{batchLabel(b)}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                )}
                 <Grid size={{ xs: 6, sm: 3 }}>
                   <TextField fullWidth label="Net Quantity" type="number" value={packed.net_quantity}
                     onChange={(e) => setPackedField('net_quantity', e.target.value)} inputProps={{ min: 0, step: 'any' }} />
@@ -283,7 +347,8 @@ const Barcode: React.FC = () => {
                   </FormControl>
                 </Grid>
                 <Grid size={{ xs: 12, sm: 3 }}>
-                  <TextField fullWidth label="MRP (₹)" type="number" value={packed.mrp} onChange={(e) => setPackedField('mrp', e.target.value)} />
+                  <TextField fullWidth label="MRP (₹)" type="number" value={packed.mrp} disabled={!!packed.batch_id}
+                    onChange={(e) => setPackedField('mrp', e.target.value)} />
                 </Grid>
                 <Grid size={{ xs: 12, sm: 3 }}>
                   <TextField fullWidth label="Packed On" type="date" value={packed.packed_date}
@@ -295,7 +360,7 @@ const Barcode: React.FC = () => {
                     inputProps={{ min: packed.packed_date }} />
                 </Grid>
                 <Grid size={{ xs: 6, sm: 3 }}>
-                  <TextField fullWidth label="Batch No (optional)" value={packed.batch_no}
+                  <TextField fullWidth label={packed.batch_id ? 'Batch No (default: batch)' : 'Batch No (optional)'} value={packed.batch_no}
                     onChange={(e) => setPackedField('batch_no', e.target.value)} inputProps={{ maxLength: 30 }} />
                 </Grid>
                 <Grid size={{ xs: 6, sm: 3 }}>

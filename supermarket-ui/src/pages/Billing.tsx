@@ -54,6 +54,7 @@ const MOBILE_REGEX = /^[6-9][0-9]{9}$/;
 
 interface CartItem {
   product_id: number;
+  batch_id?: number;
   product_name: string;
   barcode: string;
   quantity: number;
@@ -79,6 +80,17 @@ interface SearchProduct {
   stock_quantity: number;
   unit_type: string;
   is_loose: boolean;
+  batch_id?: number;
+  batches?: BillingBatch[];
+}
+
+interface BillingBatch {
+  id: number;
+  batch_no?: string;
+  mrp?: number;
+  selling_price: number;
+  expiry_date?: string;
+  quantity_left: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -107,7 +119,18 @@ const normalize = (p: any): SearchProduct => ({
   stock_quantity: Number(p.stock_quantity ?? 0),
   unit_type: p.unit_type || 'pcs',
   is_loose: !!p.is_loose,
+  batch_id: p.batch_id ?? undefined,
+  batches: Array.isArray(p.batches) && !p.is_loose ? p.batches.map((b: any) => ({
+    id: b.id,
+    batch_no: b.batch_no,
+    mrp: b.mrp != null ? Number(b.mrp) : undefined,
+    selling_price: Number(b.selling_price ?? b.mrp ?? p.selling_price ?? 0),
+    expiry_date: b.expiry_date,
+    quantity_left: Number(b.quantity_left ?? 0),
+  })) : undefined,
 });
+
+const distinctMrpCount = (batches: BillingBatch[]) => new Set(batches.map(b => b.mrp ?? null)).size;
 
 const highlightMatch = (text: string, term: string) => {
   const words = term.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -142,6 +165,7 @@ const Billing: React.FC = () => {
   const [weighProduct, setWeighProduct] = useState<SearchProduct | null>(null);
   const [weighMode, setWeighMode] = useState<'qty' | 'amount'>('qty');
   const [weighValue, setWeighValue] = useState('');
+  const [batchPick, setBatchPick] = useState<SearchProduct | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -275,11 +299,20 @@ const Billing: React.FC = () => {
     }
   };
 
-  const selectProduct = (product: SearchProduct) => {
+  const selectProduct = async (product: SearchProduct) => {
     setMatches([]);
     setMatchedTerm('');
     setHighlight(-1);
     setSearchInput('');
+    if (!product.is_loose && !product.batches && product.product_no) {
+      try {
+        const response = await api.get(API_ENDPOINTS.PRODUCT_SEARCH, { params: { product_no: product.product_no } });
+        product = normalize(response.data);
+      } catch (err: any) {
+        toast.error(err.response?.data?.detail || 'Could not load product stock');
+        return;
+      }
+    }
     if (product.selling_price <= 0) {
       toast.error(`${product.product_name} has no selling price set`);
       return;
@@ -290,7 +323,32 @@ const Billing: React.FC = () => {
       setWeighValue('');
       return;
     }
+    const batches = product.batches || [];
+    if (product.batch_id) {
+      const scanned = batches.find(b => b.id === product.batch_id);
+      if (!scanned) {
+        toast.error(`${product.product_name}: this label's batch is out of stock`);
+        return;
+      }
+      addBatchToCart(product, scanned);
+      return;
+    }
+    if (distinctMrpCount(batches) > 1) {
+      setBatchPick(product);
+      return;
+    }
     addToCart(product, 1);
+  };
+
+  const addBatchToCart = (product: SearchProduct, batch: BillingBatch) => {
+    setBatchPick(null);
+    addToCart({
+      ...product,
+      batch_id: batch.id,
+      selling_price: batch.selling_price,
+      mrp: batch.mrp,
+      stock_quantity: batch.quantity_left,
+    }, 1);
   };
 
   const calculateLine = (item: CartItem): CartItem => {
@@ -304,7 +362,7 @@ const Billing: React.FC = () => {
   };
 
   const addToCart = (product: SearchProduct, qty: number, replace = false) => {
-    const existingIndex = cartItems.findIndex(item => item.product_id === product.id);
+    const existingIndex = cartItems.findIndex(item => item.product_id === product.id && item.batch_id === product.batch_id);
     const currentQty = existingIndex >= 0 ? cartItems[existingIndex].quantity : 0;
     const newQty = round3(replace ? qty : currentQty + qty);
 
@@ -320,6 +378,7 @@ const Billing: React.FC = () => {
     } else {
       const newItem = calculateLine({
         product_id: product.id,
+        batch_id: product.batch_id,
         product_name: product.product_name,
         barcode: product.barcode || '',
         quantity: newQty,
@@ -421,6 +480,7 @@ const Billing: React.FC = () => {
       const saleData = {
         items: cartItems.map(item => ({
           product_id: item.product_id,
+          batch_id: item.batch_id,
           quantity: item.quantity,
           discount_percent: item.discount_percent,
         })),
@@ -574,10 +634,12 @@ const Billing: React.FC = () => {
               </TableHead>
               <TableBody>
                 {cartItems.map((item, index) => (
-                  <TableRow key={item.product_id}>
+                  <TableRow key={`${item.product_id}-${item.batch_id ?? ''}`}>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">{item.product_name}</Typography>
-                      <Typography variant="caption" color="text.secondary">{item.barcode}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {item.barcode}{item.batch_id && item.mrp ? ` · MRP ₹${item.mrp.toFixed(2)} batch` : ''}
+                      </Typography>
                     </TableCell>
                     <TableCell align="center">
                       ₹{item.unit_price.toFixed(2)}{item.is_loose ? `/${item.unit_type}` : ''}
@@ -713,6 +775,34 @@ const Billing: React.FC = () => {
           <Button variant="contained" onClick={completeSale} disabled={loading} startIcon={<Print />}>
             {loading ? 'Processing...' : 'Complete & Print'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!batchPick} onClose={() => { setBatchPick(null); searchRef.current?.focus(); }} maxWidth="xs" fullWidth>
+        <DialogTitle>
+          {batchPick?.product_name}
+          <Typography variant="body2" color="text.secondary">
+            In stock at different MRPs. Select the MRP printed on the pack.
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 1 }}>
+          <List dense>
+            {batchPick?.batches?.map((b, i) => (
+              <ListItemButton key={b.id} autoFocus={i === 0} onClick={() => batchPick && addBatchToCart(batchPick, b)}>
+                <ListItemText
+                  primary={`MRP ₹${b.mrp != null ? b.mrp.toFixed(2) : 'N/A'} · Price ₹${b.selling_price.toFixed(2)}`}
+                  secondary={[
+                    `Stock: ${b.quantity_left}`,
+                    b.expiry_date ? `Expiry: ${new Date(b.expiry_date).toLocaleDateString('en-IN')}` : '',
+                    b.batch_no ? `Batch: ${b.batch_no}` : '',
+                  ].filter(Boolean).join(' · ')}
+                />
+              </ListItemButton>
+            ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setBatchPick(null); searchRef.current?.focus(); }}>Cancel</Button>
         </DialogActions>
       </Dialog>
 

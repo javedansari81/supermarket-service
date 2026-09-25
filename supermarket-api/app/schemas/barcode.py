@@ -53,10 +53,18 @@ class BarcodeConfigListResponse(BaseModel):
 
 
 class BarcodePrintRequest(BaseModel):
-    """Schema for barcode print request"""
+    """Schema for barcode print request. With batch_id (single product) the labels carry the
+    batch barcode and the batch's MRP, so a scan identifies the batch."""
     product_ids: List[int] = Field(..., min_length=1)
     copies: int = Field(1, ge=1, le=500)
     config_id: Optional[int] = None
+    batch_id: Optional[int] = None
+
+    @model_validator(mode="after")
+    def check_batch_single_product(self):
+        if self.batch_id and len(self.product_ids) != 1:
+            raise ValueError("A batch label must be for a single product")
+        return self
 
 
 class BarcodeLabelData(BaseModel):
@@ -73,8 +81,10 @@ class BarcodeLabelData(BaseModel):
 
 
 class PackedLabelRequest(BaseModel):
-    """Schema for a packed-goods (Legal Metrology) label print request"""
+    """Schema for a packed-goods (Legal Metrology) label print request. With batch_id the label
+    uses the batch barcode and MRP; batch number and best before default to the batch's."""
     product_id: int
+    batch_id: Optional[int] = None
     net_quantity: Decimal = Field(..., gt=0)
     net_unit: Literal["g", "kg", "ml", "l", "pcs"]
     mrp: Optional[Decimal] = Field(None, gt=0)

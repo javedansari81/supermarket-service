@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
+from app.core.batches import sync_batches
 from app.models.audit_log import AuditLog
+from app.models.product_batch import ProductBatch
 from app.models.sale import Sale, SaleItem
 from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.product import Product
@@ -117,11 +119,16 @@ def build_return_responses(db: Session, returns: List[SaleReturn]) -> List[SaleR
 
 
 def restock(db: Session, context: TenantContext, product: Product, quantity: Decimal,
-            reference_type: str, reference_id: int, remarks: str) -> None:
+            reference_type: str, reference_id: int, remarks: str,
+            batch: Optional[ProductBatch] = None) -> None:
+    """Put stock back, into the batch it was sold from when known"""
     product.stock_quantity = (product.stock_quantity or 0) + quantity
+    if batch:
+        batch.quantity_left = (batch.quantity_left or 0) + quantity
     db.add(StockMovement(
         tenant_id=context.tenant_id,
         product_id=product.id,
+        batch_id=batch.id if batch else None,
         movement_type="return_in",
         quantity=quantity,
         reference_type=reference_type,
@@ -138,6 +145,22 @@ def lock_products(db: Session, tenant_id: int, product_ids) -> Dict[int, Product
         Product.tenant_id == tenant_id, Product.id.in_(set(product_ids))
     ).order_by(Product.id).with_for_update().all()
     return {p.id: p for p in products}
+
+
+def lock_sale_batches(db: Session, sale_items) -> Dict[int, ProductBatch]:
+    batch_ids = sorted({i.batch_id for i in sale_items if i.batch_id})
+    if not batch_ids:
+        return {}
+    batches = db.query(ProductBatch).filter(
+        ProductBatch.id.in_(batch_ids)
+    ).order_by(ProductBatch.id).with_for_update().all()
+    return {b.id: b for b in batches}
+
+
+def sync_restocked(db: Session, products) -> None:
+    """Restocked lines sold before batches existed go to the product's opening batch"""
+    for product in products:
+        sync_batches(db, product)
 
 
 def split_tax(tax: Decimal, is_interstate: bool):
@@ -293,6 +316,7 @@ async def create_return(
 
     already = returned_totals(db, sale.id)
     products = lock_products(db, context.tenant_id, [items_by_id[i].product_id for i in requested_ids])
+    batches = lock_sale_batches(db, [items_by_id[i] for i in requested_ids])
 
     sale_return = SaleReturn(
         tenant_id=context.tenant_id,
@@ -347,6 +371,7 @@ async def create_return(
             return_id=sale_return.id,
             sale_item_id=sale_item.id,
             product_id=sale_item.product_id,
+            batch_id=sale_item.batch_id,
             product_name=sale_item.product_name,
             unit_type=sale_item.unit_type,
             quantity=qty,
@@ -372,7 +397,10 @@ async def create_return(
 
         if item_data.restock and product:
             restock(db, context, product, qty, "sale_return", sale_return.id,
-                    f"Return {sale_return.return_no} against {sale.sale_no}")
+                    f"Return {sale_return.return_no} against {sale.sale_no}",
+                    batches.get(sale_item.batch_id))
+
+    sync_restocked(db, products.values())
 
     sale_return.subtotal = totals["subtotal"]
     sale_return.tax_amount = totals["tax_amount"]
@@ -421,11 +449,13 @@ async def void_sale(
 
     old_value = snapshot(sale)
     products = lock_products(db, context.tenant_id, [i.product_id for i in sale.items])
+    batches = lock_sale_batches(db, sale.items)
     for item in sale.items:
         product = products.get(item.product_id)
         if product:
             restock(db, context, product, item.quantity, "sale_void", sale.id,
-                    f"Void of sale {sale.sale_no}")
+                    f"Void of sale {sale.sale_no}", batches.get(item.batch_id))
+    sync_restocked(db, products.values())
 
     sale.status = "cancelled"
     sale.voided_at = datetime.utcnow()

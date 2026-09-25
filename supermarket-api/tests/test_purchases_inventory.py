@@ -224,3 +224,98 @@ def test_stock_movements(client, product, admin_headers, admin_b_headers):
     assert res.json()["total"] == 1
     assert res.json()["items"][0]["movement_type"] == "adjustment_in"
     assert client.get(f"{INV}/movements", headers=admin_b_headers).json()["total"] == 0
+
+
+# ---------- Batches ----------
+
+def batches_of(client, product, headers, **params):
+    return client.get(f"/api/v1/products/{product.id}/batches", params=params, headers=headers).json()
+
+
+def buy(client, product, headers, qty=10, cost=45, **line):
+    body = {"purchase_date": "2026-09-01",
+            "items": [{"product_id": product.id, "quantity": qty, "unit_cost": cost, **line}]}
+    return client.post(PUR, json=body, headers=headers)
+
+
+def test_purchase_new_mrp_creates_batch(client, product, admin_headers):
+    res = buy(client, product, admin_headers, mrp=65, selling_price=62, expiry_date="2027-03-01")
+    assert res.status_code == 201
+    assert res.json()["items"][0]["batch_id"]
+    batches = batches_of(client, product, admin_headers)
+    assert [(float(b["mrp"]), float(b["quantity_left"])) for b in batches] == [(65, 10), (60, 100)]
+    assert batches[1]["batch_no"] == "OPENING"
+    prod = client.get(f"/api/v1/products/{product.id}", headers=admin_headers).json()
+    assert float(prod["mrp"]) == 65 and float(prod["selling_price"]) == 62
+    assert float(prod["stock_quantity"]) == 110
+
+
+def test_purchase_same_prices_reuses_batch(client, product, admin_headers):
+    first = buy(client, product, admin_headers, mrp=65, selling_price=62).json()
+    second = buy(client, product, admin_headers, qty=5, mrp=65, selling_price=62).json()
+    assert first["items"][0]["batch_id"] == second["items"][0]["batch_id"]
+    batch = next(b for b in batches_of(client, product, admin_headers) if float(b["mrp"]) == 65)
+    assert float(batch["quantity_left"]) == 15 and float(batch["quantity_received"]) == 15
+
+
+def test_purchase_line_price_validation(client, product, admin_headers):
+    assert buy(client, product, admin_headers, mrp=50, selling_price=55).status_code == 422
+    assert buy(client, product, admin_headers, mrp=50).status_code == 201
+
+
+def test_cancel_purchase_empties_batch(client, product, admin_headers):
+    pid = buy(client, product, admin_headers, mrp=65, selling_price=62).json()["id"]
+    assert client.post(f"{PUR}/{pid}/cancel", json={}, headers=admin_headers).status_code == 200
+    batches = batches_of(client, product, admin_headers)
+    assert [float(b["mrp"]) for b in batches] == [60]
+    assert stock_of(client, product, admin_headers) == 100
+
+
+def test_update_purchase_moves_batch_stock(client, product, admin_headers):
+    pid = buy(client, product, admin_headers, mrp=65, selling_price=62).json()["id"]
+    res = client.put(f"{PUR}/{pid}", json={"items": [{"product_id": product.id, "quantity": 4,
+                                                      "unit_cost": 45, "mrp": 65, "selling_price": 62}]},
+                     headers=admin_headers)
+    assert res.status_code == 200
+    batch = next(b for b in batches_of(client, product, admin_headers) if float(b["mrp"]) == 65)
+    assert float(batch["quantity_left"]) == 4
+    assert stock_of(client, product, admin_headers) == 104
+
+
+def test_loose_product_has_no_batches(client, db, product, admin_headers):
+    product.is_loose = True
+    product.unit_type = "kg"
+    db.commit()
+    assert buy(client, product, admin_headers, mrp=70, selling_price=65).status_code == 201
+    assert batches_of(client, product, admin_headers) == []
+    assert stock_of(client, product, admin_headers) == 110
+
+
+def test_adjust_stock_by_batch(client, product, admin_headers):
+    buy(client, product, admin_headers, mrp=65, selling_price=62)
+    opening, new_batch = batches_of(client, product, admin_headers)
+    assert float(opening["mrp"]) == 60 and float(new_batch["mrp"]) == 65
+    body = {"product_id": product.id, "batch_id": new_batch["id"], "adjustment_type": "damage_out", "quantity": 3}
+    res = client.post(f"{INV}/adjust", json=body, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["new_stock"] == 107
+    assert client.post(f"{INV}/adjust", json={**body, "quantity": 8}, headers=admin_headers).status_code == 400
+    body = {"product_id": product.id, "adjustment_type": "adjustment_out", "quantity": 9}
+    assert client.post(f"{INV}/adjust", json=body, headers=admin_headers).json()["new_stock"] == 98
+    left = {b["id"]: float(b["quantity_left"]) for b in batches_of(client, product, admin_headers)}
+    assert left == {opening["id"]: 91, new_batch["id"]: 7}
+    body = {"product_id": product.id, "batch_id": 99999, "adjustment_type": "adjustment_in", "quantity": 1}
+    assert client.post(f"{INV}/adjust", json=body, headers=admin_headers).status_code == 400
+
+
+def test_update_batch(client, product, admin_headers, cashier_headers, admin_b_headers):
+    buy(client, product, admin_headers, mrp=65, selling_price=62)
+    batch = next(b for b in batches_of(client, product, admin_headers) if float(b["mrp"]) == 65)
+    url = f"/api/v1/products/{product.id}/batches/{batch['id']}"
+    res = client.put(url, json={"expiry_date": "2027-01-31", "batch_no": "B7"}, headers=admin_headers)
+    assert res.status_code == 200
+    assert res.json()["expiry_date"] == "2027-01-31" and res.json()["batch_no"] == "B7"
+    assert client.put(url, json={"selling_price": 70}, headers=admin_headers).status_code == 400
+    assert client.put(url, json={"batch_no": "X"}, headers=cashier_headers).status_code == 403
+    assert client.put(url, json={"batch_no": "X"}, headers=admin_b_headers).status_code == 404
+    other = f"/api/v1/products/{product.id}/batches/99999"
+    assert client.put(other, json={"batch_no": "X"}, headers=admin_headers).status_code == 400

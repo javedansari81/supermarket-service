@@ -4,15 +4,26 @@ Purchase schemas
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel, Field, computed_field, model_validator
 from app.schemas.base import TimestampSchema
 
 
 class PurchaseItemCreate(BaseModel):
-    """Schema for creating a purchase item"""
+    """Schema for creating a purchase item. MRP / selling price default to the product's current
+    prices; for packed items they decide which stock batch the quantity goes into."""
     product_id: int
     quantity: Decimal = Field(..., gt=0, max_digits=12, decimal_places=3)
     unit_cost: Decimal = Field(..., ge=0, max_digits=10, decimal_places=2)
+    mrp: Optional[Decimal] = Field(None, ge=0)
+    selling_price: Optional[Decimal] = Field(None, ge=0)
+    expiry_date: Optional[date] = None
+    batch_no: Optional[str] = Field(None, max_length=50)
+
+    @model_validator(mode="after")
+    def check_price_not_above_mrp(self):
+        if self.mrp is not None and self.selling_price is not None and self.selling_price > self.mrp:
+            raise ValueError("Selling price cannot be greater than MRP")
+        return self
 
 
 class PurchaseItemResponse(BaseModel):
@@ -23,7 +34,12 @@ class PurchaseItemResponse(BaseModel):
     quantity: Decimal
     unit_cost: Decimal
     total_cost: Decimal
-    
+    batch_id: Optional[int] = None
+    batch_no: Optional[str] = None
+    mrp: Optional[Decimal] = None
+    selling_price: Optional[Decimal] = None
+    expiry_date: Optional[date] = None
+
     model_config = {"from_attributes": True}
 
 

@@ -128,6 +128,21 @@ export interface Product {
   locations?: ProductLocation[];
 }
 
+// Stock batch of a packed product (one per MRP / price / expiry)
+export interface ProductBatch {
+  id: number;
+  product_id: number;
+  batch_no?: string;
+  barcode?: string;
+  mrp?: number | string;
+  selling_price?: number | string;
+  purchase_price?: number | string;
+  expiry_date?: string;
+  quantity_received: number | string;
+  quantity_left: number | string;
+  purchase_id?: number;
+}
+
 // Supplier types
 export interface Supplier {
   id: number;
@@ -170,6 +185,8 @@ export interface CustomerSale {
 // Sale types
 export interface SaleItem {
   product_id: number;
+  batch_id?: number;
+  mrp?: number;
   product_name?: string;
   barcode?: string;
   quantity: number;

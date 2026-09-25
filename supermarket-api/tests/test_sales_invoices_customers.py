@@ -277,3 +277,86 @@ def test_reports_customers_and_audit_use_net_sales(client, product, cashier_head
     logs = client.get("/api/v1/audit", params={"entity_type": "sale", "entity_id": voided["id"]},
                       headers=admin_headers).json()["items"]
     assert any(log["summary"].startswith("Voided") for log in logs)
+
+
+# ---------- Batches ----------
+
+def buy_batch(client, product, headers, qty=10, **line):
+    body = {"purchase_date": "2026-09-01",
+            "items": [{"product_id": product.id, "quantity": qty, "unit_cost": 45, **line}]}
+    return client.post("/api/v1/purchases", json=body, headers=headers).json()["items"][0]["batch_id"]
+
+
+def batch_left(client, product, headers):
+    batches = client.get(f"/api/v1/products/{product.id}/batches", params={"in_stock": False},
+                         headers=headers).json()
+    return {b["id"]: float(b["quantity_left"]) for b in batches}
+
+
+def test_sale_with_different_mrps_needs_batch(client, product, admin_headers, cashier_headers):
+    new_id = buy_batch(client, product, admin_headers, mrp=65, selling_price=62)
+    res = sell(client, product, cashier_headers)
+    assert res.status_code == 409
+    assert "different MRPs" in res.json()["detail"]
+
+    body = {"items": [{"product_id": product.id, "quantity": 2, "batch_id": new_id}]}
+    res = client.post(SALES, json=body, headers=cashier_headers)
+    assert res.status_code == 201
+    item = res.json()["items"][0]
+    assert item["batch_id"] == new_id
+    assert float(item["mrp"]) == 65 and float(item["unit_price"]) == 62
+    assert batch_left(client, product, cashier_headers)[new_id] == 8
+    assert stock_of(client, product, cashier_headers) == 108
+
+    body["items"][0]["quantity"] = 9
+    assert client.post(SALES, json=body, headers=cashier_headers).status_code == 400
+
+
+def test_sale_same_mrp_takes_first_expiry_first(client, product, admin_headers, cashier_headers):
+    early = buy_batch(client, product, admin_headers, qty=5, mrp=60, selling_price=55,
+                      expiry_date="2026-10-15")
+    res = sell(client, product, cashier_headers, qty=7)
+    assert res.status_code == 201
+    items = res.json()["items"]
+    assert [(i["batch_id"], float(i["quantity"])) for i in items][0] == (early, 5)
+    assert sum(float(i["quantity"]) for i in items) == 7
+    assert float(res.json()["total_amount"]) == 385
+    left = batch_left(client, product, cashier_headers)
+    assert left[early] == 0 and sum(left.values()) == 98
+
+
+def test_return_and_void_restock_the_sold_batch(client, product, admin_headers, cashier_headers):
+    new_id = buy_batch(client, product, admin_headers, mrp=65, selling_price=62)
+    body = {"items": [{"product_id": product.id, "quantity": 3, "batch_id": new_id}]}
+    sale = client.post(SALES, json=body, headers=cashier_headers).json()
+    assert return_items(client, sale, cashier_headers).status_code == 201
+    assert batch_left(client, product, cashier_headers)[new_id] == 8
+    res = client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Mistake"}, headers=admin_headers)
+    assert res.status_code == 400  # partly returned sales cannot be voided
+
+    sale = client.post(SALES, json=body, headers=cashier_headers).json()
+    assert batch_left(client, product, cashier_headers)[new_id] == 5
+    res = client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Mistake"}, headers=cashier_headers)
+    assert res.status_code == 200
+    assert batch_left(client, product, cashier_headers)[new_id] == 8
+    assert stock_of(client, product, cashier_headers) == 108
+
+
+def test_scan_batch_barcode_identifies_batch(client, product, admin_headers, cashier_headers):
+    new_id = buy_batch(client, product, admin_headers, mrp=65, selling_price=62)
+    res = client.get("/api/v1/products/search", params={"barcode": product.barcode}, headers=cashier_headers)
+    assert res.status_code == 200
+    assert res.json()["batch_id"] is None and len(res.json()["batches"]) == 2
+
+    labels = client.post("/api/v1/barcode/print", json={"product_ids": [product.id], "batch_id": new_id},
+                         headers=cashier_headers).json()["labels"]
+    code = labels[0]["barcode"]
+    assert code.startswith("29") and len(code) == 13 and code != product.barcode
+    assert float(labels[0]["mrp"].replace("₹", "")) == 65
+
+    res = client.get("/api/v1/products/search", params={"barcode": code}, headers=cashier_headers)
+    assert res.status_code == 200
+    assert res.json()["batch_id"] == new_id
+    assert float(res.json()["mrp"]) == 65 and float(res.json()["selling_price"]) == 62
+    assert client.post("/api/v1/barcode/print", json={"product_ids": [product.id, 99999], "batch_id": new_id},
+                       headers=cashier_headers).status_code == 422

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
+from app.core.batches import sync_batches, uses_batches, distinct_mrps, allocate, get_product_batch
 from app.models.audit_log import AuditLog
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product
@@ -46,6 +47,33 @@ def get_setting(db: Session, tenant_id: int, key: str, default: str = "") -> str
         TenantSetting.setting_key == key
     ).first()
     return setting.setting_value if setting else default
+
+
+def pick_batches(db: Session, product: Product, item_data):
+    """[(batch, quantity)] a sale line is taken from; [(None, quantity)] for loose items.
+    A chosen batch must cover the quantity; otherwise stock is taken first expiry first,
+    which needs every in-stock batch to have the same MRP."""
+    if not uses_batches(product):
+        return [(None, item_data.quantity)]
+    batches = sync_batches(db, product)
+    if item_data.batch_id:
+        batch = get_product_batch(db, product, item_data.batch_id)
+        if batch.quantity_left < item_data.quantity:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient stock for {product.product_name} (MRP {batch.mrp}): "
+                       f"only {batch.quantity_left.normalize():f} left in this batch"
+            )
+        return [(batch, item_data.quantity)]
+    if len(distinct_mrps(batches)) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail=f"{product.product_name} is in stock at different MRPs; select the MRP batch"
+        )
+    try:
+        return allocate(batches, item_data.quantity)
+    except HTTPException:
+        raise HTTPException(status_code=400, detail=f"Insufficient stock for {product.product_name}")
 
 
 def to_sale_response(sale: Sale) -> SaleResponse:
@@ -203,80 +231,93 @@ async def create_sale(
         # Check stock
         if (product.stock_quantity or 0) < item_data.quantity:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Insufficient stock for {product.product_name}"
             )
-        
-        unit_price = product.selling_price or product.mrp or Decimal("0")
+
         tax_percent = product.tax_percent or Decimal("0")
         discount_percent = item_data.discount_percent or Decimal("0")
-        
-        # Calculate amounts
-        cents = Decimal("0.01")
-        line_gross = (unit_price * item_data.quantity).quantize(cents)
-        discount_amount = (line_gross * discount_percent / 100).quantize(cents)
-        net_amount = line_gross - discount_amount
-        if tax_inclusive:
-            tax_amount = (net_amount * tax_percent / (100 + tax_percent)).quantize(cents)
-            line_total = net_amount
-        else:
-            tax_amount = (net_amount * tax_percent / 100).quantize(cents)
-            line_total = net_amount + tax_amount
 
-        if is_interstate:
-            cgst_amount = sgst_amount = Decimal("0")
-            igst_amount = tax_amount
-        else:
-            cgst_amount = (tax_amount / 2).quantize(cents)
-            sgst_amount = tax_amount - cgst_amount
-            igst_amount = Decimal("0")
+        # One sale line per batch the quantity is taken from
+        for batch, quantity in pick_batches(db, product, item_data):
+            if batch:
+                unit_price = batch.selling_price or batch.mrp or product.selling_price \
+                    or product.mrp or Decimal("0")
+                mrp = batch.mrp
+            else:
+                unit_price = product.selling_price or product.mrp or Decimal("0")
+                mrp = product.mrp
 
-        # Create sale item
-        sale_item = SaleItem(
-            sale_id=sale.id,
-            product_id=product.id,
-            product_name=product.product_name,
-            barcode=product.barcode,
-            hsn_code=product.hsn_code,
-            unit_type=product.unit_type,
-            mrp=product.mrp,
-            quantity=item_data.quantity,
-            unit_price=unit_price,
-            taxable_value=line_total - tax_amount,
-            tax_percent=tax_percent,
-            tax_amount=tax_amount,
-            cgst_amount=cgst_amount,
-            sgst_amount=sgst_amount,
-            igst_amount=igst_amount,
-            discount_percent=discount_percent,
-            discount_amount=discount_amount,
-            line_total=line_total
-        )
-        db.add(sale_item)
-        sale_items.append(sale_item)
+            # Calculate amounts
+            cents = Decimal("0.01")
+            line_gross = (unit_price * quantity).quantize(cents)
+            discount_amount = (line_gross * discount_percent / 100).quantize(cents)
+            net_amount = line_gross - discount_amount
+            if tax_inclusive:
+                tax_amount = (net_amount * tax_percent / (100 + tax_percent)).quantize(cents)
+                line_total = net_amount
+            else:
+                tax_amount = (net_amount * tax_percent / 100).quantize(cents)
+                line_total = net_amount + tax_amount
 
-        # Update totals (subtotal excludes tax, before discount)
-        subtotal += line_total - tax_amount + discount_amount
-        total_tax += tax_amount
-        total_discount += discount_amount
-        total_cgst += cgst_amount
-        total_sgst += sgst_amount
-        total_igst += igst_amount
+            if is_interstate:
+                cgst_amount = sgst_amount = Decimal("0")
+                igst_amount = tax_amount
+            else:
+                cgst_amount = (tax_amount / 2).quantize(cents)
+                sgst_amount = tax_amount - cgst_amount
+                igst_amount = Decimal("0")
 
-        # Deduct stock
-        product.stock_quantity = (product.stock_quantity or 0) - item_data.quantity
-        
-        # Create stock movement
-        movement = StockMovement(
-            tenant_id=context.tenant_id,
-            product_id=product.id,
-            movement_type="sale_out",
-            quantity=item_data.quantity,
-            reference_type="sale",
-            reference_id=sale.id,
-            created_by=context.user_id
-        )
-        db.add(movement)
+            # Create sale item
+            sale_item = SaleItem(
+                sale_id=sale.id,
+                product_id=product.id,
+                batch_id=batch.id if batch else None,
+                product_name=product.product_name,
+                barcode=product.barcode,
+                hsn_code=product.hsn_code,
+                unit_type=product.unit_type,
+                mrp=mrp,
+                quantity=quantity,
+                unit_price=unit_price,
+                taxable_value=line_total - tax_amount,
+                tax_percent=tax_percent,
+                tax_amount=tax_amount,
+                cgst_amount=cgst_amount,
+                sgst_amount=sgst_amount,
+                igst_amount=igst_amount,
+                discount_percent=discount_percent,
+                discount_amount=discount_amount,
+                line_total=line_total
+            )
+            db.add(sale_item)
+            sale_items.append(sale_item)
+
+            # Update totals (subtotal excludes tax, before discount)
+            subtotal += line_total - tax_amount + discount_amount
+            total_tax += tax_amount
+            total_discount += discount_amount
+            total_cgst += cgst_amount
+            total_sgst += sgst_amount
+            total_igst += igst_amount
+
+            # Deduct stock
+            product.stock_quantity = (product.stock_quantity or 0) - quantity
+            if batch:
+                batch.quantity_left -= quantity
+
+            # Create stock movement
+            movement = StockMovement(
+                tenant_id=context.tenant_id,
+                product_id=product.id,
+                batch_id=batch.id if batch else None,
+                movement_type="sale_out",
+                quantity=quantity,
+                reference_type="sale",
+                reference_id=sale.id,
+                created_by=context.user_id
+            )
+            db.add(movement)
     
     # Update sale totals
     sale.subtotal = subtotal

@@ -13,9 +13,11 @@ from app.core import storage
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
+from app.core.batches import match_or_create_batch, sync_batches, uses_batches
 from app.models.audit_log import AuditLog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.product import Product
+from app.models.product_batch import ProductBatch
 from app.models.supplier import Supplier
 from app.models.stock_movement import StockMovement
 from app.models.store_location import ProductLocation
@@ -43,6 +45,74 @@ def generate_purchase_no(db: Session, tenant_id: int) -> str:
 def purchase_snapshot(purchase: Purchase) -> dict:
     """Purchase header with its line items for audit logging"""
     return {**snapshot(purchase), "items": [snapshot(item) for item in purchase.items]}
+
+
+def line_prices(product: Product, item_data):
+    """MRP / selling price of a purchase line, defaulting to the product's current prices"""
+    mrp = item_data.mrp if item_data.mrp is not None else product.mrp
+    selling_price = item_data.selling_price
+    if selling_price is None:
+        selling_price = product.selling_price
+        if selling_price is None or (mrp is not None and selling_price > mrp):
+            selling_price = mrp
+    if mrp is not None and selling_price is not None and selling_price > mrp:
+        raise HTTPException(status_code=400,
+                            detail=f"{product.product_name}: selling price cannot be greater than MRP")
+    return mrp, selling_price
+
+
+def receive_line(db: Session, product: Product, item_data, purchase: Purchase,
+                 candidates: Optional[List[ProductBatch]] = None) -> PurchaseItem:
+    """Add a purchase line's quantity to stock. Packed items go into the batch with the same
+    MRP / price / expiry (or a new one); the product keeps the latest prices."""
+    mrp, selling_price = line_prices(product, item_data)
+    batch = None
+    if uses_batches(product):
+        batch = match_or_create_batch(
+            db, product, mrp=mrp, selling_price=selling_price, purchase_price=item_data.unit_cost,
+            expiry_date=item_data.expiry_date, batch_no=item_data.batch_no,
+            purchase_id=purchase.id, candidates=candidates
+        )
+        batch.quantity_received = (batch.quantity_received or 0) + item_data.quantity
+        batch.quantity_left = (batch.quantity_left or 0) + item_data.quantity
+    product.stock_quantity = (product.stock_quantity or 0) + item_data.quantity
+    product.purchase_price = item_data.unit_cost
+    product.mrp, product.selling_price = mrp, selling_price
+    return PurchaseItem(
+        product_id=product.id,
+        quantity=item_data.quantity,
+        unit_cost=item_data.unit_cost,
+        total_cost=item_data.quantity * item_data.unit_cost,
+        batch_id=batch.id if batch else None,
+        batch_no=item_data.batch_no,
+        mrp=mrp,
+        selling_price=selling_price,
+        expiry_date=item_data.expiry_date
+    )
+
+
+def lock_purchase_products(db: Session, product_ids, tenant_id: int) -> dict:
+    """Lock the products and reconcile their batches with product stock"""
+    products = {}
+    for product_id in sorted(set(product_ids)):
+        product = db.query(Product).filter(
+            Product.id == product_id,
+            Product.tenant_id == tenant_id
+        ).with_for_update().first()
+        if not product:
+            raise HTTPException(status_code=400, detail=f"Product {product_id} not found")
+        sync_batches(db, product)
+        products[product_id] = product
+    return products
+
+
+def lock_item_batches(db: Session, items) -> dict:
+    batch_ids = sorted({item.batch_id for item in items if item.batch_id})
+    if not batch_ids:
+        return {}
+    return {b.id: b for b in db.query(ProductBatch).filter(
+        ProductBatch.id.in_(batch_ids)
+    ).order_by(ProductBatch.id).with_for_update().all()}
 
 
 @router.get("", response_model=PurchaseListResponse)
@@ -192,38 +262,20 @@ async def create_purchase(
     )
     db.add(purchase)
     db.flush()
-    
+
+    products = lock_purchase_products(db, [i.product_id for i in purchase_data.items], context.tenant_id)
+
     # Add purchase items and update stock
     for item_data in purchase_data.items:
-        product = db.query(Product).filter(
-            Product.id == item_data.product_id,
-            Product.tenant_id == context.tenant_id
-        ).first()
-        
-        if not product:
-            raise HTTPException(status_code=400, detail=f"Product {item_data.product_id} not found")
-        
-        item_total = item_data.quantity * item_data.unit_cost
-        total_amount += item_total
-        
-        # Create purchase item
-        purchase_item = PurchaseItem(
-            purchase_id=purchase.id,
-            product_id=item_data.product_id,
-            quantity=item_data.quantity,
-            unit_cost=item_data.unit_cost,
-            total_cost=item_total
-        )
-        db.add(purchase_item)
-        
-        # Update product stock
-        product.stock_quantity = (product.stock_quantity or 0) + item_data.quantity
-        product.purchase_price = item_data.unit_cost
-        
+        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase)
+        total_amount += purchase_item.total_cost
+        purchase.items.append(purchase_item)
+
         # Create stock movement
         stock_movement = StockMovement(
             tenant_id=context.tenant_id,
             product_id=item_data.product_id,
+            batch_id=purchase_item.batch_id,
             movement_type="purchase_in",
             quantity=item_data.quantity,
             reference_type="purchase",
@@ -256,41 +308,57 @@ def get_tenant_purchase(db: Session, purchase_id: int, tenant_id: int) -> Purcha
     return purchase
 
 
-def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: TenantContext) -> None:
-    """Replace purchase lines and post stock differences as adjustment movements"""
-    old_qty: dict = {}
-    for item in purchase.items:
-        old_qty[item.product_id] = old_qty.get(item.product_id, Decimal("0")) + item.quantity
-    new_qty: dict = {}
-    for item in new_items:
-        new_qty[item.product_id] = new_qty.get(item.product_id, Decimal("0")) + item.quantity
+def reverse_line(product: Product, item: PurchaseItem, batch: Optional[ProductBatch]) -> None:
+    """Take a purchase line's quantity back out of stock (and out of its batch)"""
+    current_stock = product.stock_quantity or Decimal("0")
+    available = min(current_stock, batch.quantity_left) if batch else current_stock
+    if available < item.quantity:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reduce {product.product_name} by {item.quantity}: only {available} "
+                   f"in stock (some may already be sold)"
+        )
+    product.stock_quantity = current_stock - item.quantity
+    if batch:
+        batch.quantity_left -= item.quantity
+        batch.quantity_received = max((batch.quantity_received or 0) - item.quantity, Decimal("0"))
 
-    products = {}
-    for product_id in sorted(set(old_qty) | set(new_qty)):
-        product = db.query(Product).filter(
-            Product.id == product_id,
-            Product.tenant_id == context.tenant_id
-        ).with_for_update().first()
-        if not product:
-            raise HTTPException(status_code=400, detail=f"Product {product_id} not found")
-        products[product_id] = product
+
+def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: TenantContext) -> None:
+    """Replace purchase lines and post stock differences per batch as adjustment movements"""
+    old_items = list(purchase.items)
+    products = lock_purchase_products(
+        db, [i.product_id for i in old_items] + [i.product_id for i in new_items], context.tenant_id
+    )
+    old_batches = lock_item_batches(db, old_items)
+
+    deltas: dict = {}
+    purchase.items.clear()
+    total_amount = Decimal("0")
+    for item_data in new_items:
+        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase,
+                                     candidates=list(old_batches.values()))
+        total_amount += purchase_item.total_cost
+        purchase.items.append(purchase_item)
+        key = (item_data.product_id, purchase_item.batch_id)
+        deltas[key] = deltas.get(key, Decimal("0")) + item_data.quantity
+
+    for item in old_items:
+        reverse_line(products[item.product_id], item, old_batches.get(item.batch_id))
+        key = (item.product_id, item.batch_id)
+        deltas[key] = deltas.get(key, Decimal("0")) - item.quantity
+
+    for product in products.values():
+        sync_batches(db, product)
 
     remarks = f"Edited purchase {purchase.purchase_no}"
-    for product_id, product in products.items():
-        delta = new_qty.get(product_id, Decimal("0")) - old_qty.get(product_id, Decimal("0"))
+    for (product_id, batch_id), delta in deltas.items():
         if delta == 0:
             continue
-        current_stock = product.stock_quantity or Decimal("0")
-        if current_stock + delta < 0:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot reduce {product.product_name} by {-delta}: only {current_stock} "
-                       f"in stock (some may already be sold)"
-            )
-        product.stock_quantity = current_stock + delta
         db.add(StockMovement(
             tenant_id=context.tenant_id,
             product_id=product_id,
+            batch_id=batch_id,
             movement_type="adjustment_in" if delta > 0 else "adjustment_out",
             quantity=abs(delta),
             reference_type="purchase",
@@ -298,19 +366,6 @@ def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: 
             remarks=remarks,
             created_by=context.user_id
         ))
-
-    purchase.items.clear()
-    total_amount = Decimal("0")
-    for item in new_items:
-        item_total = item.quantity * item.unit_cost
-        total_amount += item_total
-        purchase.items.append(PurchaseItem(
-            product_id=item.product_id,
-            quantity=item.quantity,
-            unit_cost=item.unit_cost,
-            total_cost=item_total
-        ))
-        products[item.product_id].purchase_price = item.unit_cost
     purchase.total_amount = total_amount
 
 
@@ -380,23 +435,25 @@ async def cancel_purchase(
     reason = (cancel_data.reason or "").strip()
     remarks = f"Cancelled purchase {purchase.purchase_no}" + (f": {reason}" if reason else "")
 
+    products = lock_purchase_products(db, [i.product_id for i in purchase.items], context.tenant_id)
+    batches = lock_item_batches(db, purchase.items)
     for item in purchase.items:
-        product = db.query(Product).filter(
-            Product.id == item.product_id,
-            Product.tenant_id == context.tenant_id
-        ).with_for_update().first()
+        product = products[item.product_id]
+        batch = batches.get(item.batch_id)
         current_stock = product.stock_quantity or 0
-        if current_stock < item.quantity:
+        available = min(current_stock, batch.quantity_left) if batch else current_stock
+        if available < item.quantity:
             db.rollback()
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot cancel: {product.product_name} has only {current_stock} in stock "
+                detail=f"Cannot cancel: {product.product_name} has only {available} in stock "
                        f"but this purchase added {item.quantity} (some may already be sold)"
             )
-        product.stock_quantity = current_stock - item.quantity
+        reverse_line(product, item, batch)
         db.add(StockMovement(
             tenant_id=context.tenant_id,
             product_id=item.product_id,
+            batch_id=item.batch_id,
             movement_type="adjustment_out",
             quantity=item.quantity,
             reference_type="purchase",
@@ -404,6 +461,8 @@ async def cancel_purchase(
             remarks=remarks,
             created_by=context.user_id
         ))
+    for product in products.values():
+        sync_batches(db, product)
 
     purchase.status = "cancelled"
     if reason:

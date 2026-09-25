@@ -20,8 +20,13 @@ import { API_ENDPOINTS } from '../config/api';
 import { Supplier, Product, PaginatedResponse, PutawayItem } from '../types';
 import toast from 'react-hot-toast';
 
-interface PurchaseItem { product_id: number; product_name: string; quantity: number; unit_price: number; }
-interface PurchaseLine { id: number; product_id: number; product_name: string | null; quantity: number | string; unit_cost: number | string; total_cost: number | string; }
+interface BatchFields { mrp: string; selling_price: string; expiry_date: string; batch_no: string; }
+interface PurchaseItem extends BatchFields { product_id: number; product_name: string; quantity: number; unit_price: number; }
+interface EditItem extends BatchFields { product_id: number; product_name: string; quantity: string; unit_price: string; }
+interface PurchaseLine {
+  id: number; product_id: number; product_name: string | null; quantity: number | string; unit_cost: number | string; total_cost: number | string;
+  batch_id?: number | null; batch_no?: string | null; mrp?: number | string | null; selling_price?: number | string | null; expiry_date?: string | null;
+}
 interface Purchase {
   id: number; purchase_no: string; purchase_date: string; supplier_id: number | null; supplier_name: string | null;
   supplier_invoice_no?: string | null; remarks?: string | null; total_amount: number | string; status: string; items: PurchaseLine[];
@@ -30,6 +35,29 @@ interface Purchase {
 interface PurchaseBillUrl { url: string; file_name: string; content_type: string; expires_in: number; }
 
 const money = (v: number | string) => `₹${Number(v || 0).toFixed(2)}`;
+
+const EMPTY_BATCH: BatchFields = { mrp: '', selling_price: '', expiry_date: '', batch_no: '' };
+
+const productBatchDefaults = (product?: Product): BatchFields => ({
+  ...EMPTY_BATCH,
+  mrp: product?.mrp != null ? String(Number(product.mrp)) : '',
+  selling_price: product?.selling_price != null ? String(Number(product.selling_price)) : '',
+});
+
+const batchFieldsError = (b: BatchFields): string | null => {
+  const mrp = b.mrp === '' ? null : parseFloat(b.mrp);
+  const sp = b.selling_price === '' ? null : parseFloat(b.selling_price);
+  if ((mrp !== null && !(mrp >= 0)) || (sp !== null && !(sp >= 0))) return 'Enter a valid MRP and selling price';
+  if (mrp !== null && sp !== null && sp > mrp) return 'Selling price cannot be greater than MRP';
+  return null;
+};
+
+const batchPayload = (b: BatchFields) => ({
+  mrp: b.mrp === '' ? undefined : b.mrp,
+  selling_price: b.selling_price === '' ? undefined : b.selling_price,
+  expiry_date: b.expiry_date || undefined,
+  batch_no: b.batch_no.trim() || undefined,
+});
 
 const BILL_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp';
 const BILL_MAX_MB = 10;
@@ -64,6 +92,7 @@ const Purchases: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [unitPrice, setUnitPrice] = useState('');
+  const [newBatch, setNewBatch] = useState<BatchFields>(EMPTY_BATCH);
   const [supplierInvoiceNo, setSupplierInvoiceNo] = useState('');
   const [saving, setSaving] = useState(false);
   const [viewPurchase, setViewPurchase] = useState<Purchase | null>(null);
@@ -72,10 +101,11 @@ const Purchases: React.FC = () => {
   const [editDate, setEditDate] = useState<Dayjs | null>(null);
   const [editInvoiceNo, setEditInvoiceNo] = useState('');
   const [editRemarks, setEditRemarks] = useState('');
-  const [editItems, setEditItems] = useState<{ product_id: number; product_name: string; quantity: string; unit_price: string }[]>([]);
+  const [editItems, setEditItems] = useState<EditItem[]>([]);
   const [editProduct, setEditProduct] = useState('');
   const [editQty, setEditQty] = useState('1');
   const [editPrice, setEditPrice] = useState('');
+  const [editBatch, setEditBatch] = useState<BatchFields>(EMPTY_BATCH);
   const [cancelPurchase, setCancelPurchase] = useState<Purchase | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [newBillFile, setNewBillFile] = useState<File | null>(null);
@@ -114,10 +144,19 @@ const Purchases: React.FC = () => {
     if (!product) return;
     if (!(parseFloat(quantity) > 0)) { toast.error('Quantity must be greater than 0'); return; }
     if (parseFloat(unitPrice) < 0) { toast.error('Unit price cannot be negative'); return; }
+    const batchError = batchFieldsError(newBatch);
+    if (batchError) { toast.error(batchError); return; }
     setItems([...items, { product_id: product.id, product_name: product.product_name,
-      quantity: parseFloat(quantity), unit_price: parseFloat(unitPrice) }]);
-    setSelectedProduct(''); setQuantity('1'); setUnitPrice('');
+      quantity: parseFloat(quantity), unit_price: parseFloat(unitPrice), ...newBatch }]);
+    setSelectedProduct(''); setQuantity('1'); setUnitPrice(''); setNewBatch(EMPTY_BATCH);
   };
+
+  const handleSelectProduct = (value: string) => {
+    setSelectedProduct(value);
+    setNewBatch(productBatchDefaults(products.find(p => p.id === parseInt(value))));
+  };
+
+  const isLooseProduct = (productId: number | string) => !!products.find(p => p.id === Number(productId))?.is_loose;
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
@@ -129,7 +168,7 @@ const Purchases: React.FC = () => {
       const response = await api.post<Purchase>(API_ENDPOINTS.PURCHASES, {
         supplier_id: parseInt(supplierId), purchase_date: purchaseDate.format('YYYY-MM-DD'),
         supplier_invoice_no: supplierInvoiceNo.trim() || undefined,
-        items: items.map(item => ({ product_id: item.product_id, quantity: item.quantity, unit_cost: item.unit_price }))
+        items: items.map(item => ({ product_id: item.product_id, quantity: item.quantity, unit_cost: item.unit_price, ...batchPayload(item) }))
       });
       toast.success('Purchase recorded');
       if (newBillFile) {
@@ -220,11 +259,13 @@ const Purchases: React.FC = () => {
     setEditInvoiceNo(p.supplier_invoice_no || '');
     setEditRemarks(p.remarks || '');
     setEditItems(p.items.map(i => ({ product_id: i.product_id, product_name: i.product_name || `#${i.product_id}`,
-      quantity: String(Number(i.quantity)), unit_price: String(Number(i.unit_cost)) })));
-    setEditProduct(''); setEditQty('1'); setEditPrice('');
+      quantity: String(Number(i.quantity)), unit_price: String(Number(i.unit_cost)),
+      mrp: i.mrp != null ? String(Number(i.mrp)) : '', selling_price: i.selling_price != null ? String(Number(i.selling_price)) : '',
+      expiry_date: i.expiry_date || '', batch_no: i.batch_no || '' })));
+    setEditProduct(''); setEditQty('1'); setEditPrice(''); setEditBatch(EMPTY_BATCH);
   };
 
-  const updateEditItem = (index: number, field: 'quantity' | 'unit_price', value: string) =>
+  const updateEditItem = (index: number, field: keyof EditItem, value: string) =>
     setEditItems(editItems.map((item, i) => (i === index ? { ...item, [field]: value } : item)));
 
   const handleEditAddItem = () => {
@@ -232,9 +273,31 @@ const Purchases: React.FC = () => {
     if (!product) return;
     if (!(parseFloat(editQty) > 0)) { toast.error('Quantity must be greater than 0'); return; }
     if (!(parseFloat(editPrice) >= 0)) { toast.error('Enter a valid unit price'); return; }
-    setEditItems([...editItems, { product_id: product.id, product_name: product.product_name, quantity: editQty, unit_price: editPrice }]);
-    setEditProduct(''); setEditQty('1'); setEditPrice('');
+    const batchError = batchFieldsError(editBatch);
+    if (batchError) { toast.error(batchError); return; }
+    setEditItems([...editItems, { product_id: product.id, product_name: product.product_name, quantity: editQty, unit_price: editPrice, ...editBatch }]);
+    setEditProduct(''); setEditQty('1'); setEditPrice(''); setEditBatch(EMPTY_BATCH);
   };
+
+  const handleEditSelectProduct = (value: string) => {
+    setEditProduct(value);
+    setEditBatch(productBatchDefaults(products.find(p => p.id === parseInt(value))));
+  };
+
+  const renderBatchInputs = (b: BatchFields, set: (b: BatchFields) => void, loose: boolean) => (
+    <>
+      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="MRP" type="number" value={b.mrp} onChange={(e) => set({ ...b, mrp: e.target.value })} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Selling Price" type="number" value={b.selling_price} onChange={(e) => set({ ...b, selling_price: e.target.value })} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Expiry" type="date" value={b.expiry_date} disabled={loose} onChange={(e) => set({ ...b, expiry_date: e.target.value })} InputLabelProps={{ shrink: true }} fullWidth /></Grid>
+      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Batch No" value={b.batch_no} disabled={loose} onChange={(e) => set({ ...b, batch_no: e.target.value })} inputProps={{ maxLength: 50 }} fullWidth /></Grid>
+    </>
+  );
+
+  const batchSummary = (b: { mrp?: string | number | null; selling_price?: string | number | null; expiry_date?: string | null; batch_no?: string | null }) =>
+    [b.mrp !== '' && b.mrp != null ? `MRP ${money(b.mrp)}` : null,
+     b.selling_price !== '' && b.selling_price != null ? `SP ${money(b.selling_price)}` : null,
+     b.expiry_date ? `Exp ${b.expiry_date}` : null,
+     b.batch_no ? `Batch ${b.batch_no}` : null].filter(Boolean).join(' · ') || '-';
 
   const editTotal = editItems.reduce((sum, i) => sum + (parseFloat(i.quantity) || 0) * (parseFloat(i.unit_price) || 0), 0);
 
@@ -244,6 +307,8 @@ const Purchases: React.FC = () => {
     if (editItems.length === 0) { toast.error('A purchase needs at least one item; use Cancel to void it'); return; }
     if (editItems.some(i => !(parseFloat(i.quantity) > 0))) { toast.error('Quantity must be greater than 0'); return; }
     if (editItems.some(i => !(parseFloat(i.unit_price) >= 0))) { toast.error('Enter a valid unit price for every item'); return; }
+    const batchError = editItems.map(batchFieldsError).find(Boolean);
+    if (batchError) { toast.error(batchError); return; }
     setSaving(true);
     try {
       await api.put(`${API_ENDPOINTS.PURCHASES}/${editPurchase.id}`, {
@@ -251,7 +316,7 @@ const Purchases: React.FC = () => {
         purchase_date: editDate.format('YYYY-MM-DD'),
         supplier_invoice_no: editInvoiceNo.trim() || null,
         remarks: editRemarks.trim() || null,
-        items: editItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_cost: i.unit_price })),
+        items: editItems.map(i => ({ product_id: i.product_id, quantity: i.quantity, unit_cost: i.unit_price, ...batchPayload(i) })),
       });
       toast.success('Purchase updated');
       setEditPurchase(null); fetchPurchases();
@@ -341,24 +406,32 @@ const Purchases: React.FC = () => {
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Add Items</Typography>
           <Grid container spacing={1} alignItems="center">
             <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
-              <Select value={selectedProduct} label="Product" onChange={(e) => setSelectedProduct(e.target.value)}>
-                {products.map(p => <MenuItem key={p.id} value={p.id}>{p.product_name}</MenuItem>)}
+              <Select value={selectedProduct} label="Product" onChange={(e) => handleSelectProduct(String(e.target.value))}>
+                {products.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}</MenuItem>)}
               </Select></FormControl></Grid>
             <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Price" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} fullWidth /></Grid>
+            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Cost" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} fullWidth /></Grid>
             <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleAddItem} fullWidth>Add</Button></Grid>
+            {selectedProduct && renderBatchInputs(newBatch, setNewBatch, isLooseProduct(selectedProduct))}
           </Grid>
+          {selectedProduct && (
+            <Typography variant="caption" color="text.secondary">
+              {isLooseProduct(selectedProduct)
+                ? 'Loose item: MRP and selling price update the product price.'
+                : 'Stock goes into the batch with the same MRP, selling price and expiry; a new batch is created otherwise.'}
+            </Typography>
+          )}
           {items.length > 0 && (
             <TableContainer component={Paper} sx={{ mt: 2 }}>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Product</TableCell><TableCell>Qty</TableCell><TableCell>Price</TableCell><TableCell>Total</TableCell><TableCell /></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Product</TableCell><TableCell>Batch</TableCell><TableCell>Qty</TableCell><TableCell>Cost</TableCell><TableCell>Total</TableCell><TableCell /></TableRow></TableHead>
                 <TableBody>
                   {items.map((item, index) => (
-                    <TableRow key={index}><TableCell>{item.product_name}</TableCell><TableCell>{item.quantity}</TableCell>
+                    <TableRow key={index}><TableCell>{item.product_name}</TableCell><TableCell>{batchSummary(item)}</TableCell><TableCell>{item.quantity}</TableCell>
                       <TableCell>₹{item.unit_price}</TableCell><TableCell>₹{(item.quantity * item.unit_price).toFixed(2)}</TableCell>
                       <TableCell><IconButton size="small" onClick={() => handleRemoveItem(index)}><Delete fontSize="small" /></IconButton></TableCell></TableRow>
                   ))}
-                  <TableRow><TableCell colSpan={3}><strong>Total</strong></TableCell><TableCell colSpan={2}><strong>₹{getTotalAmount().toFixed(2)}</strong></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={4}><strong>Total</strong></TableCell><TableCell colSpan={2}><strong>₹{getTotalAmount().toFixed(2)}</strong></TableCell></TableRow>
                 </TableBody>
               </Table>
             </TableContainer>
@@ -408,14 +481,15 @@ const Purchases: React.FC = () => {
               </Grid>
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
-                  <TableHead><TableRow><TableCell>#</TableCell><TableCell>Product</TableCell><TableCell align="right">Qty</TableCell><TableCell align="right">Unit Cost</TableCell><TableCell align="right">Total</TableCell></TableRow></TableHead>
+                  <TableHead><TableRow><TableCell>#</TableCell><TableCell>Product</TableCell><TableCell>Batch</TableCell><TableCell align="right">Qty</TableCell><TableCell align="right">Unit Cost</TableCell><TableCell align="right">Total</TableCell></TableRow></TableHead>
                   <TableBody>
                     {viewPurchase.items.map((item, index) => (
                       <TableRow key={item.id}><TableCell>{index + 1}</TableCell><TableCell>{item.product_name || `#${item.product_id}`}</TableCell>
+                        <TableCell>{batchSummary(item)}</TableCell>
                         <TableCell align="right">{Number(item.quantity)}</TableCell><TableCell align="right">{money(item.unit_cost)}</TableCell>
                         <TableCell align="right">{money(item.total_cost)}</TableCell></TableRow>
                     ))}
-                    <TableRow><TableCell colSpan={4}><strong>Total</strong></TableCell><TableCell align="right"><strong>{money(viewPurchase.total_amount)}</strong></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={5}><strong>Total</strong></TableCell><TableCell align="right"><strong>{money(viewPurchase.total_amount)}</strong></TableCell></TableRow>
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -450,7 +524,7 @@ const Purchases: React.FC = () => {
         <DialogActions><Button onClick={() => setPutaway(null)}>Close</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={!!editPurchase} onClose={() => setEditPurchase(null)} maxWidth="md" fullWidth>
+      <Dialog open={!!editPurchase} onClose={() => setEditPurchase(null)} maxWidth="lg" fullWidth>
         <DialogTitle>Edit Purchase {editPurchase?.purchase_no}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ pt: 1 }}>
@@ -477,27 +551,35 @@ const Purchases: React.FC = () => {
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Items</Typography>
           <Grid container spacing={1} alignItems="center">
             <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
-              <Select value={editProduct} label="Product" onChange={(e) => setEditProduct(e.target.value)}>
+              <Select value={editProduct} label="Product" onChange={(e) => handleEditSelectProduct(String(e.target.value))}>
                 {products.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}</MenuItem>)}
               </Select></FormControl></Grid>
             <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Price" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
+            <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Cost" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
             <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleEditAddItem} disabled={!editProduct} fullWidth>Add</Button></Grid>
+            {editProduct && renderBatchInputs(editBatch, setEditBatch, isLooseProduct(editProduct))}
           </Grid>
           <TableContainer component={Paper} variant="outlined" sx={{ mt: 2 }}>
             <Table size="small">
-              <TableHead><TableRow><TableCell sx={{ minWidth: 120 }}>Product</TableCell><TableCell width={130}>Qty</TableCell><TableCell width={140}>Unit Price</TableCell><TableCell align="right">Total</TableCell><TableCell /></TableRow></TableHead>
+              <TableHead><TableRow><TableCell sx={{ minWidth: 120 }}>Product</TableCell><TableCell width={110}>Qty</TableCell><TableCell width={120}>Unit Cost</TableCell><TableCell width={110}>MRP</TableCell><TableCell width={110}>Selling Price</TableCell><TableCell width={150}>Expiry</TableCell><TableCell width={120}>Batch No</TableCell><TableCell align="right">Total</TableCell><TableCell /></TableRow></TableHead>
               <TableBody>
-                {editItems.map((item, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{item.product_name}</TableCell>
-                    <TableCell><TextField size="small" type="number" value={item.quantity} onChange={(e) => updateEditItem(index, 'quantity', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
-                    <TableCell><TextField size="small" type="number" value={item.unit_price} onChange={(e) => updateEditItem(index, 'unit_price', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
-                    <TableCell align="right">{money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0))}</TableCell>
-                    <TableCell><IconButton size="small" onClick={() => setEditItems(editItems.filter((_, i) => i !== index))}><Delete fontSize="small" /></IconButton></TableCell>
-                  </TableRow>
-                ))}
-                <TableRow><TableCell colSpan={3}><strong>Total</strong></TableCell><TableCell align="right"><strong>{money(editTotal)}</strong></TableCell><TableCell /></TableRow>
+                {editItems.map((item, index) => {
+                  const loose = isLooseProduct(item.product_id);
+                  return (
+                    <TableRow key={index}>
+                      <TableCell>{item.product_name}</TableCell>
+                      <TableCell><TextField size="small" type="number" value={item.quantity} onChange={(e) => updateEditItem(index, 'quantity', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
+                      <TableCell><TextField size="small" type="number" value={item.unit_price} onChange={(e) => updateEditItem(index, 'unit_price', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
+                      <TableCell><TextField size="small" type="number" value={item.mrp} onChange={(e) => updateEditItem(index, 'mrp', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
+                      <TableCell><TextField size="small" type="number" value={item.selling_price} onChange={(e) => updateEditItem(index, 'selling_price', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
+                      <TableCell><TextField size="small" type="date" value={item.expiry_date} disabled={loose} onChange={(e) => updateEditItem(index, 'expiry_date', e.target.value)} /></TableCell>
+                      <TableCell><TextField size="small" value={item.batch_no} disabled={loose} onChange={(e) => updateEditItem(index, 'batch_no', e.target.value)} inputProps={{ maxLength: 50 }} /></TableCell>
+                      <TableCell align="right">{money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0))}</TableCell>
+                      <TableCell><IconButton size="small" onClick={() => setEditItems(editItems.filter((_, i) => i !== index))}><Delete fontSize="small" /></IconButton></TableCell>
+                    </TableRow>
+                  );
+                })}
+                <TableRow><TableCell colSpan={7}><strong>Total</strong></TableCell><TableCell align="right"><strong>{money(editTotal)}</strong></TableCell><TableCell /></TableRow>
               </TableBody>
             </Table>
           </TableContainer>

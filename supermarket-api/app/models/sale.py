@@ -63,6 +63,7 @@ class SaleItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     sale_id = Column(Integer, ForeignKey('sales.id', ondelete='CASCADE'), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    batch_id = Column(Integer, ForeignKey('product_batches.id'), index=True)
     product_name = Column(String(200), nullable=False)
     barcode = Column(String(100))
     hsn_code = Column(String(20))

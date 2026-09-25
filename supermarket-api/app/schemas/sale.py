@@ -11,16 +11,19 @@ from app.schemas.customer import normalize_mobile
 
 
 class SaleItemCreate(BaseModel):
-    """Schema for creating a sale item"""
+    """Schema for creating a sale item. batch_id is required for a packed item whose
+    in-stock batches have different MRPs; otherwise stock is taken first expiry first."""
     product_id: int
     quantity: Decimal
     discount_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
+    batch_id: Optional[int] = None
 
 
 class SaleItemResponse(BaseModel):
     """Schema for sale item response"""
     id: int
     product_id: int
+    batch_id: Optional[int] = None
     product_name: str
     barcode: Optional[str]
     hsn_code: Optional[str] = None

@@ -7,6 +7,7 @@ from app.models.user import User
 from app.models.tenant_setting import TenantSetting
 from app.models.category import Category
 from app.models.product import Product
+from app.models.product_batch import ProductBatch
 from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
@@ -25,6 +26,7 @@ __all__ = [
     "TenantSetting",
     "Category",
     "Product",
+    "ProductBatch",
     "Supplier",
     "Purchase",
     "PurchaseItem",

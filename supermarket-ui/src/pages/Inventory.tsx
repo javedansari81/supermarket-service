@@ -13,7 +13,7 @@ import { Search, Refresh, Edit } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
-import { PaginatedResponse } from '../types';
+import { PaginatedResponse, ProductBatch } from '../types';
 import toast from 'react-hot-toast';
 
 interface StockItem { id: number; product_no: string; product_name: string; barcode: string | null; category_name: string | null;
@@ -35,6 +35,8 @@ const Inventory: React.FC = () => {
   const [adjustType, setAdjustType] = useState('adjustment_in');
   const [adjustQty, setAdjustQty] = useState('');
   const [adjustReason, setAdjustReason] = useState('');
+  const [batches, setBatches] = useState<ProductBatch[]>([]);
+  const [batchId, setBatchId] = useState('');
 
   const fetchStock = useCallback(async () => {
     setLoading(true);
@@ -70,6 +72,7 @@ const Inventory: React.FC = () => {
     try {
       await api.post(API_ENDPOINTS.INVENTORY_ADJUST, {
         product_id: selectedItem.id,
+        batch_id: batchId ? parseInt(batchId) : undefined,
         adjustment_type: adjustType,
         quantity: parseFloat(adjustQty),
         remarks: adjustReason
@@ -84,7 +87,20 @@ const Inventory: React.FC = () => {
     }
   };
 
-  const openAdjustDialog = (item: StockItem) => { setSelectedItem(item); setAdjustOpen(true); };
+  const openAdjustDialog = async (item: StockItem) => {
+    setSelectedItem(item); setBatches([]); setBatchId(''); setAdjustOpen(true);
+    try {
+      const response = await api.get<ProductBatch[]>(`${API_ENDPOINTS.PRODUCTS}/${item.id}/batches`);
+      setBatches(response.data);
+    } catch (error) { console.error('Failed to fetch batches'); }
+  };
+
+  const batchLabel = (b: ProductBatch) => [
+    b.batch_no || `Batch #${b.id}`,
+    b.mrp != null ? `MRP ₹${Number(b.mrp).toFixed(2)}` : null,
+    b.expiry_date ? `Exp ${b.expiry_date}` : null,
+    `Left ${Number(b.quantity_left)}`,
+  ].filter(Boolean).join(' · ');
 
   const getStockStatus = (qty: number | string, reorder: number | string) => {
     if (Number(qty) <= 0) return { label: 'Out of Stock', color: 'error' as const };
@@ -166,6 +182,13 @@ const Inventory: React.FC = () => {
                 <MenuItem value="adjustment_in">Add Stock</MenuItem><MenuItem value="adjustment_out">Remove Stock</MenuItem>
                 <MenuItem value="damage_out">Damaged / Spoiled</MenuItem><MenuItem value="expired_out">Expired</MenuItem>
               </Select></FormControl></Grid>
+            {batches.length > 0 && (
+              <Grid size={12}><FormControl fullWidth><InputLabel>Batch</InputLabel>
+                <Select value={batchId} label="Batch" onChange={(e) => setBatchId(String(e.target.value))}>
+                  <MenuItem value="">{adjustType === 'adjustment_in' ? 'Auto (current product prices)' : 'Auto (first expiry first)'}</MenuItem>
+                  {batches.map(b => <MenuItem key={b.id} value={String(b.id)}>{batchLabel(b)}</MenuItem>)}
+                </Select></FormControl></Grid>
+            )}
             <Grid size={12}><TextField fullWidth label="Quantity" type="number" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} /></Grid>
             <Grid size={12}><TextField fullWidth label="Reason" multiline rows={2} value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} /></Grid>
           </Grid>

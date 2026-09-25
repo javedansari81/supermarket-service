@@ -53,11 +53,17 @@ class PurchaseItem(Base):
     quantity = Column(Numeric(12, 3), nullable=False)
     unit_cost = Column(Numeric(10, 2), nullable=False)
     total_cost = Column(Numeric(12, 2), nullable=False)
+    batch_id = Column(Integer, ForeignKey('product_batches.id'), index=True)
+    batch_no = Column(String(50))
+    mrp = Column(Numeric(10, 2))
+    selling_price = Column(Numeric(10, 2))
+    expiry_date = Column(Date)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    
+
     # Relationships
     purchase = relationship("Purchase", back_populates="items")
     product = relationship("Product", back_populates="purchase_items")
+    batch = relationship("ProductBatch")
 
     @property
     def product_name(self):

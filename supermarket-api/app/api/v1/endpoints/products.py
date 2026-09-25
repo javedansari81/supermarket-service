@@ -7,13 +7,18 @@ from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
+from app.core.batches import (
+    generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch
+)
 from app.models.audit_log import AuditLog
 from app.models.product import Product
+from app.models.product_batch import ProductBatch
 from app.models.category import Category
 from app.models.store_location import StoreLocation, ProductLocation
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse,
-    ProductListResponse, ProductSearchResponse
+    ProductListResponse, ProductSearchResponse,
+    ProductBatchResponse, ProductBatchUpdate
 )
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
 from app.api.deps import get_current_user, get_current_admin_user, get_tenant_context, TenantContext
@@ -105,16 +110,11 @@ def apply_product_locations(db: Session, product: Product, locations: List[Produ
             ))
 
 
-def ean13_check_digit(code12: str) -> str:
-    """Compute EAN-13 check digit for a 12-digit string"""
-    total = sum(int(d) * (3 if i % 2 else 1) for i, d in enumerate(code12))
-    return str((10 - total % 10) % 10)
-
-
-def generate_instore_barcode(product_id: int) -> str:
-    """In-store EAN-13 (GS1 prefix 2 = restricted circulation, for items without a maker barcode)"""
-    code12 = f"2{product_id:011d}"
-    return code12 + ean13_check_digit(code12)
+def barcode_used_by_batch(db: Session, tenant_id: int, barcode: str) -> bool:
+    return db.query(ProductBatch.id).filter(
+        ProductBatch.tenant_id == tenant_id,
+        ProductBatch.barcode == barcode
+    ).first() is not None
 
 
 @router.get("", response_model=ProductListResponse)
@@ -189,32 +189,54 @@ async def search_product(
         Product.tenant_id == context.tenant_id,
         Product.status == "active"
     )
-    
+
+    scanned_batch = None
     if barcode:
-        query = query.filter(or_(Product.barcode == barcode, Product.product_no == barcode))
+        scanned_batch = db.query(ProductBatch).filter(
+            ProductBatch.tenant_id == context.tenant_id,
+            ProductBatch.barcode == barcode
+        ).first()
+        if scanned_batch:
+            query = query.filter(Product.id == scanned_batch.product_id)
+        else:
+            query = query.filter(or_(Product.barcode == barcode, Product.product_no == barcode))
     elif product_no:
         query = query.filter(Product.product_no == product_no)
     else:
         raise HTTPException(status_code=400, detail="Provide barcode or product_no")
-    
+
     product = query.first()
-    
+
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
+    batches = []
+    if uses_batches(product):
+        batches = sync_batches(db, product)
+        db.commit()
+    price_source = scanned_batch or (batches[0] if batches else None)
+    if price_source:
+        selling_price = price_source.selling_price or price_source.mrp or product.selling_price or product.mrp
+        mrp = price_source.mrp
+    else:
+        selling_price = product.selling_price or product.mrp
+        mrp = product.mrp
+
     return ProductSearchResponse(
         id=product.id,
         product_no=product.product_no,
         product_name=product.product_name,
         barcode=product.barcode,
-        selling_price=product.selling_price or product.mrp or 0,
-        mrp=product.mrp,
+        selling_price=selling_price or 0,
+        mrp=mrp,
         tax_percent=product.tax_percent or 0,
         stock_quantity=product.stock_quantity or 0,
         unit_type=product.unit_type or "pcs",
         is_loose=bool(product.is_loose),
         hsn_code=product.hsn_code,
-        locations=[ProductLocationResponse.model_validate(link) for link in product.locations]
+        locations=[ProductLocationResponse.model_validate(link) for link in product.locations],
+        batch_id=scanned_batch.id if scanned_batch else None,
+        batches=[ProductBatchResponse.model_validate(b) for b in batches]
     )
 
 
@@ -236,6 +258,71 @@ async def get_product(
         raise HTTPException(status_code=404, detail="Product not found")
     
     return ProductResponse.model_validate(product)
+
+
+@router.get("/{product_id}/batches", response_model=List[ProductBatchResponse])
+async def list_product_batches(
+    product_id: int,
+    in_stock: bool = True,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Stock batches of a product (first expiry first); in_stock=false includes sold-out batches
+    """
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.tenant_id == context.tenant_id
+    ).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not uses_batches(product):
+        return []
+
+    batches = sync_batches(db, product)
+    db.commit()
+    if not in_stock:
+        batches = sorted(db.query(ProductBatch).filter(ProductBatch.product_id == product.id).all(),
+                         key=fefo_key)
+    return [ProductBatchResponse.model_validate(b) for b in batches]
+
+
+@router.put("/{product_id}/batches/{batch_id}", response_model=ProductBatchResponse)
+async def update_product_batch(
+    product_id: int,
+    batch_id: int,
+    batch_data: ProductBatchUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Correct the MRP, selling price, expiry or batch number of a batch (admin only)
+    """
+    product = db.query(Product).filter(
+        Product.id == product_id,
+        Product.tenant_id == context.tenant_id
+    ).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    batch = get_product_batch(db, product, batch_id)
+
+    update_data = batch_data.model_dump(exclude_unset=True)
+    mrp = update_data.get("mrp", batch.mrp)
+    selling_price = update_data.get("selling_price", batch.selling_price)
+    if mrp is not None and selling_price is not None and selling_price > mrp:
+        raise HTTPException(status_code=400, detail="Selling price cannot be greater than MRP")
+
+    old_value = snapshot(batch)
+    for field, value in update_data.items():
+        setattr(batch, field, value)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "product_batch", batch.id, old_value=old_value, new_value=snapshot(batch))
+    db.commit()
+    db.refresh(batch)
+    return ProductBatchResponse.model_validate(batch)
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
@@ -272,9 +359,9 @@ async def create_product(
             Product.tenant_id == context.tenant_id,
             Product.barcode == product_data.barcode
         ).first()
-        if existing_barcode:
+        if existing_barcode or barcode_used_by_batch(db, context.tenant_id, product_data.barcode):
             raise HTTPException(status_code=400, detail="Barcode already exists")
-    
+
     product = Product(
         tenant_id=context.tenant_id,
         **product_data.model_dump(exclude={"locations"}),
@@ -287,6 +374,7 @@ async def create_product(
         product.barcode = generate_instore_barcode(product.id)
     if product_data.locations:
         apply_product_locations(db, product, product_data.locations)
+    sync_batches(db, product)
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "product", product.id, new_value=product_snapshot(product))
@@ -323,7 +411,7 @@ async def update_product(
             Product.barcode == product_data.barcode,
             Product.id != product_id
         ).first()
-        if existing:
+        if existing or barcode_used_by_batch(db, context.tenant_id, product_data.barcode):
             raise HTTPException(status_code=400, detail="Barcode already exists")
     
     update_data = product_data.model_dump(exclude_unset=True, exclude={"locations"})
@@ -350,6 +438,8 @@ async def update_product(
 
     product.updated_by = context.user_id
     db.flush()
+    if "is_loose" in update_data:
+        sync_batches(db, product)
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "product", product.id, old_value=old_value, new_value=product_snapshot(product))
     db.commit()

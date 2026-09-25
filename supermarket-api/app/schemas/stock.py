@@ -22,6 +22,7 @@ class StockMovementResponse(BaseModel):
     id: int
     tenant_id: int
     product_id: int
+    batch_id: Optional[int] = None
     product_name: Optional[str] = None
     movement_type: str
     quantity: Decimal
@@ -43,8 +44,10 @@ class StockMovementListResponse(BaseModel):
 
 
 class StockAdjustment(BaseModel):
-    """Schema for stock adjustment"""
+    """Schema for stock adjustment. For packed items batch_id picks the batch; without it
+    stock is added at the product's current prices or removed first expiry first."""
     product_id: int
+    batch_id: Optional[int] = None
     adjustment_type: str  # adjustment_in, adjustment_out, damage_out, expired_out
     quantity: Decimal = Field(..., gt=0, max_digits=12, decimal_places=3)
     remarks: Optional[str] = None

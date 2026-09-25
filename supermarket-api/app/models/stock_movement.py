@@ -15,6 +15,7 @@ class StockMovement(Base):
     id = Column(Integer, primary_key=True, index=True)
     tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    batch_id = Column(Integer, ForeignKey('product_batches.id'), index=True)
     movement_type = Column(String(50), nullable=False)  # purchase_in, sale_out, adjustment_in, etc.
     quantity = Column(Numeric(12, 3), nullable=False)
     reference_type = Column(String(50))  # purchase, sale, adjustment

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from app.core.database import get_db
+from app.core.batches import sync_batches, uses_batches, allocate, get_product_batch
 from app.models.product import Product
 from app.models.stock_movement import StockMovement
 from app.schemas.stock import (
@@ -159,28 +160,48 @@ async def adjust_stock(
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
 
+    batches = sync_batches(db, product) if uses_batches(product) else []
+    batch = get_product_batch(db, product, adjustment.batch_id) \
+        if adjustment.batch_id and uses_batches(product) else None
+
     # Update stock
     if adjustment.adjustment_type in ["adjustment_in"]:
         product.stock_quantity = (product.stock_quantity or 0) + adjustment.quantity
+        if batch:
+            batch.quantity_left += adjustment.quantity
+        parts = [(batch, adjustment.quantity)]
     else:
-        if adjustment.quantity > (product.stock_quantity or 0):
+        available = batch.quantity_left if batch else (product.stock_quantity or 0)
+        if adjustment.quantity > available:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot remove {adjustment.quantity}; only {product.stock_quantity or 0} in stock"
+                detail=f"Cannot remove {adjustment.quantity}; only {available} in stock"
             )
         product.stock_quantity = (product.stock_quantity or 0) - adjustment.quantity
-    
-    # Create stock movement
-    movement = StockMovement(
-        tenant_id=context.tenant_id,
-        product_id=adjustment.product_id,
-        movement_type=adjustment.adjustment_type,
-        quantity=adjustment.quantity,
-        reference_type="adjustment",
-        remarks=adjustment.remarks,
-        created_by=context.user_id
-    )
-    db.add(movement)
+        if batch:
+            batch.quantity_left -= adjustment.quantity
+            parts = [(batch, adjustment.quantity)]
+        elif batches:
+            parts = allocate(batches, adjustment.quantity)
+            for part_batch, qty in parts:
+                part_batch.quantity_left -= qty
+        else:
+            parts = [(None, adjustment.quantity)]
+
+    # Create stock movements (one per batch)
+    for part_batch, qty in parts:
+        db.add(StockMovement(
+            tenant_id=context.tenant_id,
+            product_id=adjustment.product_id,
+            batch_id=part_batch.id if part_batch else None,
+            movement_type=adjustment.adjustment_type,
+            quantity=qty,
+            reference_type="adjustment",
+            remarks=adjustment.remarks,
+            created_by=context.user_id
+        ))
+    if uses_batches(product) and not batch:
+        sync_batches(db, product)
     db.commit()
     
     return {"message": "Stock adjusted successfully", "new_stock": float(product.stock_quantity)}

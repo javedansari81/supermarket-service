@@ -47,6 +47,7 @@ class SaleReturnItem(Base):
     return_id = Column(Integer, ForeignKey('sale_returns.id', ondelete='CASCADE'), nullable=False, index=True)
     sale_item_id = Column(Integer, ForeignKey('sale_items.id'), nullable=False, index=True)
     product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    batch_id = Column(Integer, ForeignKey('product_batches.id'), index=True)
     product_name = Column(String(200), nullable=False)
     unit_type = Column(String(20))
     quantity = Column(Numeric(12, 3), nullable=False)

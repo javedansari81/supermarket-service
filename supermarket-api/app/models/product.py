@@ -41,6 +41,7 @@ class Product(Base, TimestampMixin, StatusMixin):
     stock_movements = relationship("StockMovement", back_populates="product")
     locations = relationship("ProductLocation", back_populates="product",
                              cascade="all, delete-orphan", order_by="ProductLocation.id")
+    batches = relationship("ProductBatch", back_populates="product", order_by="ProductBatch.id")
 
     # Unique constraints on tenant_id + product_no and tenant_id + barcode
     __table_args__ = (

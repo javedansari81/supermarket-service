@@ -21,7 +21,8 @@ from app.schemas.barcode import (
     PackedLabelRequest, PackedLabelData
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
-from app.api.v1.endpoints.products import generate_instore_barcode
+from app.core.batches import generate_instore_barcode, get_product_batch, ensure_batch_barcode
+from app.models.product_batch import ProductBatch
 from app.api.v1.endpoints.settings import build_store_settings
 
 # unit -> (base unit, factor to base unit)
@@ -77,18 +78,33 @@ def generate_barcode_image(barcode_value: str) -> str:
     return base64.b64encode(buffer.read()).decode()
 
 
-def build_label(product: Product, store_name: str) -> BarcodeLabelData:
-    """Build printable label data for a product"""
+def label_batch(db: Session, product: Product, batch_id: Optional[int]) -> Optional[ProductBatch]:
+    """Batch a label is printed for, with its in-store barcode assigned"""
+    if not batch_id:
+        return None
+    if product.is_loose:
+        raise HTTPException(status_code=400, detail="Loose items have no batches")
+    batch = get_product_batch(db, product, batch_id)
+    ensure_batch_barcode(db, batch)
+    return batch
+
+
+def build_label(product: Product, store_name: str,
+                batch: Optional[ProductBatch] = None) -> BarcodeLabelData:
+    """Build printable label data for a product, or for one of its batches"""
+    barcode_value = batch.barcode if batch else product.barcode
+    mrp = batch.mrp if batch else product.mrp
+    selling_price = batch.selling_price if batch else product.selling_price
     return BarcodeLabelData(
         store_name=store_name,
         product_no=product.product_no,
         product_name=product.product_name,
-        barcode=product.barcode,
-        mrp=f"₹{product.mrp:.2f}" if product.mrp else "N/A",
-        selling_price=f"₹{product.selling_price:.2f}" if product.selling_price else None,
+        barcode=barcode_value,
+        mrp=f"₹{mrp:.2f}" if mrp else "N/A",
+        selling_price=f"₹{selling_price:.2f}" if selling_price else None,
         unit_type=product.unit_type or "pcs",
         is_loose=bool(product.is_loose),
-        barcode_image=generate_barcode_image(product.barcode)
+        barcode_image=generate_barcode_image(barcode_value)
     )
 
 
@@ -188,16 +204,18 @@ async def print_barcodes(
         
         if not product:
             continue
-        
-        if not product.barcode:
+
+        batch = label_batch(db, product, request.batch_id)
+        if not batch and not product.barcode:
             continue
-        
-        label = build_label(product, store_name)
+
+        label = build_label(product, store_name, batch)
 
         # Add copies
         for _ in range(request.copies):
             labels.append(label)
-    
+
+    db.commit()
     return {"labels": labels, "count": len(labels)}
 
 
@@ -216,15 +234,31 @@ async def print_packed_labels(
     ).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    if not product.barcode:
-        raise HTTPException(status_code=400, detail="Product has no barcode")
     if product.is_loose:
         raise HTTPException(
             status_code=400,
             detail="Create a packed product (e.g. 'Toor Dal 1 kg') for packed-goods labels"
         )
+    batch = label_batch(db, product, request.batch_id)
+    if not batch and not product.barcode:
+        raise HTTPException(status_code=400, detail="Product has no barcode")
 
-    mrp = request.mrp or product.mrp
+    if batch:
+        if request.mrp and batch.mrp and request.mrp != batch.mrp:
+            raise HTTPException(status_code=400, detail="MRP must match the selected batch's MRP")
+        mrp = batch.mrp or request.mrp
+        barcode_value = batch.barcode
+        batch_no = request.batch_no or batch.batch_no
+        best_before = request.best_before_date or batch.expiry_date
+        if best_before and best_before < request.packed_date:
+            raise HTTPException(status_code=400, detail="Best before date cannot be earlier than packed date")
+    else:
+        mrp = request.mrp or product.mrp
+        barcode_value = product.barcode
+        batch_no = request.batch_no
+        best_before = request.best_before_date
+    if batch_no == ProductBatch.OPENING:
+        batch_no = None
     if not mrp:
         raise HTTPException(status_code=400, detail="MRP is required for packed-goods labels")
 
@@ -242,17 +276,16 @@ async def print_packed_labels(
         store_email=store.store_email or "",
         fssai_license=store.fssai_license or "",
         product_name=product.product_name,
-        barcode=product.barcode,
-        barcode_image=generate_barcode_image(product.barcode),
+        barcode=barcode_value,
+        barcode_image=generate_barcode_image(barcode_value),
         net_quantity=format_net_quantity(request.net_quantity, request.net_unit),
         mrp=f"₹{mrp:.2f}",
         unit_sale_price=unit_sale_price(mrp, request.net_quantity, request.net_unit),
         packed_date=request.packed_date.strftime("%d/%m/%Y"),
-        best_before_date=(
-            request.best_before_date.strftime("%d/%m/%Y") if request.best_before_date else None
-        ),
-        batch_no=request.batch_no or None
+        best_before_date=best_before.strftime("%d/%m/%Y") if best_before else None,
+        batch_no=batch_no or None
     )
+    db.commit()
     return {"labels": [label] * request.copies, "count": request.copies}
 
 
