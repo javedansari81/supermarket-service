@@ -1,6 +1,10 @@
 """Purchase and inventory endpoint tests"""
+import pytest
+from app.core import storage
+
 PUR = "/api/v1/purchases"
 INV = "/api/v1/inventory"
+PDF_BYTES = b"%PDF-1.4 test bill"
 
 
 def purchase_body(product, supplier=None, qty=10, cost=40):
@@ -92,6 +96,71 @@ def test_cancel_purchase_when_stock_already_sold(client, db, product, admin_head
     res = client.post(f"{PUR}/{pid}/cancel", json={}, headers=admin_headers)
     assert res.status_code == 400
     assert stock_of(client, product, admin_headers) == 5
+
+
+# ---------- Supplier bill ----------
+
+@pytest.fixture()
+def fake_storage(monkeypatch):
+    files = {}
+    monkeypatch.setattr(storage, "is_configured", lambda: True)
+    monkeypatch.setattr(storage, "upload_file", lambda key, content, ct: files.__setitem__(key, content))
+    monkeypatch.setattr(storage, "delete_file", lambda key: files.pop(key, None))
+    monkeypatch.setattr(storage, "presigned_url", lambda key, name, ct: f"https://r2.test/{key}")
+    return files
+
+
+def upload_bill(client, pid, headers, content=PDF_BYTES, name="bill.pdf"):
+    return client.post(f"{PUR}/{pid}/bill", files={"file": (name, content, "application/pdf")},
+                       headers=headers)
+
+
+def test_bill_upload_view_replace_delete(client, product, admin_headers, fake_storage):
+    pid = client.post(PUR, json=purchase_body(product), headers=admin_headers).json()["id"]
+    res = upload_bill(client, pid, admin_headers)
+    assert res.status_code == 200
+    assert res.json()["bill_file_name"] == "bill.pdf"
+    assert res.json()["bill_content_type"] == "application/pdf"
+    assert len(fake_storage) == 1
+
+    view = client.get(f"{PUR}/{pid}/bill", headers=admin_headers)
+    assert view.status_code == 200
+    assert view.json()["url"].startswith("https://r2.test/bills/")
+
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 10
+    res = upload_bill(client, pid, admin_headers, content=png, name="bill.png")
+    assert res.json()["bill_content_type"] == "image/png"
+    assert len(fake_storage) == 1
+
+    res = client.delete(f"{PUR}/{pid}/bill", headers=admin_headers)
+    assert res.status_code == 200
+    assert res.json()["bill_file_name"] is None
+    assert fake_storage == {}
+    assert client.get(f"{PUR}/{pid}/bill", headers=admin_headers).status_code == 404
+    assert client.delete(f"{PUR}/{pid}/bill", headers=admin_headers).status_code == 404
+
+
+def test_bill_upload_errors(client, product, admin_headers, cashier_headers, admin_b_headers,
+                            fake_storage):
+    pid = client.post(PUR, json=purchase_body(product), headers=admin_headers).json()["id"]
+    assert upload_bill(client, pid, admin_headers, content=b"").status_code == 400
+    assert upload_bill(client, pid, admin_headers, content=b"MZ not a bill").status_code == 400
+    assert upload_bill(client, pid, cashier_headers).status_code == 403
+    assert upload_bill(client, pid, admin_b_headers).status_code == 404
+    assert upload_bill(client, 99999, admin_headers).status_code == 404
+    assert fake_storage == {}
+
+
+def test_bill_upload_too_large(client, product, admin_headers, fake_storage, monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.BILL_MAX_SIZE_MB", 0)
+    pid = client.post(PUR, json=purchase_body(product), headers=admin_headers).json()["id"]
+    assert upload_bill(client, pid, admin_headers).status_code == 413
+
+
+def test_bill_storage_not_configured(client, product, admin_headers, monkeypatch):
+    monkeypatch.setattr(storage, "is_configured", lambda: False)
+    pid = client.post(PUR, json=purchase_body(product), headers=admin_headers).json()["id"]
+    assert upload_bill(client, pid, admin_headers).status_code == 503
 
 
 # ---------- Inventory ----------

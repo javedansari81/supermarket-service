@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Block, Delete, Edit, Refresh, Visibility } from '@mui/icons-material';
+import { AttachFile, Block, CloudUpload, Delete, Edit, OpenInNew, Refresh, Visibility } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
@@ -25,9 +25,20 @@ interface PurchaseLine { id: number; product_id: number; product_name: string | 
 interface Purchase {
   id: number; purchase_no: string; purchase_date: string; supplier_id: number | null; supplier_name: string | null;
   supplier_invoice_no?: string | null; remarks?: string | null; total_amount: number | string; status: string; items: PurchaseLine[];
+  bill_file_name?: string | null; bill_content_type?: string | null; bill_uploaded_at?: string | null;
 }
+interface PurchaseBillUrl { url: string; file_name: string; content_type: string; expires_in: number; }
 
 const money = (v: number | string) => `₹${Number(v || 0).toFixed(2)}`;
+
+const BILL_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp';
+const BILL_MAX_MB = 10;
+
+const validateBillFile = (file: File): string | null => {
+  if (!BILL_ACCEPT.split(',').includes(file.type)) return 'Only JPG, PNG, WEBP or PDF files are allowed';
+  if (file.size > BILL_MAX_MB * 1024 * 1024) return `Bill file must be ${BILL_MAX_MB} MB or smaller`;
+  return null;
+};
 
 const apiErrorMessage = (error: any, fallback: string): string => {
   const detail = error?.response?.data?.detail;
@@ -67,6 +78,8 @@ const Purchases: React.FC = () => {
   const [editPrice, setEditPrice] = useState('');
   const [cancelPurchase, setCancelPurchase] = useState<Purchase | null>(null);
   const [cancelReason, setCancelReason] = useState('');
+  const [newBillFile, setNewBillFile] = useState<File | null>(null);
+  const [billBusy, setBillBusy] = useState(false);
 
   const fetchPurchases = useCallback(async () => {
     setLoading(true);
@@ -112,15 +125,73 @@ const Purchases: React.FC = () => {
     if (!purchaseDate || !purchaseDate.isValid()) { toast.error('Please select a purchase date'); return; }
     setSaving(true);
     try {
-      await api.post(API_ENDPOINTS.PURCHASES, {
+      const response = await api.post<Purchase>(API_ENDPOINTS.PURCHASES, {
         supplier_id: parseInt(supplierId), purchase_date: purchaseDate.format('YYYY-MM-DD'),
         supplier_invoice_no: supplierInvoiceNo.trim() || undefined,
         items: items.map(item => ({ product_id: item.product_id, quantity: item.quantity, unit_cost: item.unit_price }))
       });
       toast.success('Purchase recorded');
-      setDialogOpen(false); setItems([]); setSupplierId(''); setSupplierInvoiceNo(''); fetchPurchases();
+      if (newBillFile) {
+        try { await uploadBill(response.data.id, newBillFile); toast.success('Bill uploaded'); }
+        catch (error: any) { toast.error(apiErrorMessage(error, 'Purchase saved, but bill upload failed. Upload it from the View dialog.')); }
+      }
+      setDialogOpen(false); setItems([]); setSupplierId(''); setSupplierInvoiceNo(''); setNewBillFile(null); fetchPurchases();
     } catch (error: any) { toast.error(apiErrorMessage(error, 'Failed to save purchase')); }
     finally { setSaving(false); }
+  };
+
+  const uploadBill = async (id: number, file: File): Promise<Purchase> => {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await api.post<Purchase>(`${API_ENDPOINTS.PURCHASES}/${id}/bill`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  };
+
+  const handleNewBillSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    const error = validateBillFile(file);
+    if (error) { toast.error(error); return; }
+    setNewBillFile(file);
+  };
+
+  const handleBillUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !viewPurchase) return;
+    const error = validateBillFile(file);
+    if (error) { toast.error(error); return; }
+    setBillBusy(true);
+    try {
+      setViewPurchase(await uploadBill(viewPurchase.id, file));
+      toast.success('Bill uploaded'); fetchPurchases();
+    } catch (error: any) { toast.error(apiErrorMessage(error, 'Failed to upload bill')); }
+    finally { setBillBusy(false); }
+  };
+
+  const handleBillOpen = async (id: number) => {
+    const win = window.open('', '_blank');
+    try {
+      const response = await api.get<PurchaseBillUrl>(`${API_ENDPOINTS.PURCHASES}/${id}/bill`);
+      if (win) win.location.href = response.data.url; else window.location.assign(response.data.url);
+    } catch (error: any) {
+      win?.close();
+      toast.error(apiErrorMessage(error, 'Failed to open bill'));
+    }
+  };
+
+  const handleBillDelete = async () => {
+    if (!viewPurchase || !window.confirm(`Delete the bill attached to ${viewPurchase.purchase_no}?`)) return;
+    setBillBusy(true);
+    try {
+      const response = await api.delete<Purchase>(`${API_ENDPOINTS.PURCHASES}/${viewPurchase.id}/bill`);
+      setViewPurchase(response.data);
+      toast.success('Bill deleted'); fetchPurchases();
+    } catch (error: any) { toast.error(apiErrorMessage(error, 'Failed to delete bill')); }
+    finally { setBillBusy(false); }
   };
 
   const getTotalAmount = () => items.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
@@ -202,11 +273,13 @@ const Purchases: React.FC = () => {
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
       <Chip label={params.value} size="small" color={statusColor(params.value)} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 130, sortable: false, renderCell: (params: GridRenderCellParams) => {
+    { field: 'actions', headerName: 'Actions', width: 165, sortable: false, renderCell: (params: GridRenderCellParams) => {
       const cancelled = params.row.status === 'cancelled';
       return (
         <Box>
           <IconButton size="small" title="View" onClick={() => handleView(params.row.id)}><Visibility fontSize="small" /></IconButton>
+          <IconButton size="small" title={params.row.bill_file_name ? `Open bill (${params.row.bill_file_name})` : 'No bill uploaded'}
+            disabled={!params.row.bill_file_name} onClick={() => handleBillOpen(params.row.id)}><AttachFile fontSize="small" /></IconButton>
           <IconButton size="small" title="Edit details" disabled={cancelled} onClick={() => handleEditOpen(params.row.id)}><Edit fontSize="small" /></IconButton>
           <IconButton size="small" title="Cancel purchase" color="error" disabled={cancelled}
             onClick={() => { setCancelReason(''); setCancelPurchase(params.row as Purchase); }}><Block fontSize="small" /></IconButton>
@@ -242,6 +315,19 @@ const Purchases: React.FC = () => {
             <Grid size={{ xs: 12, md: 3 }}>
               <TextField fullWidth label="Supplier Bill No" value={supplierInvoiceNo}
                 onChange={(e) => setSupplierInvoiceNo(e.target.value)} inputProps={{ maxLength: 100 }} />
+            </Grid>
+            <Grid size={12}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Button component="label" variant="outlined" size="small" startIcon={<CloudUpload />}>
+                  {newBillFile ? 'Change Bill' : 'Attach Bill (optional)'}
+                  <input hidden type="file" accept={BILL_ACCEPT} onChange={handleNewBillSelect} />
+                </Button>
+                {newBillFile ? (
+                  <Chip label={newBillFile.name} size="small" onDelete={() => setNewBillFile(null)} />
+                ) : (
+                  <Typography variant="caption" color="text.secondary">JPG, PNG, WEBP or PDF, up to {BILL_MAX_MB} MB</Typography>
+                )}
+              </Box>
             </Grid>
           </Grid>
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Add Items</Typography>
@@ -289,6 +375,28 @@ const Purchases: React.FC = () => {
                 {viewPurchase.remarks && (
                   <Grid size={12}><Typography variant="caption" color="text.secondary">Remarks</Typography><Typography sx={{ whiteSpace: 'pre-line' }}>{viewPurchase.remarks}</Typography></Grid>
                 )}
+                <Grid size={12}>
+                  <Typography variant="caption" color="text.secondary">Supplier Bill</Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    {viewPurchase.bill_file_name ? (
+                      <>
+                        <Chip icon={<AttachFile />} label={viewPurchase.bill_file_name} size="small" />
+                        <Button size="small" startIcon={<OpenInNew />} onClick={() => handleBillOpen(viewPurchase.id)}>Open</Button>
+                        <Button size="small" component="label" startIcon={<CloudUpload />} disabled={billBusy}>
+                          Replace<input hidden type="file" accept={BILL_ACCEPT} onChange={handleBillUpload} />
+                        </Button>
+                        <Button size="small" color="error" startIcon={<Delete />} disabled={billBusy} onClick={handleBillDelete}>Delete</Button>
+                      </>
+                    ) : (
+                      <>
+                        <Typography variant="body2">No bill uploaded</Typography>
+                        <Button size="small" variant="outlined" component="label" startIcon={<CloudUpload />} disabled={billBusy}>
+                          Upload Bill<input hidden type="file" accept={BILL_ACCEPT} onChange={handleBillUpload} />
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                </Grid>
               </Grid>
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">

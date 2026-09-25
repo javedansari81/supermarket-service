@@ -2,7 +2,7 @@
 Purchase schemas
 """
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pydantic import BaseModel, Field, computed_field
 from app.schemas.base import TimestampSchema
@@ -70,6 +70,9 @@ class PurchaseResponse(PurchaseBase, TimestampSchema):
     purchase_no: str
     total_amount: Decimal
     status: str
+    bill_file_name: Optional[str] = None
+    bill_content_type: Optional[str] = None
+    bill_uploaded_at: Optional[datetime] = None
     supplier: Optional[SupplierBrief] = None
     items: List[PurchaseItemResponse] = []
 
@@ -77,6 +80,14 @@ class PurchaseResponse(PurchaseBase, TimestampSchema):
     @property
     def supplier_name(self) -> Optional[str]:
         return self.supplier.supplier_name if self.supplier else None
+
+
+class PurchaseBillUrl(BaseModel):
+    """Temporary link for viewing a purchase's supplier bill"""
+    url: str
+    file_name: str
+    content_type: str
+    expires_in: int
 
 
 class PurchaseListResponse(BaseModel):

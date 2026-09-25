@@ -31,7 +31,16 @@ class Settings(BaseSettings):
     
     # Invoice
     INVOICE_PREFIX: str = "INV"
-    
+
+    # Cloudflare R2 (supplier bill uploads)
+    R2_ACCOUNT_ID: str = ""
+    R2_ACCESS_KEY_ID: str = ""
+    R2_SECRET_ACCESS_KEY: str = ""
+    R2_BUCKET_NAME: str = ""
+    R2_ENDPOINT_URL: str = ""
+    BILL_MAX_SIZE_MB: int = 10
+    BILL_URL_EXPIRE_SECONDS: int = 600
+
     class Config:
         env_file = ".env"
         case_sensitive = True

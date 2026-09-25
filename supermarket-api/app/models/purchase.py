@@ -22,8 +22,12 @@ class Purchase(Base, TimestampMixin):
     total_amount = Column(Numeric(12, 2), default=0)
     remarks = Column(Text)
     status = Column(String(20), default='completed')
+    bill_file_key = Column(String(300))
+    bill_file_name = Column(String(255))
+    bill_content_type = Column(String(100))
+    bill_uploaded_at = Column(DateTime)
     created_by = Column(Integer, ForeignKey('users.id'))
-    
+
     # Relationships
     tenant = relationship("Tenant", back_populates="purchases")
     supplier = relationship("Supplier", back_populates="purchases")

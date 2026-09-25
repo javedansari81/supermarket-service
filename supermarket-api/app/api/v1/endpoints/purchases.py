@@ -1,12 +1,16 @@
 """
 Purchase/Procurement management endpoints
 """
+import os
+import uuid
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
 from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session, joinedload
+from app.core import storage
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.models.audit_log import AuditLog
@@ -15,7 +19,8 @@ from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.stock_movement import StockMovement
 from app.schemas.purchase import (
-    PurchaseCreate, PurchaseUpdate, PurchaseCancel, PurchaseResponse, PurchaseListResponse
+    PurchaseCreate, PurchaseUpdate, PurchaseCancel, PurchaseResponse, PurchaseListResponse,
+    PurchaseBillUrl
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
@@ -358,6 +363,141 @@ async def cancel_purchase(
     purchase.status = "cancelled"
     if reason:
         purchase.remarks = f"{purchase.remarks}\n{remarks}" if purchase.remarks else remarks
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "purchase", purchase.id, old_value=old_value, new_value=snapshot(purchase))
+    db.commit()
+    return PurchaseResponse.model_validate(get_tenant_purchase(db, purchase_id, context.tenant_id))
+
+
+# ---------- Supplier bill attachment ----------
+
+BILL_FILE_TYPES = {
+    "application/pdf": ".pdf",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
+
+
+def detect_bill_type(content: bytes) -> Optional[str]:
+    """Identify the file type from its leading bytes rather than the client-sent header"""
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def require_storage() -> None:
+    if not storage.is_configured():
+        raise HTTPException(status_code=503, detail="Bill storage is not configured")
+
+
+@router.post("/{purchase_id}/bill", response_model=PurchaseResponse)
+async def upload_purchase_bill(
+    purchase_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Upload or replace the supplier bill (JPG, PNG, WEBP or PDF) for a purchase (admin only)
+    """
+    purchase = get_tenant_purchase(db, purchase_id, context.tenant_id)
+    require_storage()
+
+    max_bytes = settings.BILL_MAX_SIZE_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="Bill file is empty")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"Bill file must be {settings.BILL_MAX_SIZE_MB} MB or smaller")
+    content_type = detect_bill_type(content)
+    if not content_type:
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WEBP or PDF files are allowed")
+
+    extension = BILL_FILE_TYPES[content_type]
+    file_name = os.path.basename((file.filename or "").replace("\\", "/")).strip()[:255] \
+        or f"{purchase.purchase_no}{extension}"
+    key = f"bills/tenant_{context.tenant_id}/purchase_{purchase.id}/{uuid.uuid4().hex}{extension}"
+    try:
+        storage.upload_file(key, content, content_type)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not upload bill to storage")
+
+    old_value = snapshot(purchase)
+    old_key = purchase.bill_file_key
+    purchase.bill_file_key = key
+    purchase.bill_file_name = file_name
+    purchase.bill_content_type = content_type
+    purchase.bill_uploaded_at = datetime.utcnow()
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "purchase", purchase.id, old_value=old_value, new_value=snapshot(purchase))
+    db.commit()
+
+    if old_key:
+        try:
+            storage.delete_file(old_key)
+        except Exception:
+            pass
+    return PurchaseResponse.model_validate(get_tenant_purchase(db, purchase_id, context.tenant_id))
+
+
+@router.get("/{purchase_id}/bill", response_model=PurchaseBillUrl)
+async def get_purchase_bill(
+    purchase_id: int,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Get a temporary link to view the supplier bill of a purchase
+    """
+    purchase = get_tenant_purchase(db, purchase_id, context.tenant_id)
+    if not purchase.bill_file_key:
+        raise HTTPException(status_code=404, detail="No bill uploaded for this purchase")
+    require_storage()
+    return PurchaseBillUrl(
+        url=storage.presigned_url(purchase.bill_file_key, purchase.bill_file_name,
+                                  purchase.bill_content_type),
+        file_name=purchase.bill_file_name,
+        content_type=purchase.bill_content_type,
+        expires_in=settings.BILL_URL_EXPIRE_SECONDS,
+    )
+
+
+@router.delete("/{purchase_id}/bill", response_model=PurchaseResponse)
+async def delete_purchase_bill(
+    purchase_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Delete the supplier bill of a purchase (admin only)
+    """
+    purchase = get_tenant_purchase(db, purchase_id, context.tenant_id)
+    if not purchase.bill_file_key:
+        raise HTTPException(status_code=404, detail="No bill uploaded for this purchase")
+    require_storage()
+    try:
+        storage.delete_file(purchase.bill_file_key)
+    except Exception:
+        raise HTTPException(status_code=502, detail="Could not delete bill from storage")
+
+    old_value = snapshot(purchase)
+    purchase.bill_file_key = None
+    purchase.bill_file_name = None
+    purchase.bill_content_type = None
+    purchase.bill_uploaded_at = None
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "purchase", purchase.id, old_value=old_value, new_value=snapshot(purchase))

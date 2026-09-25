@@ -189,11 +189,17 @@ Goods-in: receiving stock from a supplier increases inventory.
 
 1. Click **New Purchase**.
 2. Select **Supplier** and **Purchase Date**.
-3. For each line: product, quantity, unit price → **Add**.
-4. Remove a line with the trash icon. The table shows line totals and a grand total.
-5. **Save Purchase**.
+3. Optionally click **Attach Bill** to add the supplier's bill (JPG, PNG, WEBP or PDF, up to 10 MB).
+4. For each line: product, quantity, unit price → **Add**.
+5. Remove a line with the trash icon. The table shows line totals and a grand total.
+6. **Save Purchase**.
 
 You need a supplier and at least one item. Success: **Purchase recorded**. The grid lists Purchase No, Date, Supplier, Amount, and Status (`completed` vs other).
+
+### Supplier bill
+
+- Paperclip icon in the grid — opens the attached bill in a new tab (disabled when no bill is attached)
+- Eye → **Supplier Bill** section — **Upload Bill**, or **Open**, **Replace** and **Delete** an existing one
 
 Do this when stock arrives so POS quantity stays accurate.
 
