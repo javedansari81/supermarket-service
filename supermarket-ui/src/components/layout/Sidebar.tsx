@@ -34,6 +34,7 @@ import {
   QrCode,
   History,
   Contacts,
+  Place,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -60,6 +61,7 @@ const navItems: NavItem[] = [
   { title: 'Billing / POS', path: '/billing', icon: <PointOfSale /> },
   { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true },
   { title: 'Categories', path: '/categories', icon: <Category />, adminOnly: true },
+  { title: 'Locations', path: '/locations', icon: <Place />, adminOnly: true },
   { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true },
   { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true },
   { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },

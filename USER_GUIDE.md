@@ -30,7 +30,7 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 | Left sidebar | Menu. Shows your store name (tenant) under **SuperMart**. Click the arrow next to **SuperMart** to collapse it to icons only (hover an icon to see its name); click the menu icon to expand it again. Your choice is remembered. On smaller screens it starts collapsed until you choose otherwise. |
 | Top bar | Current page title (with page actions such as refresh on the left), signed-in name, role (**Administrator** or **Cashier**), and avatar menu. |
 | Avatar menu | **Logout** — ends the session and returns to login. |
-| Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Supplier**, **New Purchase**, **Add User**. |
+| Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Location**, **Add Supplier**, **New Purchase**, **Add User**. |
 
 Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see the full menu.
 
@@ -43,7 +43,7 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see
 | Dashboard (sales today / month) | Yes (store-wide) | Yes (own bills only) |
 | Margin, stock value, reorder, expiry, cashier panels | Yes | No |
 | Billing / POS | Yes | Yes |
-| Products, categories, suppliers | Yes | No |
+| Products, categories, store locations, suppliers | Yes | No |
 | Purchases, inventory, barcodes | Yes | No |
 | Invoices (view / print) | Yes | Yes |
 | Return items | Yes (any time) | Yes (within 7 days of sale) |
@@ -123,8 +123,10 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 ### Browse and search
 
-- Table columns: Product No, Name, Barcode, Category, Price, Stock, Status, Actions
+- Table columns: Product No, Name, Barcode, Category, Price, Stock, Location, Status, Actions
+- **Location** shows the primary display location (or the first assigned one); hover it to see all locations
 - Search by name or related text; click refresh to reload
+- **Location** filter: All locations, **No location assigned**, or one active location
 - Paginate with 10 / 25 / 50 rows per page
 - Status chip: **active** (green) or inactive
 
@@ -136,9 +138,22 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 The form also holds category, MRP, selling price, purchase price, tax %, reorder level, unit type, and status. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
 
+### Assign store locations
+
+A product can be placed at several locations. Each location's role comes from its rack type — **display** (D rack, customer shelf), **storage** (S rack, backroom / overstock) or **promo** (P rack, end-cap, seasonal display). Stock stays a single total per product; locations only tell staff where it belongs.
+
+1. In the product form, under **Store Locations**, click **Add Location**.
+2. Pick the **Location** (shown as code · role · floor); the role chip appears next to it. Click **Primary** to mark the main location for that role.
+3. Remove a row with the trash icon. **Save**.
+
+- One primary per role; if none is marked, the first location of each role becomes primary.
+- The same location cannot be added twice to a product.
+- Only active locations can be newly assigned; existing assignments to an inactive location are kept.
+- Create locations on the **Locations** page first.
+
 ### View, edit or delete
 
-- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP, selling price, purchase price, GST %, stock, reorder level, unit and expiry date; click **Edit** to open the edit form
+- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP, selling price, purchase price, GST %, stock, reorder level, unit, expiry date and locations; click **Edit** to open the edit form
 - Pencil — edit and **Save**
 - Trash — confirm **Delete this product?**
 
@@ -164,7 +179,44 @@ Inactive categories stay in history but should not be used for new products. Ass
 
 ---
 
-## 7. Suppliers (Admin)
+## 7. Store Locations (Admin)
+
+Places in the store where products belong, so staff can put goods away and find them without searching.
+
+**Columns:** Code, Type, Floor, Rack, Shelf, Description, Status, Actions.
+
+A location is a rack, or one shelf of a rack. The rack name starts with its type letter:
+
+| Type | Rack | Shelf codes |
+|---|---|---|
+| D - Display | `D01`, `D02`, … | `D01-1`, `D01-2`, … |
+| S - Storage | `S01`, `S02`, … | `S01-1`, `S01-2`, … |
+| P - Promo | `P01`, `P02`, … | `P01-1`, `P01-2`, … |
+
+### Add or edit
+
+1. Click **Add Location**.
+2. Choose **Type** first. The next free rack (last rack + 1, for example `D03`) and shelf `1` are filled in.
+3. Choose **Floor**: Ground or 1st.
+4. **Rack** — keep the suggestion, pick an existing rack, or type a new one. For an existing rack, its floor and the next free shelf (last shelf + 1) are filled in.
+5. **Shelf** — keep the suggestion or change it; leave empty for the whole rack.
+6. The **Location code** (rack-shelf, for example `D01-2`) is shown below. Optional description.
+7. **Save**. When editing, you can also change **Status**.
+
+- The rack must start with the letter of its type.
+- All shelves of a rack share one floor; changing the floor of a rack moves all its shelves.
+
+### Actions
+
+- Box icon — **Products at** the location: product no, product, role (and primary), stock
+- Pencil — edit
+- Block icon — deactivate (confirm first). Products assigned there keep the assignment, but the location can no longer be newly assigned.
+
+Search by code or description; refresh reloads the list. Print each location code as a shelf label so staff can match products to shelves.
+
+---
+
+## 8. Suppliers (Admin)
 
 Vendor master used when recording purchases.
 
@@ -181,7 +233,7 @@ Search and refresh work like Products. Only **active** suppliers appear in the N
 
 ---
 
-## 8. Purchases (Admin)
+## 9. Purchases (Admin)
 
 Goods-in: receiving stock from a supplier increases inventory.
 
@@ -203,9 +255,13 @@ You need a supplier and at least one item. Success: **Purchase recorded**. The g
 
 Do this when stock arrives so POS quantity stays accurate.
 
+### Put-away list
+
+Eye → **Put-away List** — every product on the purchase with its received quantity, main location (display primary first) and other locations, sorted by location code so goods can be placed in one walk. Products with no location are marked **Unassigned** and listed last.
+
 ---
 
-## 9. Inventory (Admin)
+## 10. Inventory (Admin)
 
 Live stock and movement history.
 
@@ -231,7 +287,7 @@ Second tab: date, product, type (`in` / `out`), quantity, reference number, note
 
 ---
 
-## 10. Barcode (Admin)
+## 11. Barcode (Admin)
 
 Generate missing barcodes and print shelf / pack labels.
 
@@ -250,7 +306,7 @@ Remove a line with trash before printing. You cannot add a product that has no b
 
 ---
 
-## 11. Invoices
+## 12. Invoices
 
 Sales history for Admin and Cashier.
 
@@ -290,7 +346,7 @@ Use this for billing mistakes. Click the void icon (or **Void** in the detail di
 
 ---
 
-## 12. Reports (Admin)
+## 13. Reports (Admin)
 
 Analytics for a date range (default: start of month → today). Changing dates reloads all widgets.
 
@@ -312,7 +368,7 @@ Use this for purchasing, staffing, and daily/monthly review.
 
 ---
 
-## 13. Users (Admin)
+## 14. Users (Admin)
 
 Staff accounts. Roles: **admin** or **cashier**.
 
@@ -333,7 +389,7 @@ Inactive users should not sign in. Give cashiers **cashier**; keep **admin** for
 
 ---
 
-## 14. Audit Logs (Admin)
+## 15. Audit Logs (Admin)
 
 Who did what, and when. Default range: last 7 days.
 
@@ -345,7 +401,7 @@ Use after unexpected stock, price, or user changes.
 
 ---
 
-## 15. Settings (Admin)
+## 16. Settings (Admin)
 
 ### Store Settings
 
@@ -362,7 +418,7 @@ Save after changes. Currency in the UI is **₹**.
 
 ---
 
-## 16. Recommended workflows
+## 17. Recommended workflows
 
 ### First-time setup (Admin)
 
@@ -370,22 +426,23 @@ Save after changes. Currency in the UI is **₹**.
 2. **Settings** — store and billing details.
 3. **Users** — create cashier accounts; share passwords securely.
 4. **Categories** — confirm or add groups.
-5. **Suppliers** — add vendors.
-6. **Products** — name, category, prices, tax, reorder level, barcode.
-7. **Barcode** — generate missing codes; print labels.
-8. **Purchases** or **Inventory → Adjust** — opening stock.
-9. **Billing / POS** — test a sale; reprint from **Invoices**.
+5. **Locations** — create display (D), storage (S) and promo (P) racks and their shelves on each floor.
+6. **Suppliers** — add vendors.
+7. **Products** — name, category, prices, tax, reorder level, barcode, display and storage locations.
+8. **Barcode** — generate missing codes; print labels.
+9. **Purchases** or **Inventory → Adjust** — opening stock.
+10. **Billing / POS** — test a sale; reprint from **Invoices**.
 
 ### Daily store operation
 
 | Who | Tasks |
 |-----|--------|
 | Cashier | Login → Billing → scan → checkout (cash/card/UPI) → next customer. Reprint from Invoices. Logout at shift end. |
-| Admin | Dashboard for sales and stock alerts → receive goods on Purchases → adjust exceptions in Inventory → print labels → Reports and Audit as needed. |
+| Admin | Dashboard for sales and stock alerts → receive goods on Purchases → put goods away using the Put-away List → adjust exceptions in Inventory → print labels → Reports and Audit as needed. |
 
 ---
 
-## 17. Troubleshooting
+## 18. Troubleshooting
 
 | Problem | What to try |
 |---------|-------------|
@@ -399,10 +456,12 @@ Save after changes. Currency in the UI is **₹**.
 | "Return window of 7 days has passed" | Ask an admin to process the return. |
 | Cannot void a sale | Cashiers can only void their own same-day sales. Sales with returns cannot be voided. |
 | Session lost | Sign in again. Logout clears the stored token. |
+| Location missing in product form | Only active locations are listed. Create or reactivate it on **Locations**. |
+| Put-away List shows **Unassigned** | Assign a location to that product on **Products**. |
 
 ---
 
-## 18. Quick menu map
+## 19. Quick menu map
 
 | Menu | Path | Who |
 |------|------|-----|
@@ -410,6 +469,7 @@ Save after changes. Currency in the UI is **₹**.
 | Billing / POS | `/billing` | All |
 | Products | `/products` | Admin |
 | Categories | `/categories` | Admin |
+| Locations | `/locations` | Admin |
 | Suppliers | `/suppliers` | Admin |
 | Purchases | `/purchases` | Admin |
 | Inventory | `/inventory` | Admin |

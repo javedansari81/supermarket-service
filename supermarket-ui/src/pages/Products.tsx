@@ -10,18 +10,28 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Visibility } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh, Visibility, Add } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
 import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
-import { Product, Category, PaginatedResponse } from '../types';
+import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole } from '../types';
 import toast from 'react-hot-toast';
 
 const PACKED_UNITS = ['pcs', 'pack', 'box', 'bottle', 'dozen'];
 const LOOSE_UNITS = ['kg', 'g', 'ltr', 'ml'];
 const GST_RATES = ['0', '5', '18', '40'];
+const ROLE_COLORS: Record<LocationRole, 'primary' | 'secondary' | 'warning'> = { display: 'primary', storage: 'secondary', promo: 'warning' };
+
+interface FormLocation { location_id: string; is_primary: boolean; }
+
+const primaryLocation = (locations?: ProductLocation[]) =>
+  locations?.find((l) => l.role === 'display' && l.is_primary) ?? locations?.find((l) => l.is_primary) ?? locations?.[0];
+
+const formatLocations = (locations?: ProductLocation[]) =>
+  locations?.length ? locations.map((l) =>
+    `${l.location_code} (${l.role}${l.floor ? `, ${l.floor}` : ''}${l.is_primary ? ', primary' : ''})`).join(', ') : '-';
 
 const emptyForm = {
   product_name: '', brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
@@ -42,12 +52,19 @@ const Products: React.FC = () => {
   const [formData, setFormData] = useState(emptyForm);
   const [gstRef, setGstRef] = useState<GstRateRef | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
+  const [activeLocations, setActiveLocations] = useState<StoreLocation[]>([]);
+  const [locationFilter, setLocationFilter] = useState('');
+  const [formLocations, setFormLocations] = useState<FormLocation[]>([]);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
       const response = await api.get<PaginatedResponse<Product>>(API_ENDPOINTS.PRODUCTS, {
-        params: { page: page + 1, page_size: pageSize, search }
+        params: {
+          page: page + 1, page_size: pageSize, search,
+          location_id: locationFilter && locationFilter !== 'unassigned' ? parseInt(locationFilter) : undefined,
+          unassigned: locationFilter === 'unassigned' ? true : undefined
+        }
       });
       setProducts(response.data.items);
       setTotal(response.data.total);
@@ -56,7 +73,7 @@ const Products: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, locationFilter]);
 
   const fetchCategories = async () => {
     try {
@@ -67,8 +84,17 @@ const Products: React.FC = () => {
     }
   };
 
+  const fetchActiveLocations = async () => {
+    try {
+      const response = await api.get<StoreLocation[]>(API_ENDPOINTS.LOCATIONS_ACTIVE);
+      setActiveLocations(response.data);
+    } catch (error) {
+      console.error('Failed to fetch locations');
+    }
+  };
+
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { fetchCategories(); }, []);
+  useEffect(() => { fetchCategories(); fetchActiveLocations(); }, []);
 
   const handleOpenDialog = (product?: Product) => {
     if (product) {
@@ -83,9 +109,13 @@ const Products: React.FC = () => {
         unit_type: product.unit_type, is_loose: !!product.is_loose,
         expiry_date: product.expiry_date || '', status: product.status
       });
+      setFormLocations((product.locations || []).map((l) => ({
+        location_id: String(l.location_id), is_primary: l.is_primary
+      })));
     } else {
       setEditProduct(null);
       setFormData(emptyForm);
+      setFormLocations([]);
     }
     setGstRef(null);
     setDialogOpen(true);
@@ -112,6 +142,7 @@ const Products: React.FC = () => {
     const sellingPrice = parseFloat(formData.selling_price);
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
+    if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
     try {
       const data = {
         product_name: formData.product_name.trim(), brand: formData.brand || undefined,
@@ -121,7 +152,8 @@ const Products: React.FC = () => {
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
         unit_type: formData.unit_type, is_loose: formData.is_loose,
-        expiry_date: formData.expiry_date || undefined, status: formData.status
+        expiry_date: formData.expiry_date || undefined, status: formData.status,
+        locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
       };
 
       if (editProduct) {
@@ -134,9 +166,25 @@ const Products: React.FC = () => {
       setDialogOpen(false);
       fetchProducts();
     } catch (error: any) {
-      toast.error(error.response?.data?.detail || 'Failed to save product');
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to save product');
     }
   };
+
+  const locationOptions = [
+    ...activeLocations.map((l) => ({ id: l.id, code: l.location_code, role: l.location_type, floor: l.floor })),
+    ...(editProduct?.locations || []).filter((pl) => !activeLocations.some((l) => l.id === pl.location_id))
+      .map((pl) => ({ id: pl.location_id, code: pl.location_code, role: pl.role, floor: pl.floor })),
+  ];
+  const roleOf = (locationId: string) => locationOptions.find((o) => String(o.id) === locationId)?.role;
+
+  const updateFormLocation = (index: number, changes: Partial<FormLocation>) =>
+    setFormLocations(formLocations.map((l, i) => {
+      if (i === index) return { ...l, ...changes };
+      const role = roleOf(changes.location_id ?? formLocations[index].location_id);
+      if (changes.is_primary && role && roleOf(l.location_id) === role) return { ...l, is_primary: false };
+      return l;
+    }));
 
   const handleDelete = async (id: number) => {
     if (!window.confirm('Delete this product?')) return;
@@ -164,6 +212,10 @@ const Products: React.FC = () => {
       `₹${Number(params.value || 0).toFixed(2)}${params.row.is_loose ? `/${params.row.unit_type}` : ''}` },
     { field: 'stock_quantity', headerName: 'Stock', width: 100, renderCell: (params: GridRenderCellParams) =>
       `${Number(params.value || 0)} ${params.row.unit_type || ''}` },
+    { field: 'locations', headerName: 'Location', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => {
+      const loc = primaryLocation(params.row.locations);
+      return loc ? <span title={formatLocations(params.row.locations)}>{loc.location_code}</span> : '-';
+    }},
     { field: 'status', headerName: 'Status', width: 90, renderCell: (params: GridRenderCellParams) => (
       <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
     )},
@@ -184,6 +236,13 @@ const Products: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 2 }}>
           <TextField placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
+          <FormControl sx={{ minWidth: 200 }}><InputLabel>Location</InputLabel>
+            <Select value={locationFilter} label="Location"
+              onChange={(e) => { setLocationFilter(e.target.value); setPage(0); }}>
+              <MenuItem value="">All locations</MenuItem>
+              <MenuItem value="unassigned">No location assigned</MenuItem>
+              {activeLocations.map((l) => <MenuItem key={l.id} value={String(l.id)}>{l.location_code} ({l.floor})</MenuItem>)}
+            </Select></FormControl>
           <IconButton onClick={fetchProducts}><Refresh /></IconButton>
         </Box>
       </Card>
@@ -302,6 +361,41 @@ const Products: React.FC = () => {
                   </Select></FormControl>
               </Grid>
             )}
+            <Grid size={12}><Divider>Store Locations</Divider></Grid>
+            {formLocations.map((loc, index) => (
+              <React.Fragment key={index}>
+                <Grid size={{ xs: 12, md: 6 }}>
+                  <FormControl fullWidth size="small"><InputLabel>Location</InputLabel>
+                    <Select value={loc.location_id} label="Location"
+                      onChange={(e) => updateFormLocation(index, { location_id: e.target.value, is_primary: false })}>
+                      {locationOptions.map((o) => (
+                        <MenuItem key={o.id} value={String(o.id)}>{o.code} · {o.role} · {o.floor}</MenuItem>
+                      ))}
+                    </Select></FormControl>
+                </Grid>
+                <Grid size={{ xs: 5, md: 2 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                  {roleOf(loc.location_id) && (
+                    <Chip size="small" label={roleOf(loc.location_id)} color={ROLE_COLORS[roleOf(loc.location_id)!]} />
+                  )}
+                </Grid>
+                <Grid size={{ xs: 5, md: 3 }}>
+                  <ToggleButton value="primary" size="small" fullWidth selected={loc.is_primary} color="primary"
+                    onChange={() => updateFormLocation(index, { is_primary: !loc.is_primary })}>Primary</ToggleButton>
+                </Grid>
+                <Grid size={{ xs: 2, md: 1 }}>
+                  <IconButton color="error" title="Remove location"
+                    onClick={() => setFormLocations(formLocations.filter((_, i) => i !== index))}><Delete fontSize="small" /></IconButton>
+                </Grid>
+              </React.Fragment>
+            ))}
+            <Grid size={12}>
+              <Button size="small" startIcon={<Add />} disabled={!locationOptions.length}
+                onClick={() => setFormLocations([...formLocations, { location_id: '', is_primary: false }])}>Add Location</Button>
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                {locationOptions.length ? 'e.g. a D rack shelf and an S rack shelf. The role follows the rack type; the first location of each role is primary if none is marked'
+                  : 'Create locations on the Locations page first'}
+              </Typography>
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -338,6 +432,10 @@ const Products: React.FC = () => {
                   <Typography>{value}</Typography>
                 </Grid>
               ))}
+              <Grid size={12}>
+                <Typography variant="caption" color="text.secondary">Locations</Typography>
+                <Typography>{formatLocations(viewProduct.locations)}</Typography>
+              </Grid>
             </Grid>
           )}
         </DialogContent>

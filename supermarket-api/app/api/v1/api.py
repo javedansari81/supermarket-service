@@ -8,6 +8,7 @@ from app.api.v1.endpoints import (
     users,
     categories,
     products,
+    store_locations,
     suppliers,
     purchases,
     inventory,
@@ -37,6 +38,9 @@ api_router.include_router(categories.router, prefix="/categories", tags=["Catego
 
 # Product management
 api_router.include_router(products.router, prefix="/products", tags=["Products"])
+
+# Store locations (product placement)
+api_router.include_router(store_locations.router, prefix="/locations", tags=["Store Locations"])
 
 # Supplier management
 api_router.include_router(suppliers.router, prefix="/suppliers", tags=["Suppliers"])

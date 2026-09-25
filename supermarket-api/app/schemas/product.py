@@ -7,6 +7,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.category import CategoryResponse
+from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
 
 
 class ProductBase(BaseModel):
@@ -31,6 +32,7 @@ class ProductBase(BaseModel):
 class ProductCreate(ProductBase):
     """Schema for creating a product"""
     stock_quantity: Optional[Decimal] = Field(Decimal("0"), ge=0)
+    locations: Optional[List[ProductLocationIn]] = None
 
     @model_validator(mode="after")
     def check_price_not_above_mrp(self):
@@ -56,6 +58,7 @@ class ProductUpdate(BaseModel):
     expiry_date: Optional[date] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    locations: Optional[List[ProductLocationIn]] = None
 
 
 class ProductResponse(ProductBase, TimestampSchema):
@@ -66,6 +69,7 @@ class ProductResponse(ProductBase, TimestampSchema):
     stock_quantity: Decimal
     status: str
     category: Optional[CategoryResponse] = None
+    locations: List[ProductLocationResponse] = []
 
 
 class ProductListResponse(BaseModel):
@@ -89,4 +93,5 @@ class ProductSearchResponse(BaseModel):
     unit_type: str
     is_loose: bool = False
     hsn_code: Optional[str] = None
+    locations: List[ProductLocationResponse] = []
 

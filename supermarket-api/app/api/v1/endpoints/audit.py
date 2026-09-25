@@ -18,6 +18,7 @@ NAME_FIELDS = {
     "product": "product_name",
     "category": "category_name",
     "supplier": "supplier_name",
+    "store_location": "location_code",
     "user": "username",
 }
 IGNORED_DIFF_FIELDS = {
@@ -242,6 +243,7 @@ async def get_entity_types(current_user = Depends(get_current_admin_user)):
             {"value": "product", "label": "Product"},
             {"value": "category", "label": "Category"},
             {"value": "supplier", "label": "Supplier"},
+            {"value": "store_location", "label": "Store Location"},
             {"value": "purchase", "label": "Purchase"},
             {"value": "sale", "label": "Sale"},
             {"value": "sale_return", "label": "Sale Return"},

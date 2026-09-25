@@ -10,14 +10,14 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { AttachFile, Block, CloudUpload, Delete, Edit, OpenInNew, Refresh, Visibility } from '@mui/icons-material';
+import { AttachFile, Block, CloudUpload, Delete, Edit, OpenInNew, Place, Refresh, Visibility } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import { API_ENDPOINTS } from '../config/api';
-import { Supplier, Product, PaginatedResponse } from '../types';
+import { Supplier, Product, PaginatedResponse, PutawayItem } from '../types';
 import toast from 'react-hot-toast';
 
 interface PurchaseItem { product_id: number; product_name: string; quantity: number; unit_price: number; }
@@ -80,6 +80,7 @@ const Purchases: React.FC = () => {
   const [cancelReason, setCancelReason] = useState('');
   const [newBillFile, setNewBillFile] = useState<File | null>(null);
   const [billBusy, setBillBusy] = useState(false);
+  const [putaway, setPutaway] = useState<{ purchaseNo: string; items: PutawayItem[] } | null>(null);
 
   const fetchPurchases = useCallback(async () => {
     setLoading(true);
@@ -202,6 +203,13 @@ const Purchases: React.FC = () => {
   };
 
   const handleView = async (id: number) => { const p = await loadPurchase(id); if (p) setViewPurchase(p); };
+
+  const handlePutaway = async (purchase: Purchase) => {
+    try {
+      const response = await api.get<PutawayItem[]>(`${API_ENDPOINTS.PURCHASES}/${purchase.id}/putaway`);
+      setPutaway({ purchaseNo: purchase.purchase_no, items: response.data });
+    } catch (error: any) { toast.error(apiErrorMessage(error, 'Failed to load put-away list')); }
+  };
 
   const handleEditOpen = async (id: number) => {
     const p = await loadPurchase(id);
@@ -414,7 +422,32 @@ const Purchases: React.FC = () => {
             </>
           )}
         </DialogContent>
-        <DialogActions><Button onClick={() => setViewPurchase(null)}>Close</Button></DialogActions>
+        <DialogActions>
+          <Button startIcon={<Place />} onClick={() => viewPurchase && handlePutaway(viewPurchase)}>Put-away List</Button>
+          <Button onClick={() => setViewPurchase(null)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!putaway} onClose={() => setPutaway(null)} maxWidth="md" fullWidth>
+        <DialogTitle>Put-away List - {putaway?.purchaseNo}</DialogTitle>
+        <DialogContent>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead><TableRow><TableCell>Location</TableCell><TableCell>Product No</TableCell><TableCell>Product</TableCell><TableCell align="right">Qty</TableCell><TableCell>Other Locations</TableCell></TableRow></TableHead>
+              <TableBody>
+                {putaway?.items.map((item) => (
+                  <TableRow key={item.product_id}>
+                    <TableCell>{item.locations[0] ? <strong>{item.locations[0].location_code} ({item.locations[0].role}, {item.locations[0].floor})</strong> : <Chip label="Unassigned" size="small" color="warning" />}</TableCell>
+                    <TableCell>{item.product_no}</TableCell><TableCell>{item.product_name}</TableCell>
+                    <TableCell align="right">{Number(item.quantity)}</TableCell>
+                    <TableCell>{item.locations.slice(1).map((l) => `${l.location_code} (${l.role}, ${l.floor})`).join(', ') || '-'}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setPutaway(null)}>Close</Button></DialogActions>
       </Dialog>
 
       <Dialog open={!!editPurchase} onClose={() => setEditPurchase(null)} maxWidth="md" fullWidth>

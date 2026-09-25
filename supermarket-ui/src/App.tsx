@@ -19,6 +19,7 @@ import Dashboard from './pages/Dashboard';
 import Billing from './pages/Billing';
 import Products from './pages/Products';
 import Categories from './pages/Categories';
+import Locations from './pages/Locations';
 import Suppliers from './pages/Suppliers';
 import Purchases from './pages/Purchases';
 import Inventory from './pages/Inventory';
@@ -51,6 +52,7 @@ function App() {
                 <Route path="billing" element={<Billing />} />
                 <Route path="products" element={<ProtectedRoute requireAdmin><Products /></ProtectedRoute>} />
                 <Route path="categories" element={<ProtectedRoute requireAdmin><Categories /></ProtectedRoute>} />
+                <Route path="locations" element={<ProtectedRoute requireAdmin><Locations /></ProtectedRoute>} />
                 <Route path="suppliers" element={<ProtectedRoute requireAdmin><Suppliers /></ProtectedRoute>} />
                 <Route path="purchases" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
                 <Route path="inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />

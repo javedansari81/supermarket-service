@@ -98,6 +98,27 @@ def test_cancel_purchase_when_stock_already_sold(client, db, product, admin_head
     assert stock_of(client, product, admin_headers) == 5
 
 
+def test_purchase_putaway_list(client, category, product, locations, admin_headers, admin_b_headers):
+    shelf, backroom = locations["shelf"], locations["backroom"]
+    client.put(f"/api/v1/products/{product.id}", headers=admin_headers, json={"locations": [
+        {"location_id": backroom.id}, {"location_id": shelf.id}]})
+    other = client.post("/api/v1/products", headers=admin_headers, json={
+        "product_name": "Salt 1kg", "mrp": 20, "selling_price": 18, "category_id": category.id}).json()
+    body = {"purchase_date": "2026-09-01", "items": [
+        {"product_id": other["id"], "quantity": 5, "unit_cost": 10},
+        {"product_id": product.id, "quantity": 10, "unit_cost": 40}]}
+    pid = client.post(PUR, json=body, headers=admin_headers).json()["id"]
+
+    res = client.get(f"{PUR}/{pid}/putaway", headers=admin_headers)
+    assert res.status_code == 200
+    rows = res.json()
+    assert [r["product_name"] for r in rows] == ["Rice 1kg", "Salt 1kg"]
+    assert [l["location_code"] for l in rows[0]["locations"]] == ["D01-4", "S01-1"]
+    assert [l["floor"] for l in rows[0]["locations"]] == ["Ground", "1st"]
+    assert rows[1]["locations"] == []
+    assert client.get(f"{PUR}/{pid}/putaway", headers=admin_b_headers).status_code == 404
+
+
 # ---------- Supplier bill ----------
 
 @pytest.fixture()

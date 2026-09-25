@@ -25,7 +25,12 @@ export const API_ENDPOINTS = {
   // Products
   PRODUCTS: '/products',
   PRODUCT_SEARCH: '/products/search',
-  
+
+  // Store locations
+  LOCATIONS: '/locations',
+  LOCATIONS_ACTIVE: '/locations/active',
+  LOCATIONS_SUGGEST: '/locations/suggest',
+
   // Suppliers
   SUPPLIERS: '/suppliers',
   SUPPLIERS_ACTIVE: '/suppliers/active',

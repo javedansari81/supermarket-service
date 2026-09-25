@@ -55,6 +55,55 @@ export interface Category {
   created_at: string;
 }
 
+// Store location types
+export type LocationRole = 'display' | 'storage' | 'promo';
+export type LocationType = LocationRole;
+
+export interface StoreLocation {
+  id: number;
+  location_code: string;
+  location_type: LocationType;
+  floor: string;
+  rack_no: string;
+  shelf_no?: string;
+  description?: string;
+  status: string;
+}
+
+export interface LocationSuggestion {
+  location_type: LocationType;
+  rack_no: string;
+  shelf_no: string;
+  floor?: string;
+  existing_racks: string[];
+}
+
+export interface ProductLocation {
+  id: number;
+  location_id: number;
+  location_code?: string;
+  floor?: string;
+  role: LocationRole;
+  is_primary: boolean;
+}
+
+export interface LocationProduct {
+  product_id: number;
+  product_no: string;
+  product_name: string;
+  role: LocationRole;
+  is_primary: boolean;
+  stock_quantity: number | string;
+}
+
+export interface PutawayItem {
+  product_id: number;
+  product_no: string;
+  product_name: string;
+  quantity: number | string;
+  locations: ProductLocation[];
+}
+
 // Product types
 export interface Product {
   id: number;
@@ -76,6 +125,7 @@ export interface Product {
   reorder_level?: number;
   unit_type: string;
   status: string;
+  locations?: ProductLocation[];
 }
 
 // Supplier types

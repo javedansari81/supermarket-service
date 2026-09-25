@@ -16,6 +16,7 @@ from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.invoice import Invoice
 from app.models.audit_log import AuditLog
 from app.models.barcode_config import BarcodeConfig
+from app.models.store_location import StoreLocation, ProductLocation
 
 __all__ = [
     "Tenant",
@@ -36,5 +37,7 @@ __all__ = [
     "Invoice",
     "AuditLog",
     "BarcodeConfig",
+    "StoreLocation",
+    "ProductLocation",
 ]
 

@@ -39,7 +39,9 @@ class Product(Base, TimestampMixin, StatusMixin):
     purchase_items = relationship("PurchaseItem", back_populates="product")
     sale_items = relationship("SaleItem", back_populates="product")
     stock_movements = relationship("StockMovement", back_populates="product")
-    
+    locations = relationship("ProductLocation", back_populates="product",
+                             cascade="all, delete-orphan", order_by="ProductLocation.id")
+
     # Unique constraints on tenant_id + product_no and tenant_id + barcode
     __table_args__ = (
         {'extend_existing': True}

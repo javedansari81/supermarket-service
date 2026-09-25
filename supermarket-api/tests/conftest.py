@@ -18,7 +18,7 @@ from app.core.config import settings
 from app.core.database import Base, get_db
 from app.core.security import create_access_token, get_password_hash
 import app.models  # noqa: F401  (register all models on Base.metadata)
-from app.models import Role, Tenant, User, Category, Product, Supplier
+from app.models import Role, Tenant, User, Category, Product, Supplier, StoreLocation
 from main import app
 
 TEST_SCHEMA = os.environ.get("TEST_DB_SCHEMA", "mart_test")
@@ -150,6 +150,18 @@ def product(db, seed, category):
     db.add(prod)
     db.commit()
     return prod
+
+
+@pytest.fixture()
+def locations(db, seed):
+    """A display shelf and a storage shelf for tenant A"""
+    shelf = StoreLocation(tenant_id=seed["tenant_a"].id, location_code="D01-4", location_type="display",
+                          floor="Ground", rack_no="D01", shelf_no="4")
+    backroom = StoreLocation(tenant_id=seed["tenant_a"].id, location_code="S01-1", location_type="storage",
+                             floor="1st", rack_no="S01", shelf_no="1")
+    db.add_all([shelf, backroom])
+    db.commit()
+    return {"shelf": shelf, "backroom": backroom}
 
 
 @pytest.fixture()

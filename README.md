@@ -69,15 +69,16 @@ Step-by-step instructions for every screen (login, POS, products, inventory, inv
 3. **User Management** - Admin and Cashier roles
 4. **Product Management** - Complete product lifecycle
 5. **Category Management** - Product categorization
-6. **Supplier Management** - Supplier information
-7. **Procurement** - Purchase order management
-8. **Inventory Management** - Stock tracking and movements
-9. **Barcode Management** - Generation and printing
-10. **Billing/Sales** - Fast cashier interface
-11. **Invoice Management** - Generation and printing
-12. **Reports** - Sales, stock, and purchase reports
-13. **Settings** - Tenant-specific configurations
-14. **Audit Logs** - Activity tracking
+6. **Store Locations** - Display, storage and promo locations per product, with purchase put-away lists
+7. **Supplier Management** - Supplier information
+8. **Procurement** - Purchase order management
+9. **Inventory Management** - Stock tracking and movements
+10. **Barcode Management** - Generation and printing
+11. **Billing/Sales** - Fast cashier interface
+12. **Invoice Management** - Generation and printing
+13. **Reports** - Sales, stock, and purchase reports
+14. **Settings** - Tenant-specific configurations
+15. **Audit Logs** - Activity tracking
 
 ## Getting Started
 
@@ -130,7 +131,7 @@ npm start
 ## User Roles
 
 ### Admin
-- Manage products, categories, suppliers
+- Manage products, categories, store locations, suppliers
 - Manage stock and procurement
 - Generate and print barcodes
 - Manage users

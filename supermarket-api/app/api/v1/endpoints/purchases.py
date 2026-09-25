@@ -3,12 +3,12 @@ Purchase/Procurement management endpoints
 """
 import os
 import uuid
-from typing import Optional
+from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
 from sqlalchemy import func, cast, Integer
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core import storage
 from app.core.config import settings
 from app.core.database import get_db
@@ -18,10 +18,12 @@ from app.models.purchase import Purchase, PurchaseItem
 from app.models.product import Product
 from app.models.supplier import Supplier
 from app.models.stock_movement import StockMovement
+from app.models.store_location import ProductLocation
 from app.schemas.purchase import (
     PurchaseCreate, PurchaseUpdate, PurchaseCancel, PurchaseResponse, PurchaseListResponse,
     PurchaseBillUrl
 )
+from app.schemas.store_location import PutawayItem, ProductLocationResponse
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
@@ -104,8 +106,51 @@ async def get_purchase(
     
     if not purchase:
         raise HTTPException(status_code=404, detail="Purchase not found")
-    
+
     return PurchaseResponse.model_validate(purchase)
+
+
+@router.get("/{purchase_id}/putaway", response_model=List[PutawayItem])
+async def get_purchase_putaway(
+    purchase_id: int,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Put-away list for a purchase: each product with its assigned locations, sorted by
+    primary display location code so staff can place goods in one walk. Unassigned items come last.
+    """
+    purchase = get_tenant_purchase(db, purchase_id, context.tenant_id)
+    product_ids = {item.product_id for item in purchase.items}
+    products = {
+        p.id: p for p in db.query(Product).options(
+            selectinload(Product.locations).joinedload(ProductLocation.location)
+        ).filter(Product.id.in_(product_ids), Product.tenant_id == context.tenant_id).all()
+    } if product_ids else {}
+
+    quantities: dict = {}
+    for item in purchase.items:
+        quantities[item.product_id] = quantities.get(item.product_id, Decimal("0")) + item.quantity
+
+    def sort_key(link: ProductLocation):
+        return (link.role != "display", not link.is_primary, link.location_code or "")
+
+    rows = []
+    for product_id, quantity in quantities.items():
+        product = products.get(product_id)
+        if not product:
+            continue
+        links = sorted(product.locations, key=sort_key)
+        rows.append(PutawayItem(
+            product_id=product.id,
+            product_no=product.product_no,
+            product_name=product.product_name,
+            quantity=quantity,
+            locations=[ProductLocationResponse.model_validate(link) for link in links]
+        ))
+    rows.sort(key=lambda r: (not r.locations, r.locations[0].location_code if r.locations else "",
+                             r.product_name))
+    return rows
 
 
 @router.post("", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)

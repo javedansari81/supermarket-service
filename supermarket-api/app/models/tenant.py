@@ -33,6 +33,7 @@ class Tenant(Base, TimestampMixin, StatusMixin):
     stock_movements = relationship("StockMovement", back_populates="tenant", cascade="all, delete-orphan")
     audit_logs = relationship("AuditLog", back_populates="tenant", cascade="all, delete-orphan")
     barcode_configs = relationship("BarcodeConfig", back_populates="tenant", cascade="all, delete-orphan")
+    store_locations = relationship("StoreLocation", back_populates="tenant", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Tenant(id={self.id}, code={self.tenant_code}, name={self.tenant_name})>"
