@@ -12,6 +12,7 @@ import Grid from '@mui/material/Grid';
 import { Print, Delete, Add, QrCode } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { Product, PaginatedResponse, ProductBatch } from '../types';
 import toast from 'react-hot-toast';
@@ -25,6 +26,8 @@ const batchLabel = (b: ProductBatch) => [
   b.expiry_date ? `Exp ${b.expiry_date}` : null,
   `Left ${Number(b.quantity_left)}`,
 ].filter(Boolean).join(' · ');
+
+const productOption = (p: Product) => ({ value: String(p.id), label: `${p.product_name}${p.barcode ? ` - ${p.barcode}` : ''}` });
 
 const fetchBatches = async (productId: number): Promise<ProductBatch[]> => {
   try {
@@ -263,14 +266,8 @@ const Barcode: React.FC = () => {
               <Typography variant="h6" gutterBottom>Add Products to Print</Typography>
               <Grid container spacing={2} alignItems="center">
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Select Product</InputLabel>
-                    <Select value={selectedProduct} label="Select Product" onChange={(e) => handlePrintProductChange(String(e.target.value))}>
-                      {products.filter(p => p.barcode || !p.is_loose).map(p => (
-                        <MenuItem key={p.id} value={String(p.id)}>{p.product_name}{p.barcode ? ` - ${p.barcode}` : ''}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <SearchableSelect label="Select Product" value={selectedProduct} onChange={handlePrintProductChange}
+                    options={products.filter(p => p.barcode || !p.is_loose).map(productOption)} />
                 </Grid>
                 {printBatches.length > 0 && (
                   <Grid size={12}>
@@ -315,12 +312,8 @@ const Barcode: React.FC = () => {
               </Typography>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 6 }}>
-                  <FormControl fullWidth>
-                    <InputLabel>Packed Product</InputLabel>
-                    <Select value={packed.product_id} label="Packed Product" onChange={(e) => handlePackedProductChange(e.target.value)}>
-                      {packedProducts.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}{p.barcode ? ` - ${p.barcode}` : ''}</MenuItem>)}
-                    </Select>
-                  </FormControl>
+                  <SearchableSelect label="Packed Product" value={packed.product_id} onChange={handlePackedProductChange}
+                    options={packedProducts.map(productOption)} />
                 </Grid>
                 {packedBatches.length > 0 && (
                   <Grid size={12}>

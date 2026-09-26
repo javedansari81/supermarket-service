@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Button, Card, CardContent, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Table, TableBody,
+  Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper, Chip,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
@@ -16,6 +16,7 @@ import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, Product, PaginatedResponse, PutawayItem } from '../types';
 import toast from 'react-hot-toast';
@@ -157,6 +158,7 @@ const Purchases: React.FC = () => {
   };
 
   const isLooseProduct = (productId: number | string) => !!products.find(p => p.id === Number(productId))?.is_loose;
+  const productOptions = products.map(p => ({ value: String(p.id), label: p.barcode ? `${p.product_name} - ${p.barcode}` : p.product_name }));
 
   const handleRemoveItem = (index: number) => setItems(items.filter((_, i) => i !== index));
 
@@ -377,10 +379,8 @@ const Purchases: React.FC = () => {
         <DialogContent>
           <Grid container spacing={2} sx={{ pt: 1 }}>
             <Grid size={{ xs: 12, md: 6 }}>
-              <FormControl fullWidth><InputLabel>Supplier</InputLabel>
-                <Select value={supplierId} label="Supplier" onChange={(e) => setSupplierId(e.target.value)}>
-                  {suppliers.map(s => <MenuItem key={s.id} value={s.id}>{s.supplier_name}</MenuItem>)}
-                </Select></FormControl>
+              <SearchableSelect label="Supplier" value={supplierId} onChange={setSupplierId}
+                options={suppliers.map(s => ({ value: String(s.id), label: s.supplier_name }))} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
               <DatePicker label="Purchase Date" value={purchaseDate} onChange={setPurchaseDate} sx={{ width: '100%' }} />
@@ -405,10 +405,8 @@ const Purchases: React.FC = () => {
           </Grid>
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Add Items</Typography>
           <Grid container spacing={1} alignItems="center">
-            <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
-              <Select value={selectedProduct} label="Product" onChange={(e) => handleSelectProduct(String(e.target.value))}>
-                {products.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}</MenuItem>)}
-              </Select></FormControl></Grid>
+            <Grid size={{ xs: 12, sm: 5 }}><SearchableSelect label="Product" size="small" value={selectedProduct}
+              onChange={handleSelectProduct} options={productOptions} /></Grid>
             <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={quantity} onChange={(e) => setQuantity(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
             <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Cost" type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} fullWidth /></Grid>
             <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleAddItem} fullWidth>Add</Button></Grid>
@@ -529,13 +527,12 @@ const Purchases: React.FC = () => {
         <DialogContent>
           <Grid container spacing={2} sx={{ pt: 1 }}>
             <Grid size={12}>
-              <FormControl fullWidth><InputLabel>Supplier</InputLabel>
-                <Select value={editSupplierId} label="Supplier" onChange={(e) => setEditSupplierId(e.target.value)}>
-                  {editPurchase?.supplier_id && !suppliers.some(s => s.id === editPurchase.supplier_id) && (
-                    <MenuItem value={String(editPurchase.supplier_id)}>{editPurchase.supplier_name}</MenuItem>
-                  )}
-                  {suppliers.map(s => <MenuItem key={s.id} value={String(s.id)}>{s.supplier_name}</MenuItem>)}
-                </Select></FormControl>
+              <SearchableSelect label="Supplier" value={editSupplierId} onChange={setEditSupplierId}
+                options={[
+                  ...(editPurchase?.supplier_id && !suppliers.some(s => s.id === editPurchase.supplier_id)
+                    ? [{ value: String(editPurchase.supplier_id), label: editPurchase.supplier_name || `#${editPurchase.supplier_id}` }] : []),
+                  ...suppliers.map(s => ({ value: String(s.id), label: s.supplier_name })),
+                ]} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <DatePicker label="Purchase Date" value={editDate} onChange={setEditDate} sx={{ width: '100%' }} />
@@ -550,10 +547,8 @@ const Purchases: React.FC = () => {
           </Grid>
           <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>Items</Typography>
           <Grid container spacing={1} alignItems="center">
-            <Grid size={{ xs: 12, sm: 5 }}><FormControl fullWidth size="small"><InputLabel>Product</InputLabel>
-              <Select value={editProduct} label="Product" onChange={(e) => handleEditSelectProduct(String(e.target.value))}>
-                {products.map(p => <MenuItem key={p.id} value={String(p.id)}>{p.product_name}</MenuItem>)}
-              </Select></FormControl></Grid>
+            <Grid size={{ xs: 12, sm: 5 }}><SearchableSelect label="Product" size="small" value={editProduct}
+              onChange={handleEditSelectProduct} options={productOptions} /></Grid>
             <Grid size={{ xs: 4, sm: 2 }}><TextField size="small" label="Qty" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
             <Grid size={{ xs: 5, sm: 3 }}><TextField size="small" label="Unit Cost" type="number" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
             <Grid size={{ xs: 3, sm: 2 }}><Button variant="outlined" onClick={handleEditAddItem} disabled={!editProduct} fullWidth>Add</Button></Grid>

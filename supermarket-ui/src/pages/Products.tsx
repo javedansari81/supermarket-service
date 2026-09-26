@@ -14,6 +14,7 @@ import { Edit, Delete, Search, Refresh, Visibility, Add } from '@mui/icons-mater
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
 import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole } from '../types';
@@ -236,13 +237,13 @@ const Products: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 2 }}>
           <TextField placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
-          <FormControl sx={{ minWidth: 200 }}><InputLabel>Location</InputLabel>
-            <Select value={locationFilter} label="Location"
-              onChange={(e) => { setLocationFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">All locations</MenuItem>
-              <MenuItem value="unassigned">No location assigned</MenuItem>
-              {activeLocations.map((l) => <MenuItem key={l.id} value={String(l.id)}>{l.location_code} ({l.floor})</MenuItem>)}
-            </Select></FormControl>
+          <SearchableSelect label="Location" value={locationFilter} fullWidth={false} sx={{ minWidth: 220 }}
+            onChange={(v) => { setLocationFilter(v); setPage(0); }}
+            options={[
+              { value: '', label: 'All locations' },
+              { value: 'unassigned', label: 'No location assigned' },
+              ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
+            ]} />
           <IconButton onClick={fetchProducts}><Refresh /></IconButton>
         </Box>
       </Card>
@@ -277,12 +278,12 @@ const Products: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl fullWidth><InputLabel>Category</InputLabel>
-                <Select value={formData.category_id} label="Category"
-                  onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}>
-                  <MenuItem value="">None</MenuItem>
-                  {categories.map((c) => <MenuItem key={c.id} value={c.id.toString()}>{c.category_name}</MenuItem>)}
-                </Select></FormControl>
+              <SearchableSelect label="Category" value={formData.category_id}
+                onChange={(v) => setFormData({ ...formData, category_id: v })}
+                options={[
+                  { value: '', label: 'None' },
+                  ...categories.map((c) => ({ value: c.id.toString(), label: c.category_name })),
+                ]} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label="Barcode" value={formData.barcode}
@@ -365,13 +366,9 @@ const Products: React.FC = () => {
             {formLocations.map((loc, index) => (
               <React.Fragment key={index}>
                 <Grid size={{ xs: 12, md: 6 }}>
-                  <FormControl fullWidth size="small"><InputLabel>Location</InputLabel>
-                    <Select value={loc.location_id} label="Location"
-                      onChange={(e) => updateFormLocation(index, { location_id: e.target.value, is_primary: false })}>
-                      {locationOptions.map((o) => (
-                        <MenuItem key={o.id} value={String(o.id)}>{o.code} · {o.role} · {o.floor}</MenuItem>
-                      ))}
-                    </Select></FormControl>
+                  <SearchableSelect label="Location" size="small" value={loc.location_id}
+                    onChange={(v) => updateFormLocation(index, { location_id: v, is_primary: false })}
+                    options={locationOptions.map((o) => ({ value: String(o.id), label: `${o.code} · ${o.role} · ${o.floor}` }))} />
                 </Grid>
                 <Grid size={{ xs: 5, md: 2 }} sx={{ display: 'flex', alignItems: 'center' }}>
                   {roleOf(loc.location_id) && (

@@ -4,12 +4,13 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardContent, TextField, Button,
-  Tabs, Tab, Divider, Switch, FormControlLabel, Alert, MenuItem,
+  Tabs, Tab, Divider, Switch, FormControlLabel, Alert,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Save } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { INDIAN_STATES, stateNameFromCode } from '../config/gst';
 import toast from 'react-hot-toast';
@@ -117,12 +118,10 @@ const Settings: React.FC = () => {
                   onChange={(e) => handleGstinChange(e.target.value)} />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField fullWidth select label="State" value={storeSettings.store_state}
+                <SearchableSelect label="State" value={storeSettings.store_state}
                   helperText="Place of supply for CGST/SGST"
-                  onChange={(e) => setStoreSettings({ ...storeSettings, store_state: e.target.value })}>
-                  <MenuItem value="">Select state</MenuItem>
-                  {INDIAN_STATES.map((s) => <MenuItem key={s.code} value={s.name}>{s.code} - {s.name}</MenuItem>)}
-                </TextField>
+                  onChange={(v) => setStoreSettings({ ...storeSettings, store_state: v })}
+                  options={INDIAN_STATES.map((s) => ({ value: s.name, label: `${s.code} - ${s.name}` }))} />
               </Grid>
               <Grid size={{ xs: 12, md: 6 }}>
                 <TextField fullWidth label="FSSAI Licence No." value={storeSettings.fssai_license}
