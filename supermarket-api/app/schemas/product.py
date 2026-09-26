@@ -1,13 +1,15 @@
 """
 Product schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.category import CategoryResponse
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
+
+NetUnit = Literal["g", "kg", "ml", "l", "pcs"]
 
 
 class ProductBase(BaseModel):
@@ -24,6 +26,8 @@ class ProductBase(BaseModel):
     unit_type: Optional[str] = "pcs"
     is_loose: bool = False
     hsn_code: Optional[str] = None
+    net_quantity: Optional[Decimal] = Field(None, gt=0)
+    net_unit: Optional[NetUnit] = None
     reorder_level: Optional[Decimal] = Field(Decimal("0"), ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None
@@ -54,6 +58,8 @@ class ProductUpdate(BaseModel):
     unit_type: Optional[str] = None
     is_loose: Optional[bool] = None
     hsn_code: Optional[str] = None
+    net_quantity: Optional[Decimal] = Field(None, gt=0)
+    net_unit: Optional[NetUnit] = None
     reorder_level: Optional[Decimal] = Field(None, ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None

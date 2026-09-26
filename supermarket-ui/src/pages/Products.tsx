@@ -17,12 +17,16 @@ import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
-import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole } from '../types';
+import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit } from '../types';
 import toast from 'react-hot-toast';
 
 const PACKED_UNITS = ['pcs', 'pack', 'box', 'bottle', 'dozen'];
 const LOOSE_UNITS = ['kg', 'g', 'ltr', 'ml'];
 const GST_RATES = ['0', '5', '18', '40'];
+const PACK_UNITS: { value: NetUnit; label: string }[] = [
+  { value: 'g', label: 'g' }, { value: 'kg', label: 'kg' }, { value: 'ml', label: 'ml' },
+  { value: 'l', label: 'L' }, { value: 'pcs', label: 'pcs' },
+];
 const ROLE_COLORS: Record<LocationRole, 'primary' | 'secondary' | 'warning'> = { display: 'primary', storage: 'secondary', promo: 'warning' };
 
 interface FormLocation { location_id: string; is_primary: boolean; }
@@ -37,8 +41,11 @@ const formatLocations = (locations?: ProductLocation[]) =>
 const emptyForm = {
   product_name: '', brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
   purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: 'pcs', is_loose: false,
-  expiry_date: '', status: 'active'
+  net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
+
+const formatPackSize = (p: Product) =>
+  p.net_quantity && p.net_unit ? `${Number(p.net_quantity)} ${p.net_unit === 'l' ? 'L' : p.net_unit}` : '-';
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -55,6 +62,7 @@ const Products: React.FC = () => {
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [activeLocations, setActiveLocations] = useState<StoreLocation[]>([]);
   const [locationFilter, setLocationFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [formLocations, setFormLocations] = useState<FormLocation[]>([]);
 
   const fetchProducts = useCallback(async () => {
@@ -64,7 +72,8 @@ const Products: React.FC = () => {
         params: {
           page: page + 1, page_size: pageSize, search,
           location_id: locationFilter && locationFilter !== 'unassigned' ? parseInt(locationFilter) : undefined,
-          unassigned: locationFilter === 'unassigned' ? true : undefined
+          unassigned: locationFilter === 'unassigned' ? true : undefined,
+          is_loose: typeFilter ? typeFilter === 'loose' : undefined
         }
       });
       setProducts(response.data.items);
@@ -74,7 +83,7 @@ const Products: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, locationFilter]);
+  }, [page, pageSize, search, locationFilter, typeFilter]);
 
   const fetchCategories = async () => {
     try {
@@ -108,6 +117,8 @@ const Products: React.FC = () => {
         tax_percent: Number(product.tax_percent ?? 0).toString(),
         reorder_level: Number(product.reorder_level ?? 10).toString(),
         unit_type: product.unit_type, is_loose: !!product.is_loose,
+        net_quantity: product.net_quantity != null ? Number(product.net_quantity).toString() : '',
+        net_unit: product.net_unit || '',
         expiry_date: product.expiry_date || '', status: product.status
       });
       setFormLocations((product.locations || []).map((l) => ({
@@ -144,6 +155,10 @@ const Products: React.FC = () => {
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
     if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
+    const netQuantity = !formData.is_loose && formData.net_quantity ? parseFloat(formData.net_quantity) : null;
+    const netUnit = !formData.is_loose && formData.net_unit ? formData.net_unit : null;
+    if (netQuantity !== null && !(netQuantity > 0)) { toast.error('Pack size must be greater than 0'); return; }
+    if ((netQuantity === null) !== (netUnit === null)) { toast.error('Enter both pack size and its unit'); return; }
     try {
       const data = {
         product_name: formData.product_name.trim(), brand: formData.brand || undefined,
@@ -153,6 +168,7 @@ const Products: React.FC = () => {
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
         unit_type: formData.unit_type, is_loose: formData.is_loose,
+        net_quantity: netQuantity, net_unit: netUnit,
         expiry_date: formData.expiry_date || undefined, status: formData.status,
         locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
       };
@@ -234,17 +250,25 @@ const Products: React.FC = () => {
       <PageHeader title="Products" />
 
       <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
-          <SearchableSelect label="Location" value={locationFilter} fullWidth={false} sx={{ minWidth: 220 }}
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TextField size="small" placeholder="Search by name, code or barcode..." value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }}
+            sx={{ flex: 1, minWidth: 240 }} />
+          <SearchableSelect label="Location" size="small" value={locationFilter} fullWidth={false} sx={{ width: 240 }}
             onChange={(v) => { setLocationFilter(v); setPage(0); }}
             options={[
               { value: '', label: 'All locations' },
               { value: 'unassigned', label: 'No location assigned' },
               ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
             ]} />
-          <IconButton onClick={fetchProducts}><Refresh /></IconButton>
+          <ToggleButtonGroup exclusive size="small" color="primary" value={typeFilter}
+            onChange={(_, v) => { if (v !== null) { setTypeFilter(v); setPage(0); } }}>
+            <ToggleButton value="" sx={{ px: 2 }}>All</ToggleButton>
+            <ToggleButton value="packed" sx={{ px: 2 }}>Packed</ToggleButton>
+            <ToggleButton value="loose" sx={{ px: 2 }}>Loose</ToggleButton>
+          </ToggleButtonGroup>
+          <IconButton title="Refresh" onClick={fetchProducts}><Refresh /></IconButton>
         </Box>
       </Card>
 
@@ -315,6 +339,23 @@ const Products: React.FC = () => {
                   {(formData.is_loose ? LOOSE_UNITS : PACKED_UNITS).map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
                 </Select></FormControl>
             </Grid>
+            {!formData.is_loose && (
+              <>
+                <Grid size={{ xs: 6, md: 3 }}>
+                  <TextField fullWidth label="Pack Size" type="number" value={formData.net_quantity}
+                    inputProps={{ step: 'any', min: 0 }} helperText="Net quantity per pack, e.g. 500"
+                    onChange={(e) => setFormData({ ...formData, net_quantity: e.target.value })} />
+                </Grid>
+                <Grid size={{ xs: 6, md: 3 }}>
+                  <FormControl fullWidth><InputLabel>Pack Unit</InputLabel>
+                    <Select value={formData.net_unit} label="Pack Unit"
+                      onChange={(e) => setFormData({ ...formData, net_unit: e.target.value as NetUnit | '' })}>
+                      <MenuItem value="">None</MenuItem>
+                      {PACK_UNITS.map((u) => <MenuItem key={u.value} value={u.value}>{u.label}</MenuItem>)}
+                    </Select></FormControl>
+                </Grid>
+              </>
+            )}
             <Grid size={12}><Divider>Pricing {formData.is_loose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
             <Grid size={{ xs: 12, md: 3 }}>
               <TextField fullWidth label="MRP" type="number" value={formData.mrp}
@@ -422,6 +463,7 @@ const Products: React.FC = () => {
                 ['Stock', `${Number(viewProduct.stock_quantity || 0)} ${viewProduct.unit_type || ''}`],
                 ['Reorder Level', `${Number(viewProduct.reorder_level ?? 0)} ${viewProduct.unit_type || ''}`],
                 ['Unit', viewProduct.unit_type || '-'],
+                ...(viewProduct.is_loose ? [] : [['Pack Size', formatPackSize(viewProduct)]]),
                 ['Expiry Date', viewProduct.expiry_date || '-'],
               ].map(([label, value]) => (
                 <Grid key={label} size={{ xs: 6, md: 3 }}>

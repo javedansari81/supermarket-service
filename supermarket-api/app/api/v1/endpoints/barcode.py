@@ -239,28 +239,34 @@ async def print_packed_labels(
             status_code=400,
             detail="Create a packed product (e.g. 'Toor Dal 1 kg') for packed-goods labels"
         )
+    if not product.net_quantity or product.net_unit not in NET_UNITS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Set the pack size of {product.product_name} in Products"
+        )
     batch = label_batch(db, product, request.batch_id)
     if not batch and not product.barcode:
         raise HTTPException(status_code=400, detail="Product has no barcode")
 
     if batch:
-        if request.mrp and batch.mrp and request.mrp != batch.mrp:
-            raise HTTPException(status_code=400, detail="MRP must match the selected batch's MRP")
-        mrp = batch.mrp or request.mrp
+        mrp = batch.mrp or product.mrp
         barcode_value = batch.barcode
         batch_no = request.batch_no or batch.batch_no
         best_before = request.best_before_date or batch.expiry_date
         if best_before and best_before < request.packed_date:
             raise HTTPException(status_code=400, detail="Best before date cannot be earlier than packed date")
     else:
-        mrp = request.mrp or product.mrp
+        mrp = product.mrp
         barcode_value = product.barcode
         batch_no = request.batch_no
         best_before = request.best_before_date
     if batch_no == ProductBatch.OPENING:
         batch_no = None
     if not mrp:
-        raise HTTPException(status_code=400, detail="MRP is required for packed-goods labels")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Set the MRP of {product.product_name} (required on packed-goods labels)"
+        )
 
     store = build_store_settings(db, context.tenant_id)
     if not store.store_address:
@@ -278,9 +284,9 @@ async def print_packed_labels(
         product_name=product.product_name,
         barcode=barcode_value,
         barcode_image=generate_barcode_image(barcode_value),
-        net_quantity=format_net_quantity(request.net_quantity, request.net_unit),
+        net_quantity=format_net_quantity(product.net_quantity, product.net_unit),
         mrp=f"₹{mrp:.2f}",
-        unit_sale_price=unit_sale_price(mrp, request.net_quantity, request.net_unit),
+        unit_sale_price=unit_sale_price(mrp, product.net_quantity, product.net_unit),
         packed_date=request.packed_date.strftime("%d/%m/%Y"),
         best_before_date=best_before.strftime("%d/%m/%Y") if best_before else None,
         batch_no=batch_no or None

@@ -64,6 +64,12 @@ def product_snapshot(product: Product) -> dict:
     return {**snapshot(product), "locations": locations or None}
 
 
+def ensure_pack_size(net_quantity, net_unit):
+    """Pack size is optional, but quantity and unit must be set together"""
+    if (net_quantity is None) != (net_unit is None):
+        raise HTTPException(status_code=400, detail="Enter both pack size and its unit")
+
+
 def apply_product_locations(db: Session, product: Product, locations: List[ProductLocationIn]):
     """Sync a product's locations with the given list (add, update primary, remove).
     The role of each assignment follows the location type."""
@@ -127,6 +133,7 @@ async def list_products(
     low_stock: Optional[bool] = None,
     location_id: Optional[int] = None,
     unassigned: Optional[bool] = None,
+    is_loose: Optional[bool] = None,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -148,6 +155,9 @@ async def list_products(
 
     if unassigned:
         query = query.filter(~Product.locations.any())
+
+    if is_loose is not None:
+        query = query.filter(Product.is_loose == is_loose)
 
     words = search.split() if search else []
     for word in words:
@@ -351,6 +361,7 @@ async def create_product(
 
     if product_data.is_loose and product_data.unit_type not in LOOSE_UNITS:
         raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    ensure_pack_size(product_data.net_quantity, product_data.net_unit)
     ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
 
     # Check if barcode already exists (if provided)
@@ -427,6 +438,8 @@ async def update_product(
     unit_type = update_data.get("unit_type", product.unit_type)
     if is_loose and unit_type not in LOOSE_UNITS:
         raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    ensure_pack_size(update_data.get("net_quantity", product.net_quantity),
+                     update_data.get("net_unit", product.net_unit))
     if "category_id" in update_data:
         ensure_category_in_tenant(db, context.tenant_id, update_data["category_id"])
 

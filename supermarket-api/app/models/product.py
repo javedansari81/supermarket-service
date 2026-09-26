@@ -26,6 +26,8 @@ class Product(Base, TimestampMixin, StatusMixin):
     unit_type = Column(String(50), default='pcs')
     is_loose = Column(Boolean, nullable=False, default=False)
     hsn_code = Column(String(20))
+    net_quantity = Column(Numeric(10, 3))
+    net_unit = Column(String(5))
     stock_quantity = Column(Numeric(12, 3), default=0)
     reorder_level = Column(Numeric(12, 3), default=0)
     expiry_date = Column(Date)

@@ -20,6 +20,8 @@ def test_list_products_filters(client, product, admin_headers):
     assert client.get(URL, params={"search": "rice"}, headers=admin_headers).json()["total"] == 1
     assert client.get(URL, params={"search": "zzz"}, headers=admin_headers).json()["total"] == 0
     assert client.get(URL, params={"low_stock": True}, headers=admin_headers).json()["total"] == 0
+    assert client.get(URL, params={"is_loose": True}, headers=admin_headers).json()["total"] == 0
+    assert client.get(URL, params={"is_loose": False}, headers=admin_headers).json()["total"] == 1
 
 
 def test_list_products_isolated(client, product, admin_b_headers):

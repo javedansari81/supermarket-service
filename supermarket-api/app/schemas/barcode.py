@@ -1,7 +1,7 @@
 """
 Barcode schemas
 """
-from typing import Optional, List, Literal
+from typing import Optional, List
 from datetime import date
 from decimal import Decimal
 from pydantic import BaseModel, Field, model_validator
@@ -81,13 +81,11 @@ class BarcodeLabelData(BaseModel):
 
 
 class PackedLabelRequest(BaseModel):
-    """Schema for a packed-goods (Legal Metrology) label print request. With batch_id the label
-    uses the batch barcode and MRP; batch number and best before default to the batch's."""
+    """Schema for a packed-goods (Legal Metrology) label print request. Net quantity and MRP
+    come from the product; with batch_id the label uses the batch barcode and MRP, and batch
+    number and best before default to the batch's."""
     product_id: int
     batch_id: Optional[int] = None
-    net_quantity: Decimal = Field(..., gt=0)
-    net_unit: Literal["g", "kg", "ml", "l", "pcs"]
-    mrp: Optional[Decimal] = Field(None, gt=0)
     packed_date: date
     best_before_date: Optional[date] = None
     batch_no: Optional[str] = Field(None, max_length=30)

@@ -105,6 +105,8 @@ export interface PutawayItem {
 }
 
 // Product types
+export type NetUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs';
+
 export interface Product {
   id: number;
   product_no: string;
@@ -116,6 +118,8 @@ export interface Product {
   brand?: string;
   hsn_code?: string;
   is_loose?: boolean;
+  net_quantity?: number | string | null;
+  net_unit?: NetUnit | null;
   expiry_date?: string;
   mrp?: number;
   selling_price?: number;

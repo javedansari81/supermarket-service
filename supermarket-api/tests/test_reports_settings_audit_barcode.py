@@ -201,17 +201,34 @@ def test_generate_barcode_code(client, db, seed, product, admin_headers, cashier
     assert again.json()["message"] == "Product already has a barcode"
 
 
-def test_packed_labels(client, product, admin_headers):
-    body = {"product_id": product.id, "net_quantity": 1, "net_unit": "kg",
-            "packed_date": "2026-09-01", "copies": 3}
-    assert client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers).status_code == 400
+def test_packed_labels(client, db, product, admin_headers):
+    body = {"product_id": product.id, "packed_date": "2026-09-01", "copies": 3}
     client.put(f"{SET}/store", json={"store_name": "Mart A", "store_address": "MG Road"}, headers=admin_headers)
+    no_size = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers)
+    assert no_size.status_code == 400 and "pack size" in no_size.json()["detail"]
+    product.net_quantity, product.net_unit = 500, "g"
+    db.commit()
     res = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers)
     assert res.status_code == 200 and res.json()["count"] == 3
+    label = res.json()["labels"][0]
+    assert label["net_quantity"] == "500 g" and label["mrp"] == "₹60.00"
     bad_dates = {**body, "best_before_date": "2026-08-01"}
     assert client.post(f"{BAR}/packed-labels", json=bad_dates, headers=admin_headers).status_code == 422
-    assert client.post(f"{BAR}/packed-labels", json={**body, "net_unit": "ton"},
-                       headers=admin_headers).status_code == 422
+
+
+def test_packed_labels_needs_store_address(client, db, product, admin_headers):
+    product.net_quantity, product.net_unit = 1, "kg"
+    db.commit()
+    body = {"product_id": product.id, "packed_date": "2026-09-01"}
+    assert client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers).status_code == 400
+
+
+def test_product_pack_size_pairing(client, product, admin_headers):
+    url = f"/api/v1/products/{product.id}"
+    assert client.put(url, json={"net_quantity": 1}, headers=admin_headers).status_code == 400
+    res = client.put(url, json={"net_quantity": 1, "net_unit": "kg"}, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["net_unit"] == "kg"
+    assert client.put(url, json={"net_unit": "ton"}, headers=admin_headers).status_code == 422
 
 
 def test_barcode_configs(client, seed, admin_headers, cashier_headers):
