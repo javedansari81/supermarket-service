@@ -106,6 +106,8 @@ export interface PutawayItem {
 
 // Product types
 export type NetUnit = 'g' | 'kg' | 'ml' | 'l' | 'pcs';
+// manufacturer = maker's barcode, own_packed = our barcode, loose = weighed, scale label (21 + PLU + weight)
+export type ProductType = 'manufacturer' | 'own_packed' | 'loose';
 
 export interface Product {
   id: number;
@@ -118,6 +120,8 @@ export interface Product {
   brand?: string;
   hsn_code?: string;
   is_loose?: boolean;
+  product_type?: ProductType;
+  plu_code?: number | null;
   net_quantity?: number | string | null;
   net_unit?: NetUnit | null;
   expiry_date?: string;

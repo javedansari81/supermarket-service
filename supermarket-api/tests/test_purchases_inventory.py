@@ -112,7 +112,7 @@ def test_purchase_putaway_list(client, category, product, locations, admin_heade
     res = client.get(f"{PUR}/{pid}/putaway", headers=admin_headers)
     assert res.status_code == 200
     rows = res.json()
-    assert [r["product_name"] for r in rows] == ["Rice 1kg", "Salt 1kg"]
+    assert [r["product_name"] for r in rows] == ["Rice 1kg MF", "Salt 1kg MF"]
     assert [l["location_code"] for l in rows[0]["locations"]] == ["D01-4", "S01-1"]
     assert [l["floor"] for l in rows[0]["locations"]] == ["Ground", "1st"]
     assert rows[1]["locations"] == []

@@ -22,6 +22,10 @@ def test_list_products_filters(client, product, admin_headers):
     assert client.get(URL, params={"low_stock": True}, headers=admin_headers).json()["total"] == 0
     assert client.get(URL, params={"is_loose": True}, headers=admin_headers).json()["total"] == 0
     assert client.get(URL, params={"is_loose": False}, headers=admin_headers).json()["total"] == 1
+    by_type = lambda t: client.get(URL, params={"product_type": t}, headers=admin_headers)
+    assert by_type("own_packed").json()["total"] == 1
+    assert by_type("loose").json()["total"] == 0
+    assert by_type("other").status_code == 422
 
 
 def test_list_products_isolated(client, product, admin_b_headers):
@@ -79,6 +83,80 @@ def test_create_loose_product_requires_weight_unit(client, admin_headers):
     assert res.status_code == 400
     res = client.post(URL, json=payload(is_loose=True, unit_type="kg"), headers=admin_headers)
     assert res.status_code == 201
+
+
+def test_create_loose_product_gets_plu_and_scale_barcode(client, admin_headers):
+    from app.core.batches import scale_barcode
+    body = payload(product_type="loose", product_name="Toor Dal (loose)", brand="Tata",
+                   unit_type="kg", barcode="8900000000001", mrp=None, selling_price=140)
+    first = client.post(URL, json=body, headers=admin_headers).json()
+    assert (first["product_type"], first["is_loose"], first["plu_code"]) == ("loose", True, 1)
+    assert first["product_name"] == "Toor Dal Loose" and first["brand"] is None
+    assert first["barcode"] == scale_barcode(1) and first["barcode"].startswith("2100001")
+    second = client.post(URL, json={**body, "product_name": "Sugar"}, headers=admin_headers).json()
+    assert (second["product_name"], second["plu_code"]) == ("Sugar Loose", 2)
+
+
+def test_product_type_rules(client, admin_headers):
+    post = lambda **kw: client.post(URL, json=payload(**kw), headers=admin_headers)
+    assert post(product_type="manufacturer").status_code == 400
+    assert post(product_type="own_packed", barcode="2100001012508").status_code == 400
+    res = post(product_type="manufacturer", barcode="8901111111111", brand="Tata")
+    assert res.status_code == 201 and res.json()["plu_code"] is None
+    assert (res.json()["product_name"], res.json()["brand"]) == ("Sugar 1kg", "Tata")
+    own = post().json()
+    assert own["product_type"] == "own_packed" and own["barcode"].startswith("20")
+    # Switching an own-packed item to manufacturer needs the maker's barcode
+    put = lambda body: client.put(f"{URL}/{own['id']}", json=body, headers=admin_headers)
+    assert put({"product_type": "manufacturer"}).status_code == 400
+    res = put({"product_type": "manufacturer", "barcode": "8902222222222"})
+    assert res.status_code == 200
+    assert (res.json()["product_name"], res.json()["brand"]) == ("Sugar 1kg", None)
+
+
+def test_own_packed_naming(client, admin_headers):
+    post = lambda **kw: client.post(URL, json=payload(product_type="own_packed", **kw),
+                                    headers=admin_headers).json()
+    own = post(product_name="Toor Dal 1 kg", brand="Tata")
+    assert (own["product_name"], own["brand"]) == ("Toor Dal 1 kg MF", "MF")
+    assert post(product_name="MF Moong Dal 500 g (MF)")["product_name"] == "Moong Dal 500 g MF"
+    # Switching to loose swaps the suffix and clears the brand
+    res = client.put(f"{URL}/{own['id']}", json={"product_type": "loose", "unit_type": "kg"},
+                     headers=admin_headers).json()
+    assert (res["product_name"], res["brand"]) == ("Toor Dal 1 kg Loose", None)
+    res = client.put(f"{URL}/{own['id']}", json={"product_type": "own_packed", "unit_type": "pcs"},
+                     headers=admin_headers).json()
+    assert (res["product_name"], res["brand"]) == ("Toor Dal 1 kg MF", "MF")
+
+
+def test_switch_product_to_loose_and_back(client, product, admin_headers):
+    put = lambda body: client.put(f"{URL}/{product.id}", json=body, headers=admin_headers)
+    res = put({"product_type": "loose", "unit_type": "kg", "product_name": "Rice"})
+    assert res.status_code == 200
+    body = res.json()
+    assert (body["is_loose"], body["plu_code"], body["product_name"]) == (True, 1, "Rice Loose")
+    assert body["barcode"].startswith("2100001")
+    res = put({"is_loose": False, "unit_type": "pcs"})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert (body["product_type"], body["plu_code"]) == ("own_packed", None)
+    assert (body["product_name"], body["brand"]) == ("Rice MF", "MF")
+    assert body["barcode"].startswith("20")
+
+
+def test_scan_scale_label(client, admin_headers, cashier_headers):
+    from app.core.batches import scale_barcode
+    loose = client.post(URL, json=payload(product_type="loose", product_name="Onion", unit_type="kg",
+                                          mrp=None, selling_price=40), headers=admin_headers).json()
+    search = lambda code: client.get(f"{URL}/search", params={"barcode": code}, headers=cashier_headers)
+    res = search(scale_barcode(loose["plu_code"], 1250))
+    assert res.status_code == 200
+    assert res.json()["id"] == loose["id"] and float(res.json()["scanned_quantity"]) == 1.25
+    # Reference barcode (weight 0): cashier enters the weight
+    assert search(loose["barcode"]).json()["scanned_quantity"] is None
+    code = scale_barcode(loose["plu_code"], 1250)
+    assert search(code[:12] + str((int(code[12]) + 1) % 10)).status_code == 400
+    assert search(scale_barcode(999, 500)).status_code == 404
 
 
 def test_create_product_category_from_other_tenant(client, category, admin_b_headers):

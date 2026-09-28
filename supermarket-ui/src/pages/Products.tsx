@@ -10,14 +10,14 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Visibility, Add } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh, Visibility, Add, Download } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
-import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit } from '../types';
+import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
 
 const PACKED_UNITS = ['pcs', 'pack', 'box', 'bottle', 'dozen'];
@@ -28,6 +28,35 @@ const PACK_UNITS: { value: NetUnit; label: string }[] = [
   { value: 'l', label: 'L' }, { value: 'pcs', label: 'pcs' },
 ];
 const ROLE_COLORS: Record<LocationRole, 'primary' | 'secondary' | 'warning'> = { display: 'primary', storage: 'secondary', promo: 'warning' };
+const TYPE_META: Record<ProductType, { label: string; short: string; color: 'primary' | 'secondary' | 'warning'; naming: string }> = {
+  manufacturer: { label: "Manufacturer (maker's barcode)", short: 'Manufacturer', color: 'primary',
+    naming: 'Name: Brand + Product + Size, e.g. Tata Salt 1 kg' },
+  own_packed: { label: 'Own packed (our barcode)', short: 'Own packed', color: 'secondary',
+    naming: 'Name: Product + Size + "MF", brand MF, e.g. Toor Dal 1 kg MF' },
+  loose: { label: 'Loose (weighed on scale)', short: 'Loose', color: 'warning',
+    naming: 'Name: Product + "Loose", no brand, no size, e.g. Toor Dal Loose' },
+};
+const SCALE_NAME_LIMIT = 24;
+const STORE_BRAND = 'MF';
+
+const typeOf = (p: Product): ProductType => p.product_type ?? (p.is_loose ? 'loose' : 'own_packed');
+
+const baseName = (name: string) => name.trim()
+  .replace(/^MF\s+/i, '')
+  .replace(/[\s-]*\(?\s*(loose|MF)\s*\)?\s*$/i, '').trim();
+
+const looseName = (name: string) => {
+  const base = baseName(name);
+  return base ? `${base} Loose` : 'Loose';
+};
+
+const ownPackedName = (name: string) => {
+  const base = baseName(name);
+  return base ? `${base} ${STORE_BRAND}` : STORE_BRAND;
+};
+
+const savedName = (type: ProductType, name: string) =>
+  type === 'loose' ? looseName(name) : type === 'own_packed' ? ownPackedName(name) : name.trim();
 
 interface FormLocation { location_id: string; is_primary: boolean; }
 
@@ -40,7 +69,7 @@ const formatLocations = (locations?: ProductLocation[]) =>
 
 const emptyForm = {
   product_name: '', brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
-  purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: 'pcs', is_loose: false,
+  purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: 'pcs', product_type: 'own_packed' as ProductType,
   net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
 
@@ -73,7 +102,7 @@ const Products: React.FC = () => {
           page: page + 1, page_size: pageSize, search,
           location_id: locationFilter && locationFilter !== 'unassigned' ? parseInt(locationFilter) : undefined,
           unassigned: locationFilter === 'unassigned' ? true : undefined,
-          is_loose: typeFilter ? typeFilter === 'loose' : undefined
+          product_type: typeFilter || undefined
         }
       });
       setProducts(response.data.items);
@@ -116,7 +145,7 @@ const Products: React.FC = () => {
         selling_price: product.selling_price?.toString() || '', purchase_price: product.purchase_price?.toString() || '',
         tax_percent: Number(product.tax_percent ?? 0).toString(),
         reorder_level: Number(product.reorder_level ?? 10).toString(),
-        unit_type: product.unit_type, is_loose: !!product.is_loose,
+        unit_type: product.unit_type, product_type: typeOf(product),
         net_quantity: product.net_quantity != null ? Number(product.net_quantity).toString() : '',
         net_unit: product.net_unit || '',
         expiry_date: product.expiry_date || '', status: product.status
@@ -133,41 +162,72 @@ const Products: React.FC = () => {
     setDialogOpen(true);
   };
 
-  const handleTypeChange = (isLoose: boolean) => {
+  const isLoose = formData.product_type === 'loose';
+  const isOwnPacked = formData.product_type === 'own_packed';
+
+  const handleTypeChange = (type: ProductType) => {
+    const toLoose = type === 'loose';
+    const looseChanged = toLoose !== isLoose;
+    const toManufacturer = type === 'manufacturer' && formData.product_type !== 'manufacturer';
     setFormData({
-      ...formData, is_loose: isLoose, unit_type: isLoose ? 'kg' : 'pcs',
-      ...(gstRef ? { tax_percent: String(isLoose ? gstRef.loose : gstRef.packed) } : {})
+      ...formData, product_type: type,
+      ...(looseChanged ? { unit_type: toLoose ? 'kg' : 'pcs', barcode: '' } : {}),
+      ...(toLoose ? { brand: '' } : {}),
+      ...(type === 'own_packed' ? { brand: STORE_BRAND } : {}),
+      ...(toManufacturer ? {
+        product_name: baseName(formData.product_name),
+        brand: formData.brand.trim().toUpperCase() === STORE_BRAND ? '' : formData.brand,
+      } : {}),
+      ...(looseChanged && gstRef ? { tax_percent: String(toLoose ? gstRef.loose : gstRef.packed) } : {})
     });
   };
 
   const handleGstRefChange = (ref: GstRateRef | null) => {
     setGstRef(ref);
     if (ref) {
-      setFormData({ ...formData, hsn_code: ref.hsn, tax_percent: String(formData.is_loose ? ref.loose : ref.packed) });
+      setFormData({ ...formData, hsn_code: ref.hsn, tax_percent: String(isLoose ? ref.loose : ref.packed) });
+    }
+  };
+
+  const handleScaleExport = async () => {
+    try {
+      const response = await api.get(API_ENDPOINTS.BARCODE_SCALE_EXPORT, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'scale_items.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      toast.error('Failed to export scale items');
     }
   };
 
   const handleSave = async () => {
     if (!formData.product_name.trim()) { toast.error('Product name is required'); return; }
     if (!formData.selling_price) { toast.error('Selling price is required'); return; }
+    if (formData.product_type === 'manufacturer' && !formData.barcode) {
+      toast.error("Enter the barcode printed on the manufacturer's pack"); return;
+    }
     const mrp = formData.mrp ? parseFloat(formData.mrp) : undefined;
     const sellingPrice = parseFloat(formData.selling_price);
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
     if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
-    const netQuantity = !formData.is_loose && formData.net_quantity ? parseFloat(formData.net_quantity) : null;
-    const netUnit = !formData.is_loose && formData.net_unit ? formData.net_unit : null;
+    const netQuantity = !isLoose && formData.net_quantity ? parseFloat(formData.net_quantity) : null;
+    const netUnit = !isLoose && formData.net_unit ? formData.net_unit : null;
     if (netQuantity !== null && !(netQuantity > 0)) { toast.error('Pack size must be greater than 0'); return; }
     if ((netQuantity === null) !== (netUnit === null)) { toast.error('Enter both pack size and its unit'); return; }
     try {
       const data = {
-        product_name: formData.product_name.trim(), brand: formData.brand || undefined,
-        barcode: formData.barcode || undefined, hsn_code: formData.hsn_code || undefined,
+        product_name: savedName(formData.product_type, formData.product_name),
+        brand: isLoose ? undefined : isOwnPacked ? STORE_BRAND : formData.brand || undefined,
+        barcode: isLoose ? undefined : formData.barcode || undefined, hsn_code: formData.hsn_code || undefined,
         category_id: formData.category_id ? parseInt(formData.category_id) : undefined,
         mrp, selling_price: sellingPrice,
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
-        unit_type: formData.unit_type, is_loose: formData.is_loose,
+        unit_type: formData.unit_type, product_type: formData.product_type, is_loose: isLoose,
         net_quantity: netQuantity, net_unit: netUnit,
         expiry_date: formData.expiry_date || undefined, status: formData.status,
         locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
@@ -218,9 +278,11 @@ const Products: React.FC = () => {
     { field: 'product_no', headerName: 'Product No', width: 100 },
     { field: 'product_name', headerName: 'Name', flex: 1, minWidth: 150 },
     { field: 'barcode', headerName: 'Barcode', width: 140 },
-    { field: 'is_loose', headerName: 'Type', width: 90, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value ? 'Loose' : 'Packed'} size="small" variant="outlined" color={params.value ? 'warning' : 'primary'} />
-    )},
+    { field: 'product_type', headerName: 'Type', width: 125, renderCell: (params: GridRenderCellParams) => {
+      const meta = TYPE_META[typeOf(params.row)];
+      return <Chip label={meta.short} size="small" variant="outlined" color={meta.color} />;
+    }},
+    { field: 'plu_code', headerName: 'PLU', width: 70, renderCell: (params: GridRenderCellParams) => params.value ?? '-' },
     { field: 'category_name', headerName: 'Category', width: 120, renderCell: (params: GridRenderCellParams) =>
       params.row.category?.category_name ?? params.row.category_name ?? '' },
     { field: 'mrp', headerName: 'MRP', width: 90, renderCell: (params: GridRenderCellParams) =>
@@ -255,20 +317,28 @@ const Products: React.FC = () => {
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }}
             sx={{ flex: 1, minWidth: 240 }} />
-          <SearchableSelect label="Location" size="small" value={locationFilter} fullWidth={false} sx={{ width: 240 }}
+          <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: 220, flexShrink: 0 }}
             onChange={(v) => { setLocationFilter(v); setPage(0); }}
             options={[
               { value: '', label: 'All locations' },
               { value: 'unassigned', label: 'No location assigned' },
               ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
             ]} />
-          <ToggleButtonGroup exclusive size="small" color="primary" value={typeFilter}
-            onChange={(_, v) => { if (v !== null) { setTypeFilter(v); setPage(0); } }}>
-            <ToggleButton value="" sx={{ px: 2 }}>All</ToggleButton>
-            <ToggleButton value="packed" sx={{ px: 2 }}>Packed</ToggleButton>
-            <ToggleButton value="loose" sx={{ px: 2 }}>Loose</ToggleButton>
-          </ToggleButtonGroup>
-          <IconButton title="Refresh" onClick={fetchProducts}><Refresh /></IconButton>
+          <FormControl size="small" sx={{ width: 220, flexShrink: 0 }}>
+            <InputLabel shrink>Type</InputLabel>
+            <Select label="Type" value={typeFilter} displayEmpty notched
+              onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}>
+              <MenuItem value="">All types</MenuItem>
+              {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
+                <MenuItem key={t} value={t}>{TYPE_META[t].short}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', ml: 'auto' }}>
+            <IconButton title="Refresh" onClick={fetchProducts}><Refresh /></IconButton>
+            <Button variant="outlined" startIcon={<Download />} onClick={handleScaleExport} sx={{ height: 40 }}
+              title="Loose items with PLU and rate, for loading into the weighing scale">Scale file</Button>
+          </Box>
         </Box>
       </Card>
 
@@ -286,19 +356,28 @@ const Products: React.FC = () => {
         <DialogContent>
           <Grid container spacing={2} sx={{ pt: 1 }}>
             <Grid size={12}>
-              <ToggleButtonGroup exclusive color="primary" value={formData.is_loose ? 'loose' : 'packed'}
-                onChange={(_, v) => v && handleTypeChange(v === 'loose')}>
-                <ToggleButton value="packed">Packed item (sold per piece)</ToggleButton>
-                <ToggleButton value="loose">Loose item (sold by weight/volume)</ToggleButton>
+              <ToggleButtonGroup exclusive color="primary" value={formData.product_type}
+                onChange={(_, v) => v && handleTypeChange(v)}>
+                {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
+                  <ToggleButton key={t} value={t}>{TYPE_META[t].label}</ToggleButton>
+                ))}
               </ToggleButtonGroup>
+              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                {TYPE_META[formData.product_type].naming}
+              </Typography>
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
               <TextField fullWidth label="Product Name" required value={formData.product_name}
-                placeholder={formData.is_loose ? 'e.g. Sugar, Toor Dal, Basmati Rice' : 'e.g. Maggi Noodles 70g'}
+                placeholder={isLoose ? 'e.g. Sugar, Toor Dal, Basmati Rice' : isOwnPacked ? 'e.g. Toor Dal 1 kg' : 'e.g. Maggi Noodles 70g'}
+                error={isLoose && looseName(formData.product_name).length > SCALE_NAME_LIMIT}
+                helperText={(isLoose || isOwnPacked) && formData.product_name.trim()
+                  ? `Saved as "${savedName(formData.product_type, formData.product_name)}"${isLoose && looseName(formData.product_name).length > SCALE_NAME_LIMIT
+                    ? ` - over ${SCALE_NAME_LIMIT} characters, may be cut on the scale label` : ''}` : undefined}
                 onChange={(e) => setFormData({ ...formData, product_name: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
-              <TextField fullWidth label="Brand" value={formData.brand}
+              <TextField fullWidth label="Brand" value={isOwnPacked ? STORE_BRAND : formData.brand} disabled={isLoose || isOwnPacked}
+                helperText={isLoose ? 'Not used for loose items' : isOwnPacked ? 'Store brand' : undefined}
                 onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
@@ -310,9 +389,15 @@ const Products: React.FC = () => {
                 ]} />
             </Grid>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label="Barcode" value={formData.barcode}
-                helperText={formData.is_loose ? 'Leave blank: an in-store barcode is generated for weighed items'
-                  : 'Scan or type the EAN printed on the pack. Leave blank to auto-generate'}
+              <TextField fullWidth label="Barcode" value={formData.barcode} disabled={isLoose}
+                required={formData.product_type === 'manufacturer'}
+                helperText={isLoose
+                  ? (editProduct?.plu_code && typeOf(editProduct) === 'loose'
+                    ? `PLU ${editProduct.plu_code}. The scale prints 21 + PLU + weight on each label`
+                    : 'An item number (PLU) is assigned automatically; the scale prints 21 + PLU + weight')
+                  : formData.product_type === 'manufacturer'
+                    ? "Scan or type the EAN printed on the maker's pack"
+                    : 'Leave blank to auto-generate an in-store barcode'}
                 onChange={(e) => setFormData({ ...formData, barcode: e.target.value.trim() })} />
             </Grid>
             <Grid size={12}>
@@ -333,13 +418,13 @@ const Products: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, hsn_code: e.target.value.replace(/[^0-9]/g, '') })} />
             </Grid>
             <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl fullWidth><InputLabel>{formData.is_loose ? 'Selling Unit' : 'Unit'}</InputLabel>
-                <Select value={formData.unit_type} label={formData.is_loose ? 'Selling Unit' : 'Unit'}
+              <FormControl fullWidth><InputLabel>{isLoose ? 'Selling Unit' : 'Unit'}</InputLabel>
+                <Select value={formData.unit_type} label={isLoose ? 'Selling Unit' : 'Unit'}
                   onChange={(e) => setFormData({ ...formData, unit_type: e.target.value })}>
-                  {(formData.is_loose ? LOOSE_UNITS : PACKED_UNITS).map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
+                  {(isLoose ? LOOSE_UNITS : PACKED_UNITS).map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
                 </Select></FormControl>
             </Grid>
-            {!formData.is_loose && (
+            {!isLoose && (
               <>
                 <Grid size={{ xs: 6, md: 3 }}>
                   <TextField fullWidth label="Pack Size" type="number" value={formData.net_quantity}
@@ -356,10 +441,10 @@ const Products: React.FC = () => {
                 </Grid>
               </>
             )}
-            <Grid size={12}><Divider>Pricing {formData.is_loose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
+            <Grid size={12}><Divider>Pricing {isLoose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
             <Grid size={{ xs: 12, md: 3 }}>
               <TextField fullWidth label="MRP" type="number" value={formData.mrp}
-                inputProps={{ step: 'any', min: 0 }} helperText={formData.is_loose ? 'Optional for loose items' : 'As printed on pack'}
+                inputProps={{ step: 'any', min: 0 }} helperText={isLoose ? 'Optional for loose items' : 'As printed on pack'}
                 InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
                 onChange={(e) => setFormData({ ...formData, mrp: e.target.value })} />
             </Grid>
@@ -386,7 +471,7 @@ const Products: React.FC = () => {
             <Grid size={12}><Divider>Stock</Divider></Grid>
             <Grid size={{ xs: 12, md: 4 }}>
               <TextField fullWidth label={`Reorder Level (${formData.unit_type})`} type="number" value={formData.reorder_level}
-                inputProps={{ step: formData.is_loose ? 'any' : 1, min: 0 }}
+                inputProps={{ step: isLoose ? 'any' : 1, min: 0 }}
                 onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: 4 }}>
@@ -450,7 +535,8 @@ const Products: React.FC = () => {
               {[
                 ['Product No', viewProduct.product_no],
                 ['Name', viewProduct.product_name],
-                ['Type', viewProduct.is_loose ? 'Loose' : 'Packed'],
+                ['Type', TYPE_META[typeOf(viewProduct)].short],
+                ...(viewProduct.plu_code ? [['PLU (scale item no.)', String(viewProduct.plu_code)]] : []),
                 ['Status', viewProduct.status],
                 ['Brand', viewProduct.brand || '-'],
                 ['Barcode', viewProduct.barcode || '-'],

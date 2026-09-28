@@ -77,6 +77,8 @@ class BarcodeLabelData(BaseModel):
     selling_price: Optional[str] = None
     unit_type: Optional[str] = None
     is_loose: bool = False
+    product_type: str = "own_packed"
+    plu_code: Optional[int] = None
     barcode_image: str  # Base64 encoded image
 
 

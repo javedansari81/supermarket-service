@@ -181,7 +181,7 @@ const Barcode: React.FC = () => {
   const [packedItems, setPackedItems] = useState<PackedItem[]>([]);
   const setPackedField = (field: keyof typeof packed, value: string) => setPacked((p) => ({ ...p, [field]: value }));
   const labelProducts = products.filter((p) => !p.is_loose);
-  const packedProducts = labelProducts.filter((p) => packSize(p));
+  const packedProducts = labelProducts.filter((p) => packSize(p) && (p.product_type ?? 'own_packed') === 'own_packed');
   const packedProduct = products.find((p) => p.id === parseInt(packed.product_id));
   const packedBatch = packedBatches.find((b) => b.id === parseInt(packed.batch_id));
   const packedMrp = Number(packedBatch?.mrp ?? packedProduct?.mrp ?? 0);

@@ -25,12 +25,12 @@ BEGIN
     WITH src (category_name, product_name, brand, unit_type, is_loose, hsn_code, tax_percent,
               purchase_price, mrp, selling_price, reorder_level) AS (VALUES
         -- Groceries: loose (price per kg)
-        ('Groceries', 'Sugar (Loose)', NULL, 'kg', TRUE, '1701', 5, 40.00, NULL, 46.00, 20),
-        ('Groceries', 'Rice Sona Masoori (Loose)', NULL, 'kg', TRUE, '1006', 0, 48.00, NULL, 56.00, 25),
-        ('Groceries', 'Wheat (Loose)', NULL, 'kg', TRUE, '1001', 0, 28.00, NULL, 34.00, 25),
-        ('Groceries', 'Toor Dal (Loose)', NULL, 'kg', TRUE, '0713', 0, 120.00, NULL, 140.00, 10),
-        ('Groceries', 'Chana Dal (Loose)', NULL, 'kg', TRUE, '0713', 0, 70.00, NULL, 85.00, 10),
-        ('Groceries', 'Besan (Loose)', NULL, 'kg', TRUE, '1106', 0, 70.00, NULL, 90.00, 5),
+        ('Groceries', 'Sugar Loose', NULL, 'kg', TRUE, '1701', 5, 40.00, NULL, 46.00, 20),
+        ('Groceries', 'Rice Sona Masoori Loose', NULL, 'kg', TRUE, '1006', 0, 48.00, NULL, 56.00, 25),
+        ('Groceries', 'Wheat Loose', NULL, 'kg', TRUE, '1001', 0, 28.00, NULL, 34.00, 25),
+        ('Groceries', 'Toor Dal Loose', NULL, 'kg', TRUE, '0713', 0, 120.00, NULL, 140.00, 10),
+        ('Groceries', 'Chana Dal Loose', NULL, 'kg', TRUE, '0713', 0, 70.00, NULL, 85.00, 10),
+        ('Groceries', 'Besan Loose', NULL, 'kg', TRUE, '1106', 0, 70.00, NULL, 90.00, 5),
         -- Groceries: packed
         ('Groceries', 'Whole Wheat Atta 5 kg', 'Aashirvaad', 'pcs', FALSE, '1101', 5, 210.00, 265.00, 255.00, 5),
         ('Groceries', 'Iodised Salt 1 kg', 'Tata', 'pcs', FALSE, '2501', 0, 22.00, 28.00, 28.00, 10),
@@ -48,7 +48,7 @@ BEGIN
         ('Dairy Products', 'Butter 100 g', 'Amul', 'pcs', FALSE, '0405', 5, 50.00, 62.00, 60.00, 10),
         ('Dairy Products', 'Fresh Paneer 200 g', 'Amul', 'pcs', FALSE, '0406', 0, 75.00, 95.00, 90.00, 5),
         ('Dairy Products', 'Dahi 400 g', 'Nestle', 'pcs', FALSE, '0403', 5, 32.00, 40.00, 40.00, 10),
-        ('Dairy Products', 'Eggs Tray of 30', NULL, 'pcs', FALSE, '0407', 0, 150.00, 190.00, 180.00, 5),
+        ('Dairy Products', 'Eggs Tray of 30 MF', 'MF', 'pcs', FALSE, '0407', 0, 150.00, 190.00, 180.00, 5),
         -- Snacks
         ('Snacks', 'Parle-G Biscuits 250 g', 'Parle', 'pcs', FALSE, '1905', 5, 20.00, 25.00, 25.00, 20),
         ('Snacks', 'Classic Salted Chips 52 g', 'Lay''s', 'pcs', FALSE, '2005', 5, 15.00, 20.00, 20.00, 20),
@@ -71,12 +71,12 @@ BEGIN
         ('Bakery', 'White Bread 400 g', 'Britannia', 'pcs', FALSE, '1905', 0, 35.00, 45.00, 45.00, 10),
         ('Bakery', 'Toast Rusk 300 g', 'Britannia', 'pcs', FALSE, '1905', 5, 40.00, 55.00, 52.00, 6),
         -- Fruits & Vegetables: loose (price per kg)
-        ('Fruits & Vegetables', 'Onion', NULL, 'kg', TRUE, '0703', 0, 30.00, NULL, 40.00, 20),
-        ('Fruits & Vegetables', 'Potato', NULL, 'kg', TRUE, '0701', 0, 20.00, NULL, 30.00, 20),
-        ('Fruits & Vegetables', 'Tomato', NULL, 'kg', TRUE, '0702', 0, 25.00, NULL, 35.00, 10),
-        ('Fruits & Vegetables', 'Apple', NULL, 'kg', TRUE, '0808', 0, 120.00, NULL, 160.00, 5),
+        ('Fruits & Vegetables', 'Onion Loose', NULL, 'kg', TRUE, '0703', 0, 30.00, NULL, 40.00, 20),
+        ('Fruits & Vegetables', 'Potato Loose', NULL, 'kg', TRUE, '0701', 0, 20.00, NULL, 30.00, 20),
+        ('Fruits & Vegetables', 'Tomato Loose', NULL, 'kg', TRUE, '0702', 0, 25.00, NULL, 35.00, 10),
+        ('Fruits & Vegetables', 'Apple Loose', NULL, 'kg', TRUE, '0808', 0, 120.00, NULL, 160.00, 5),
         -- Meat & Seafood
-        ('Meat & Seafood', 'Chicken (Fresh)', NULL, 'kg', TRUE, '0207', 0, 180.00, NULL, 240.00, 5),
+        ('Meat & Seafood', 'Chicken Fresh Loose', NULL, 'kg', TRUE, '0207', 0, 180.00, NULL, 240.00, 5),
         -- Baby Products
         ('Baby Products', 'Baby Diapers M 20 pcs', 'Pampers', 'pcs', FALSE, '9619', 5, 280.00, 369.00, 350.00, 3),
         ('Baby Products', 'Cerelac Wheat Apple 300 g', 'Nestle', 'pcs', FALSE, '1901', 5, 180.00, 230.00, 225.00, 3),
@@ -102,20 +102,37 @@ BEGIN
         )
     )
     INSERT INTO products (tenant_id, product_no, product_name, category_id, brand, unit_type,
-                          is_loose, hsn_code, tax_percent, purchase_price, mrp, selling_price,
+                          is_loose, product_type, hsn_code, tax_percent, purchase_price, mrp, selling_price,
                           stock_quantity, reorder_level, description, status, created_by)
     SELECT v_tenant_id, 'P' || LPAD((v_last_no + rn)::TEXT, 5, '0'), product_name, category_id,
-           brand, unit_type, is_loose, hsn_code, tax_percent, purchase_price, mrp, selling_price,
+           brand, unit_type, is_loose,
+           CASE WHEN is_loose THEN 'loose' WHEN brand = 'MF' THEN 'own_packed' ELSE 'manufacturer' END,
+           hsn_code, tax_percent, purchase_price, mrp, selling_price,
            0, reorder_level, 'SAMPLE-TEST-DATA', 'active', v_admin_id
     FROM new_items;
 
-    -- In-store EAN-13 barcode: '2' + product id (11 digits) + check digit, same as the API
+    -- Item numbers (PLU) for loose products, continuing from the highest in use
+    WITH numbered AS (
+        SELECT id, ROW_NUMBER() OVER (ORDER BY id) AS rn
+        FROM products
+        WHERE tenant_id = v_tenant_id AND product_type = 'loose' AND plu_code IS NULL
+    )
+    UPDATE products p
+    SET plu_code = COALESCE((SELECT MAX(q.plu_code) FROM products q WHERE q.tenant_id = v_tenant_id), 0) + n.rn
+    FROM numbered n
+    WHERE p.id = n.id;
+
+    -- EAN-13 barcodes, same as the API. Loose: '21' + PLU (5 digits) + weight 00000 + check digit.
+    -- Others: '2' + product id (11 digits) + check digit (placeholder for manufacturer items;
+    -- replace with the barcode printed on the pack)
     UPDATE products p
     SET barcode = b.code12 || ((10 - (
             (SELECT SUM(SUBSTRING(b.code12, i, 1)::INTEGER * CASE WHEN i % 2 = 0 THEN 3 ELSE 1 END)
              FROM generate_series(1, 12) AS i)
         % 10)) % 10)::TEXT
-    FROM (SELECT id, '2' || LPAD(id::TEXT, 11, '0') AS code12
+    FROM (SELECT id,
+                 CASE WHEN product_type = 'loose' THEN '21' || LPAD(plu_code::TEXT, 5, '0') || '00000'
+                      ELSE '2' || LPAD(id::TEXT, 11, '0') END AS code12
           FROM products
           WHERE tenant_id = v_tenant_id AND barcode IS NULL AND description = 'SAMPLE-TEST-DATA') b
     WHERE p.id = b.id;

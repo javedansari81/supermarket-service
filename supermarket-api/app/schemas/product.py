@@ -10,6 +10,7 @@ from app.schemas.category import CategoryResponse
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
 
 NetUnit = Literal["g", "kg", "ml", "l", "pcs"]
+ProductType = Literal["manufacturer", "own_packed", "loose"]
 
 
 class ProductBase(BaseModel):
@@ -25,6 +26,7 @@ class ProductBase(BaseModel):
     tax_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
     unit_type: Optional[str] = "pcs"
     is_loose: bool = False
+    product_type: Optional[ProductType] = None
     hsn_code: Optional[str] = None
     net_quantity: Optional[Decimal] = Field(None, gt=0)
     net_unit: Optional[NetUnit] = None
@@ -57,6 +59,7 @@ class ProductUpdate(BaseModel):
     tax_percent: Optional[Decimal] = Field(None, ge=0, le=100)
     unit_type: Optional[str] = None
     is_loose: Optional[bool] = None
+    product_type: Optional[ProductType] = None
     hsn_code: Optional[str] = None
     net_quantity: Optional[Decimal] = Field(None, gt=0)
     net_unit: Optional[NetUnit] = None
@@ -72,6 +75,8 @@ class ProductResponse(ProductBase, TimestampSchema):
     id: int
     tenant_id: int
     product_no: str
+    product_type: str
+    plu_code: Optional[int] = None
     stock_quantity: Decimal
     status: str
     category: Optional[CategoryResponse] = None
@@ -123,8 +128,12 @@ class ProductSearchResponse(BaseModel):
     stock_quantity: Decimal
     unit_type: str
     is_loose: bool = False
+    product_type: str = "own_packed"
+    plu_code: Optional[int] = None
     hsn_code: Optional[str] = None
     locations: List[ProductLocationResponse] = []
     batch_id: Optional[int] = None
     batches: List[ProductBatchResponse] = []
+    # Weight read from a scale label, in the product's unit
+    scanned_quantity: Optional[Decimal] = None
 

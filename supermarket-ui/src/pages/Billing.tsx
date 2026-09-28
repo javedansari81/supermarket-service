@@ -82,6 +82,9 @@ interface SearchProduct {
   is_loose: boolean;
   batch_id?: number;
   batches?: BillingBatch[];
+  // Weight read from a weighing-scale label (21 + PLU + weight), in the product's unit
+  scanned_quantity?: number;
+  scanned_label?: string;
 }
 
 interface BillingBatch {
@@ -120,6 +123,7 @@ const normalize = (p: any): SearchProduct => ({
   unit_type: p.unit_type || 'pcs',
   is_loose: !!p.is_loose,
   batch_id: p.batch_id ?? undefined,
+  scanned_quantity: p.scanned_quantity != null ? Number(p.scanned_quantity) : undefined,
   batches: Array.isArray(p.batches) && !p.is_loose ? p.batches.map((b: any) => ({
     id: b.id,
     batch_no: b.batch_no,
@@ -167,6 +171,7 @@ const Billing: React.FC = () => {
   const [weighValue, setWeighValue] = useState('');
   const [batchPick, setBatchPick] = useState<SearchProduct | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const scannedLabels = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     searchRef.current?.focus();
@@ -268,7 +273,7 @@ const Billing: React.FC = () => {
 
     try {
       const response = await api.get(API_ENDPOINTS.PRODUCT_SEARCH, { params: { barcode: term } });
-      selectProduct(normalize(response.data));
+      selectProduct({ ...normalize(response.data), scanned_label: term });
       setSearchInput('');
       return;
     } catch (err: any) {
@@ -317,6 +322,16 @@ const Billing: React.FC = () => {
       toast.error(`${product.product_name} has no selling price set`);
       return;
     }
+    if (product.is_loose && product.scanned_quantity) {
+      const label = product.scanned_label;
+      if (label && scannedLabels.current.has(label)
+        && !window.confirm(`This ${product.product_name} label was already scanned in this bill. Add it again?`)) {
+        searchRef.current?.focus();
+        return;
+      }
+      if (addToCart(product, product.scanned_quantity) && label) scannedLabels.current.add(label);
+      return;
+    }
     if (product.is_loose) {
       setWeighProduct(product);
       setWeighMode('qty');
@@ -361,14 +376,14 @@ const Billing: React.FC = () => {
     return { ...item, tax_amount: tax, line_total: taxInclusive ? net : net + tax };
   };
 
-  const addToCart = (product: SearchProduct, qty: number, replace = false) => {
+  const addToCart = (product: SearchProduct, qty: number, replace = false): boolean => {
     const existingIndex = cartItems.findIndex(item => item.product_id === product.id && item.batch_id === product.batch_id);
     const currentQty = existingIndex >= 0 ? cartItems[existingIndex].quantity : 0;
     const newQty = round3(replace ? qty : currentQty + qty);
 
     if (newQty > product.stock_quantity) {
       toast.error(`Insufficient stock. Available: ${formatQty(product.stock_quantity, product.unit_type, product.is_loose)}`);
-      return;
+      return false;
     }
 
     if (existingIndex >= 0) {
@@ -395,6 +410,7 @@ const Billing: React.FC = () => {
       setCartItems([...cartItems, newItem]);
     }
     searchRef.current?.focus();
+    return true;
   };
 
   const weighQty = (): number => {
@@ -496,6 +512,7 @@ const Billing: React.FC = () => {
 
       // Reset cart
       setCartItems([]);
+      scannedLabels.current.clear();
       setCustomerName('');
       setCustomerPhone('');
       setCustomerGstin('');

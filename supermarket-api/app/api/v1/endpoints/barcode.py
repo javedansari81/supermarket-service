@@ -2,6 +2,7 @@
 Barcode management endpoints
 """
 import io
+import csv
 import base64
 from decimal import Decimal
 from typing import Optional, List
@@ -21,7 +22,9 @@ from app.schemas.barcode import (
     PackedLabelRequest, PackedLabelData
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
-from app.core.batches import generate_instore_barcode, get_product_batch, ensure_batch_barcode
+from app.core.batches import (
+    generate_instore_barcode, get_product_batch, ensure_batch_barcode, scale_barcode, SCALE_PREFIX
+)
 from app.models.product_batch import ProductBatch
 from app.api.v1.endpoints.settings import build_store_settings
 
@@ -104,6 +107,8 @@ def build_label(product: Product, store_name: str,
         selling_price=f"₹{selling_price:.2f}" if selling_price else None,
         unit_type=product.unit_type or "pcs",
         is_loose=bool(product.is_loose),
+        product_type=product.product_type,
+        plu_code=product.plu_code,
         barcode_image=generate_barcode_image(barcode_value)
     )
 
@@ -159,6 +164,39 @@ async def create_barcode_config(
     db.refresh(config)
     
     return BarcodeConfigResponse.model_validate(config)
+
+
+@router.get("/scale-export")
+async def export_scale_items(
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    CSV of active loose products for loading into the weighing scale (admin only).
+    The scale prints labels 21 + PLU (5 digits) + weight in g/ml (5 digits) + check digit.
+    """
+    products = db.query(Product).filter(
+        Product.tenant_id == context.tenant_id,
+        Product.product_type == Product.TYPE_LOOSE,
+        Product.status == "active",
+        Product.plu_code.isnot(None)
+    ).order_by(Product.plu_code).all()
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(["PLU", "Item Name", "Rate", "Unit", "Barcode Prefix", "Barcode Format",
+                     "Product No", "HSN Code", "Tax %"])
+    for product in products:
+        rate = product.selling_price or product.mrp or 0
+        writer.writerow([product.plu_code, product.product_name, f"{rate:.2f}", product.unit_type,
+                         SCALE_PREFIX, "21PPPPPWWWWWC (weight in g/ml)", product.product_no,
+                         product.hsn_code or "", f"{product.tax_percent or 0:.2f}"])
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="scale_items.csv"'}
+    )
 
 
 @router.get("/generate/{product_id}")
@@ -239,6 +277,11 @@ async def print_packed_labels(
             status_code=400,
             detail="Create a packed product (e.g. 'Toor Dal 1 kg') for packed-goods labels"
         )
+    if product.product_type == Product.TYPE_MANUFACTURER:
+        raise HTTPException(
+            status_code=400,
+            detail="Manufacturer products carry the maker's label; packed-goods labels are for own-packed products"
+        )
     if not product.net_quantity or product.net_unit not in NET_UNITS:
         raise HTTPException(
             status_code=400,
@@ -316,7 +359,10 @@ async def generate_new_barcode(
     if product.barcode:
         return {"barcode": product.barcode, "message": "Product already has a barcode"}
 
-    new_barcode = generate_instore_barcode(product.id)
+    if product.is_loose and product.plu_code:
+        new_barcode = scale_barcode(product.plu_code)
+    else:
+        new_barcode = generate_instore_barcode(product.id)
     
     # Check if barcode already exists
     existing = db.query(Product).filter(

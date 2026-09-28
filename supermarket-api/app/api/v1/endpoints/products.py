@@ -8,7 +8,9 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import (
-    generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch
+    generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch,
+    scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
+    loose_product_name, own_packed_product_name, base_product_name, next_plu_code, STORE_BRAND
 )
 from app.models.audit_log import AuditLog
 from app.models.product import Product
@@ -116,6 +118,58 @@ def apply_product_locations(db: Session, product: Product, locations: List[Produ
             ))
 
 
+def resolve_product_type(product_type: Optional[str], is_loose: Optional[bool],
+                         current_type: Optional[str] = None) -> str:
+    """Product type from the request; is_loose alone still switches to/from loose"""
+    if product_type:
+        return product_type
+    if is_loose:
+        return Product.TYPE_LOOSE
+    if is_loose is False and current_type == Product.TYPE_LOOSE:
+        return Product.TYPE_OWN_PACKED
+    return current_type or Product.TYPE_OWN_PACKED
+
+
+def ensure_type_rules(product_type: str, unit_type: Optional[str], barcode: Optional[str],
+                      instore_barcode: Optional[str] = None):
+    """Loose items are sold by weight; manufacturer items need the maker's barcode;
+    barcodes starting with 21 are reserved for weighing-scale labels"""
+    if product_type == Product.TYPE_LOOSE:
+        if unit_type not in LOOSE_UNITS:
+            raise HTTPException(status_code=400,
+                                detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+        return
+    if is_scale_barcode(barcode):
+        raise HTTPException(status_code=400,
+                            detail="Barcodes starting with 21 are reserved for loose products")
+    if product_type == Product.TYPE_MANUFACTURER and (not barcode or barcode == instore_barcode):
+        raise HTTPException(status_code=400,
+                            detail="Enter the barcode printed on the manufacturer's pack")
+
+
+def apply_type_codes(db: Session, product: Product, previous_type: Optional[str] = None):
+    """Loose: no brand, name ends with 'Loose', auto item number (PLU) and 21 scale barcode.
+    Own packed: brand MF, name ends with 'MF'.
+    Others: no PLU, and an in-store barcode when none is set."""
+    if product.product_type == Product.TYPE_LOOSE:
+        product.brand = None
+        product.product_name = loose_product_name(product.product_name)
+        if not product.plu_code:
+            product.plu_code = next_plu_code(db, product.tenant_id)
+        product.barcode = scale_barcode(product.plu_code)
+    else:
+        if product.product_type == Product.TYPE_OWN_PACKED:
+            product.brand = STORE_BRAND
+            product.product_name = own_packed_product_name(product.product_name)
+        elif previous_type and previous_type != Product.TYPE_MANUFACTURER:
+            product.product_name = base_product_name(product.product_name) or product.product_name
+            if (product.brand or "").strip().upper() == STORE_BRAND:
+                product.brand = None
+        product.plu_code = None
+        if not product.barcode or is_scale_barcode(product.barcode):
+            product.barcode = generate_instore_barcode(product.id)
+
+
 def barcode_used_by_batch(db: Session, tenant_id: int, barcode: str) -> bool:
     return db.query(ProductBatch.id).filter(
         ProductBatch.tenant_id == tenant_id,
@@ -134,6 +188,7 @@ async def list_products(
     location_id: Optional[int] = None,
     unassigned: Optional[bool] = None,
     is_loose: Optional[bool] = None,
+    product_type: Optional[str] = Query(None, pattern="^(manufacturer|own_packed|loose)$"),
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -158,6 +213,9 @@ async def list_products(
 
     if is_loose is not None:
         query = query.filter(Product.is_loose == is_loose)
+
+    if product_type:
+        query = query.filter(Product.product_type == product_type)
 
     words = search.split() if search else []
     for word in words:
@@ -201,13 +259,19 @@ async def search_product(
     )
 
     scanned_batch = None
+    scanned_weight = None
     if barcode:
+        barcode = barcode.strip()
         scanned_batch = db.query(ProductBatch).filter(
             ProductBatch.tenant_id == context.tenant_id,
             ProductBatch.barcode == barcode
         ).first()
         if scanned_batch:
             query = query.filter(Product.id == scanned_batch.product_id)
+        elif is_scale_barcode(barcode):
+            plu_code, scanned_weight = parse_scale_barcode(barcode)
+            query = query.filter(Product.product_type == Product.TYPE_LOOSE,
+                                 Product.plu_code == plu_code)
         else:
             query = query.filter(or_(Product.barcode == barcode, Product.product_no == barcode))
     elif product_no:
@@ -243,10 +307,13 @@ async def search_product(
         stock_quantity=product.stock_quantity or 0,
         unit_type=product.unit_type or "pcs",
         is_loose=bool(product.is_loose),
+        product_type=product.product_type,
+        plu_code=product.plu_code,
         hsn_code=product.hsn_code,
         locations=[ProductLocationResponse.model_validate(link) for link in product.locations],
         batch_id=scanned_batch.id if scanned_batch else None,
-        batches=[ProductBatchResponse.model_validate(b) for b in batches]
+        batches=[ProductBatchResponse.model_validate(b) for b in batches],
+        scanned_quantity=scale_quantity(scanned_weight, product.unit_type) if scanned_weight else None
     )
 
 
@@ -359,8 +426,11 @@ async def create_product(
     else:
         product_data.product_no = generate_product_no(db, context.tenant_id)
 
-    if product_data.is_loose and product_data.unit_type not in LOOSE_UNITS:
-        raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    product_data.product_type = resolve_product_type(product_data.product_type, product_data.is_loose)
+    product_data.is_loose = product_data.product_type == Product.TYPE_LOOSE
+    if product_data.is_loose:
+        product_data.barcode = None
+    ensure_type_rules(product_data.product_type, product_data.unit_type, product_data.barcode)
     ensure_pack_size(product_data.net_quantity, product_data.net_unit)
     ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
 
@@ -381,8 +451,7 @@ async def create_product(
 
     db.add(product)
     db.flush()
-    if not product.barcode:
-        product.barcode = generate_instore_barcode(product.id)
+    apply_type_codes(db, product)
     if product_data.locations:
         apply_product_locations(db, product, product_data.locations)
     sync_batches(db, product)
@@ -434,24 +503,34 @@ async def update_product(
     if mrp is not None and selling_price is not None and selling_price > mrp:
         raise HTTPException(status_code=400, detail="Selling price cannot be greater than MRP")
 
-    is_loose = update_data.get("is_loose", product.is_loose)
-    unit_type = update_data.get("unit_type", product.unit_type)
-    if is_loose and unit_type not in LOOSE_UNITS:
-        raise HTTPException(status_code=400, detail=f"Loose items must use a unit of {', '.join(LOOSE_UNITS)}")
+    product_type = resolve_product_type(update_data.get("product_type"), update_data.get("is_loose"),
+                                        product.product_type)
+    update_data["product_type"] = product_type
+    update_data["is_loose"] = product_type == Product.TYPE_LOOSE
+    if update_data["is_loose"]:
+        update_data.pop("barcode", None)
+    elif product.is_loose and "barcode" not in update_data:
+        update_data["barcode"] = None
+    ensure_type_rules(product_type, update_data.get("unit_type", product.unit_type),
+                      update_data.get("barcode", product.barcode),
+                      generate_instore_barcode(product.id) if product_type != product.product_type else None)
     ensure_pack_size(update_data.get("net_quantity", product.net_quantity),
                      update_data.get("net_unit", product.net_unit))
     if "category_id" in update_data:
         ensure_category_in_tenant(db, context.tenant_id, update_data["category_id"])
 
     old_value = product_snapshot(product)
+    was_loose = bool(product.is_loose)
+    previous_type = product.product_type
     for field, value in update_data.items():
         setattr(product, field, value)
+    apply_type_codes(db, product, previous_type)
     if product_data.locations is not None:
         apply_product_locations(db, product, product_data.locations)
 
     product.updated_by = context.user_id
     db.flush()
-    if "is_loose" in update_data:
+    if was_loose != product.is_loose:
         sync_batches(db, product)
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "product", product.id, old_value=old_value, new_value=product_snapshot(product))

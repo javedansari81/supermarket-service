@@ -25,6 +25,9 @@ class Product(Base, TimestampMixin, StatusMixin):
     tax_percent = Column(Numeric(5, 2), default=0)
     unit_type = Column(String(50), default='pcs')
     is_loose = Column(Boolean, nullable=False, default=False)
+    product_type = Column(String(20), nullable=False, default='own_packed',
+                          server_default='own_packed')
+    plu_code = Column(Integer)
     hsn_code = Column(String(20))
     net_quantity = Column(Numeric(10, 3))
     net_unit = Column(String(5))
@@ -44,6 +47,13 @@ class Product(Base, TimestampMixin, StatusMixin):
     locations = relationship("ProductLocation", back_populates="product",
                              cascade="all, delete-orphan", order_by="ProductLocation.id")
     batches = relationship("ProductBatch", back_populates="product", order_by="ProductBatch.id")
+
+    # manufacturer: maker's barcode, own_packed: packed in-store with our barcode,
+    # loose: weighed by the customer, scale label barcode starts with 21
+    TYPE_MANUFACTURER = 'manufacturer'
+    TYPE_OWN_PACKED = 'own_packed'
+    TYPE_LOOSE = 'loose'
+    PRODUCT_TYPES = (TYPE_MANUFACTURER, TYPE_OWN_PACKED, TYPE_LOOSE)
 
     # Unique constraints on tenant_id + product_no and tenant_id + barcode
     __table_args__ = (

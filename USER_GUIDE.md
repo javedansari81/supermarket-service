@@ -93,6 +93,7 @@ Cashier checkout. Open **Billing / POS** from the sidebar. The search box is foc
 2. The product is added at selling price and tax from the product record.
 3. Scanning the same product again increases quantity by 1.
 4. If stock is insufficient, you get **Insufficient stock** and the quantity is not increased.
+5. **Weighing-scale labels** (barcodes starting with `21`) add the loose item with the weight printed on the label, priced at the POS rate. Scanning the same label twice in one bill asks for confirmation.
 
 Unknown barcodes show **Product not found**.
 
@@ -123,18 +124,31 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 ### Browse and search
 
-- Table columns: Product No, Name, Barcode, Category, Price, Stock, Location, Status, Actions
+- Table columns: Product No, Name, Barcode, Type, PLU, Category, MRP, Price, Stock, Location, Status, Actions
 - **Location** shows the primary display location (or the first assigned one); hover it to see all locations
 - Search by name or related text; click refresh to reload
 - **Location** filter: All locations, **No location assigned**, or one active location
+- **Type** filter (dropdown): All types, **Manufacturer**, **Own packed**, **Loose**
+- **Scale file** downloads loose items (PLU, name, rate, unit) as CSV for loading into the weighing scale
 - Paginate with 10 / 25 / 50 rows per page
 - Status chip: **active** (green) or inactive
+
+### Product types and naming
+
+| Type | Barcode | Brand | Name format | Example |
+|---|---|---|---|---|
+| **Manufacturer** | Maker's EAN printed on the pack (required) | Maker's brand | Brand + Product + Size | `Tata Salt 1 kg` |
+| **Own packed** | In-store barcode, auto-generated if blank | `MF` (set automatically) | Product + Size + `MF` | `Toor Dal 1 kg MF` |
+| **Loose** | Scale label: `21` + PLU (5) + weight in g/ml (5) + check digit | None | Product + `Loose`, no size | `Toor Dal Loose` |
+
+The suffix is added on save, so type only the product name (and size for own-packed items). For own-packed items the brand is set to `MF` and `MF` is added to the name. For loose items, the PLU (scale item number) is assigned automatically from 1 upwards, the brand is cleared and `Loose` is added to the name. Changing a product's type swaps the suffix. Keep loose names short (24 characters or less) so they fit on the scale label.
 
 ### Add a product
 
 1. Click **Add Product**.
-2. Enter at least **Product Name**. Optionally enter **Barcode**.
-3. Click **Save**.
+2. Choose the type: **Manufacturer**, **Own packed** or **Loose**.
+3. Enter at least **Product Name**. Enter **Barcode** for manufacturer items; leave it blank for own-packed items to auto-generate one.
+4. Click **Save**.
 
 The form also holds category, MRP, selling price, purchase price, tax %, reorder level, unit type, and status. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
 
@@ -303,6 +317,8 @@ The right card **Products Without Barcode** lists items missing a code. Click **
 4. **Print Labels (n)** opens a print window with generated HTML.
 
 Remove a line with trash before printing. You cannot add a product that has no barcode — generate first.
+
+Loose items are not listed here; their labels are printed by the weighing scale. Packed-goods labels (net quantity, MRP, packed date) are only for **Own packed** products; manufacturer products already carry the maker's label.
 
 ---
 

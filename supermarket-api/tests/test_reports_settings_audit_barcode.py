@@ -214,6 +214,24 @@ def test_packed_labels(client, db, product, admin_headers):
     assert label["net_quantity"] == "500 g" and label["mrp"] == "₹60.00"
     bad_dates = {**body, "best_before_date": "2026-08-01"}
     assert client.post(f"{BAR}/packed-labels", json=bad_dates, headers=admin_headers).status_code == 422
+    product.product_type = "manufacturer"
+    db.commit()
+    res = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers)
+    assert res.status_code == 400 and "Manufacturer" in res.json()["detail"]
+
+
+def test_scale_export(client, category, admin_headers, cashier_headers):
+    item = {"product_type": "loose", "product_name": "Toor Dal", "unit_type": "kg",
+            "selling_price": 140, "tax_percent": 0, "hsn_code": "0713"}
+    client.post("/api/v1/products", json=item, headers=admin_headers)
+    client.post("/api/v1/products", json={**item, "product_name": "Rice 1 kg", "product_type": "own_packed",
+                                          "unit_type": "pcs"}, headers=admin_headers)
+    assert client.get(f"{BAR}/scale-export", headers=cashier_headers).status_code == 403
+    res = client.get(f"{BAR}/scale-export", headers=admin_headers)
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/csv")
+    rows = [line.split(",") for line in res.text.strip().splitlines()]
+    assert rows[0][:4] == ["PLU", "Item Name", "Rate", "Unit"]
+    assert len(rows) == 2 and rows[1][:4] == ["1", "Toor Dal Loose", "140.00", "kg"]
 
 
 def test_packed_labels_needs_store_address(client, db, product, admin_headers):

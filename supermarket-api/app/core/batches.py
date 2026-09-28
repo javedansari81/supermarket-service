@@ -2,10 +2,12 @@
 Stock batch helpers. Packed products hold stock in batches (one per MRP / price / expiry);
 loose products keep only the product-level stock and price.
 """
+import re
 from datetime import date
 from decimal import Decimal
 from typing import List, Optional, Tuple
 from fastapi import HTTPException
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
@@ -21,6 +23,66 @@ def generate_instore_barcode(product_id: int) -> str:
     """In-store EAN-13 (GS1 prefix 2 = restricted circulation, for items without a maker barcode)"""
     code12 = f"2{product_id:011d}"
     return code12 + ean13_check_digit(code12)
+
+
+SCALE_PREFIX = "21"
+# Loose unit -> units per gram/ml encoded in the scale label
+SCALE_UNIT_FACTORS = {"kg": Decimal("0.001"), "ltr": Decimal("0.001"),
+                      "g": Decimal("1"), "ml": Decimal("1")}
+
+
+def scale_barcode(plu_code: int, weight: int = 0) -> str:
+    """Weighing-scale EAN-13: 21 + PLU (5 digits) + weight in g/ml (5 digits) + check digit.
+    With weight 0 it is the product's reference barcode."""
+    code12 = f"{SCALE_PREFIX}{plu_code:05d}{weight:05d}"
+    return code12 + ean13_check_digit(code12)
+
+
+def is_scale_barcode(code: Optional[str]) -> bool:
+    return bool(code) and len(code) == 13 and code.isdigit() and code.startswith(SCALE_PREFIX)
+
+
+def parse_scale_barcode(code: str) -> Tuple[int, int]:
+    """(PLU, weight in g/ml) from a scale label; raises on a wrong check digit"""
+    if ean13_check_digit(code[:12]) != code[12]:
+        raise HTTPException(status_code=400, detail="Invalid scale label barcode (check digit)")
+    return int(code[2:7]), int(code[7:12])
+
+
+def scale_quantity(weight: int, unit_type: Optional[str]) -> Decimal:
+    """Weight from a scale label in the product's unit (e.g. 1250 g -> 1.25 kg)"""
+    return Decimal(weight) * SCALE_UNIT_FACTORS.get(unit_type or "kg", Decimal("0.001"))
+
+
+STORE_BRAND = "MF"
+
+
+def base_product_name(name: str) -> str:
+    """Product name without the type suffix ('Loose' / 'MF') or a leading store brand"""
+    base = name.strip()
+    base = re.sub(rf"^{STORE_BRAND}\s+", "", base, flags=re.IGNORECASE)
+    base = re.sub(rf"[\s-]*\(?\s*(loose|{STORE_BRAND})\s*\)?\s*$", "", base, flags=re.IGNORECASE)
+    return base.strip()
+
+
+def loose_product_name(name: str) -> str:
+    """Naming convention for loose products: no brand, name ends with 'Loose'"""
+    base = base_product_name(name)
+    return f"{base} Loose" if base else "Loose"
+
+
+def own_packed_product_name(name: str) -> str:
+    """Naming convention for own-packed products: brand MF, name ends with 'MF'"""
+    base = base_product_name(name)
+    return f"{base} {STORE_BRAND}" if base else STORE_BRAND
+
+
+def next_plu_code(db: Session, tenant_id: int) -> int:
+    """Item numbers (PLU) for loose products, from 1 upwards per store"""
+    last = db.query(func.max(Product.plu_code)).filter(Product.tenant_id == tenant_id).scalar() or 0
+    if last >= 99999:
+        raise HTTPException(status_code=400, detail="No free item numbers (PLU) left")
+    return last + 1
 
 
 def generate_batch_barcode(batch_id: int) -> str:
