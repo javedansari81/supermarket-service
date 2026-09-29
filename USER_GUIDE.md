@@ -137,18 +137,28 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 | Type | Barcode | Brand | Name format | Example |
 |---|---|---|---|---|
-| **Manufacturer** | Maker's EAN printed on the pack (required) | Maker's brand | Brand + Product + Size | `Tata Salt 1 kg` |
-| **Own packed** | In-store barcode, auto-generated if blank | `MF` (set automatically) | Product + Size + `MF` | `Toor Dal 1 kg MF` |
-| **Loose** | Scale label: `21` + PLU (5) + weight in g/ml (5) + check digit | None | Product + `Loose`, no size | `Toor Dal Loose` |
+| **Manufacturer** | Maker's EAN printed on the pack (required) | Maker's brand | Item + Pack size + Brand | `Salt 1 kg Tata` |
+| **Own packed** | In-store barcode, auto-generated if blank | `MF` (set automatically) | Item + Pack size + `MF` | `Toor Dal 1 kg MF` |
+| **Loose** | Scale label: `21` + PLU (5) + weight in g/ml (5) + check digit | None | Item + `Loose`, no size | `Toor Dal Loose` |
 
-The suffix is added on save, so type only the product name (and size for own-packed items). For own-packed items the brand is set to `MF` and `MF` is added to the name. For loose items, the PLU (scale item number) is assigned automatically from 1 upwards, the brand is cleared and `Loose` is added to the name. Changing a product's type swaps the suffix. Keep loose names short (24 characters or less) so they fit on the scale label.
+Type only the **Item Name** (e.g. `Salt`, without size or brand). The **Display Name** used on bills, labels and reports is generated from the item name, pack size and brand, and is updated whenever one of them or the product type changes. A pack size of `1 pcs` (a single item) is left out of the name; other piece counts are shown, e.g. `Eggs 6 pcs MF`. For own-packed items the brand is set to `MF`. For loose items, the PLU (scale item number) is assigned automatically from 1 upwards and the brand is cleared. Keep loose names short (24 characters or less) so they fit on the scale label.
+
+The display name can be changed by hand if really needed; it then stops following the item name, pack size and brand until you click the reset button next to it. Products that existed before item names were introduced keep their old name as a hand-set name: check the item name and pack size, then click reset to switch to the generated name.
 
 ### Add a product
 
 1. Click **Add Product**.
-2. Choose the type: **Manufacturer**, **Own packed** or **Loose**.
-3. Enter at least **Product Name**. Enter **Barcode** for manufacturer items; leave it blank for own-packed items to auto-generate one.
+2. Under **How will this product be barcoded?**, pick a card: **Manufacturer's barcode** (Manufacturer), **Store label (MF)** (Own packed) or **Loose (weighed)** (Loose). The form opens with only the fields that apply to that type; **Save** stays disabled until a type is picked.
+3. Enter at least **Item Name**, and **Pack Size** / **Pack Unit** for manufacturer and own-packed items. Check the generated **Display Name**. Enter **Barcode** for manufacturer items. For own-packed items the barcode is optional: leave it blank to generate a new one (print it from **Barcode** → **Own Packed Labels**), or scan an MF label you already printed to reuse its barcode.
 4. Click **Save**.
+
+| Field | Manufacturer | Own packed | Loose |
+|---|---|---|---|
+| Brand | Yes | No (always `MF`) | No |
+| Barcode | Required | Optional | No (PLU assigned automatically) |
+| Pack Size / Pack Unit | Required | Required | No |
+| MRP | Yes | Yes | No |
+| Expiry Date | No (tracked per purchase batch) | No (tracked per purchase batch) | Yes |
 
 The form also holds category, MRP, selling price, purchase price, tax %, reorder level, unit type, and status. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
 
@@ -167,7 +177,7 @@ A product can be placed at several locations. Each location's role comes from it
 
 ### View, edit or delete
 
-- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP, selling price, purchase price, GST %, stock, reorder level, unit, expiry date and locations; click **Edit** to open the edit form
+- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP (packed items), selling price, purchase price, GST %, stock, reorder level, unit, expiry date (loose items) and locations; click **Edit** to open the edit form
 - Pencil — edit and **Save**
 - Trash — confirm **Delete this product?**
 
@@ -176,7 +186,7 @@ A product can be placed at several locations. Each location's role comes from it
 - Assign a unique barcode so POS scan works.
 - Set **selling price** and **tax percent** before selling.
 - **Reorder level** drives Dashboard low-stock and Inventory status chips.
-- Products without a barcode can get one on the **Barcode** page.
+- Manufacturer products need the maker's barcode entered here; own-packed products without one get an in-store barcode when their label is first printed.
 
 ---
 
@@ -303,22 +313,30 @@ Second tab: date, product, type (`in` / `out`), quantity, reference number, note
 
 ## 11. Barcode (Admin)
 
-Generate missing barcodes and print shelf / pack labels.
+Print barcode labels in two tabs. Loose items are not listed; their labels are printed by the weighing scale.
 
-### Generate a barcode
+### Manufacturer Labels
 
-The right card **Products Without Barcode** lists items missing a code. Click **Generate**. The product then appears in the print product list.
+Reprint the maker's barcode when a pack's label is damaged.
 
-### Print labels
+1. Select a **Manufacturer** product that has a barcode.
+2. Set how many labels, then **Add to List**. Same product again adds to the label count.
+3. Choose **Label Size**: Small 38×25mm, Medium 50×30mm, Sticker 50×38mm, Large 70×40mm.
+4. **Print Labels (n)** opens the print window. The label shows store name, product name, barcode and MRP.
 
-1. Select a product that already has a barcode.
-2. Set how many labels, then **Add**. Same product again adds to the label count.
-3. Choose **Label Size**: Small 38×25mm, Medium 50×30mm, Large 70×40mm.
-4. **Print Labels (n)** opens a print window with generated HTML.
+The card **Manufacturer Products Without Barcode** lists manufacturer items missing a code. Enter the maker's barcode in **Products**.
 
-Remove a line with trash before printing. You cannot add a product that has no barcode — generate first.
+### Own Packed Labels
 
-Loose items are not listed here; their labels are printed by the weighing scale. Packed-goods labels (net quantity, MRP, packed date) are only for **Own packed** products; manufacturer products already carry the maker's label.
+Legal Metrology labels for items packed in the store.
+
+1. Select an **Own packed** product. Only products with a pack size are listed.
+2. Enter **Packed On** and, optionally, **Best Before**; set how many labels, then **Add to List**.
+3. Choose **Label Size** (50×38mm, 75×50mm, 100×50mm) and click **Print Packed Labels (n)**.
+
+The label shows net quantity, MRP, unit sale price, packed / best before dates, barcode, packer address, customer care and FSSAI licence. Pack size, MRP and barcode come from the product; a product without a barcode gets its in-store barcode automatically on first print. The store address must be set in **Settings**.
+
+Remove a line with trash before printing.
 
 ---
 
@@ -445,7 +463,7 @@ Save after changes. Currency in the UI is **₹**.
 5. **Locations** — create display (D), storage (S) and promo (P) racks and their shelves on each floor.
 6. **Suppliers** — add vendors.
 7. **Products** — name, category, prices, tax, reorder level, barcode, display and storage locations.
-8. **Barcode** — generate missing codes; print labels.
+8. **Barcode** — reprint manufacturer barcodes; print own-packed labels.
 9. **Purchases** or **Inventory → Adjust** — opening stock.
 10. **Billing / POS** — test a sale; reprint from **Invoices**.
 
@@ -463,11 +481,12 @@ Save after changes. Currency in the UI is **₹**.
 | Problem | What to try |
 |---------|-------------|
 | Login failed | Check username/password. Seed admin is `admin` / `admin123`. User must be **active**. |
-| Product not found at POS | Product needs a matching **barcode**. Generate one on Barcode, or type the exact code. |
+| Product not found at POS | Product needs a matching **barcode**. Enter it in Products, or type the exact code. |
 | Insufficient stock | Receive a purchase or **Add Stock** on Inventory. |
 | Checkout disabled | Cart is empty — add at least one item. |
 | Cashier cannot open Products | Expected. Only Dashboard, Billing, Invoices. |
-| No barcode in print list | Product has no barcode. Use **Generate** first. |
+| Product missing in Manufacturer Labels | Only manufacturer products with a barcode are listed. Enter the maker's barcode in Products. |
+| Product missing in Own Packed Labels | Only own-packed products with a pack size are listed. Set the pack size in Products. |
 | Invoice print window blank | Allow pop-ups for the site and try Print again. |
 | "Return window of 7 days has passed" | Ask an admin to process the return. |
 | Cannot void a sale | Cashiers can only void their own same-day sales. Sales with returns cannot be voided. |

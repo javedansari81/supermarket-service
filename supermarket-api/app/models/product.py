@@ -16,6 +16,9 @@ class Product(Base, TimestampMixin, StatusMixin):
     tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False, index=True)
     product_no = Column(String(50), nullable=False)
     product_name = Column(String(200), nullable=False)
+    # Item name without size / brand; product_name is generated from it unless name_is_custom
+    item_name = Column(String(200))
+    name_is_custom = Column(Boolean, nullable=False, default=False, server_default='false')
     category_id = Column(Integer, ForeignKey('categories.id'), index=True)
     brand = Column(String(100))
     barcode = Column(String(100), index=True)

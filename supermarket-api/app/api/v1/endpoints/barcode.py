@@ -22,17 +22,14 @@ from app.schemas.barcode import (
     PackedLabelRequest, PackedLabelData
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
-from app.core.batches import (
-    generate_instore_barcode, get_product_batch, ensure_batch_barcode, scale_barcode, SCALE_PREFIX
-)
-from app.models.product_batch import ProductBatch
+from app.core.batches import generate_instore_barcode, SCALE_PREFIX
 from app.api.v1.endpoints.settings import build_store_settings
 
 # unit -> (base unit, factor to base unit)
 NET_UNITS = {
     "g": ("g", Decimal("1")), "kg": ("g", Decimal("1000")),
-    "ml": ("ml", Decimal("1")), "l": ("ml", Decimal("1000")),
-    "pcs": ("pcs", Decimal("1")),
+    "ml": ("ml", Decimal("1")), "L": ("ml", Decimal("1000")),
+    "pcs": ("pcs", Decimal("1")), "pages": ("pages", Decimal("1")),
 }
 
 
@@ -43,7 +40,7 @@ def format_net_quantity(qty: Decimal, unit: str) -> str:
     if base in ("g", "ml") and base_qty >= 1000:
         value, label = base_qty / 1000, "kg" if base == "g" else "L"
     else:
-        value, label = base_qty, {"g": "g", "ml": "ml", "pcs": "N"}[base]
+        value, label = base_qty, {"g": "g", "ml": "ml", "pcs": "N", "pages": "pages"}[base]
     return f"{value.normalize():f} {label}"
 
 
@@ -51,6 +48,8 @@ def unit_sale_price(mrp: Decimal, qty: Decimal, unit: str) -> Optional[str]:
     """Unit sale price per Legal Metrology rule 6(11): per g/ml below 1 kg/L, per kg/L otherwise"""
     base, factor = NET_UNITS[unit]
     base_qty = qty * factor
+    if base == "pages":
+        return None
     if base == "pcs":
         return None if base_qty == 1 else f"₹{mrp / base_qty:.2f} per N"
     if base_qty == 1000:
@@ -81,35 +80,37 @@ def generate_barcode_image(barcode_value: str) -> str:
     return base64.b64encode(buffer.read()).decode()
 
 
-def label_batch(db: Session, product: Product, batch_id: Optional[int]) -> Optional[ProductBatch]:
-    """Batch a label is printed for, with its in-store barcode assigned"""
-    if not batch_id:
-        return None
-    if product.is_loose:
-        raise HTTPException(status_code=400, detail="Loose items have no batches")
-    batch = get_product_batch(db, product, batch_id)
-    ensure_batch_barcode(db, batch)
-    return batch
+def assign_instore_barcode(db: Session, product: Product) -> str:
+    """Give an own-packed product its in-store barcode if it has none"""
+    if product.barcode:
+        return product.barcode
+    new_barcode = generate_instore_barcode(product.id)
+    existing = db.query(Product).filter(
+        Product.tenant_id == product.tenant_id,
+        Product.barcode == new_barcode,
+        Product.id != product.id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="Generated barcode already exists")
+    product.barcode = new_barcode
+    db.flush()
+    return new_barcode
 
 
-def build_label(product: Product, store_name: str,
-                batch: Optional[ProductBatch] = None) -> BarcodeLabelData:
-    """Build printable label data for a product, or for one of its batches"""
-    barcode_value = batch.barcode if batch else product.barcode
-    mrp = batch.mrp if batch else product.mrp
-    selling_price = batch.selling_price if batch else product.selling_price
+def build_label(product: Product, store_name: str) -> BarcodeLabelData:
+    """Build printable label data for a product"""
     return BarcodeLabelData(
         store_name=store_name,
         product_no=product.product_no,
         product_name=product.product_name,
-        barcode=barcode_value,
-        mrp=f"₹{mrp:.2f}" if mrp else "N/A",
-        selling_price=f"₹{selling_price:.2f}" if selling_price else None,
+        barcode=product.barcode,
+        mrp=f"₹{product.mrp:.2f}" if product.mrp else "N/A",
+        selling_price=f"₹{product.selling_price:.2f}" if product.selling_price else None,
         unit_type=product.unit_type or "pcs",
         is_loose=bool(product.is_loose),
         product_type=product.product_type,
         plu_code=product.plu_code,
-        barcode_image=generate_barcode_image(barcode_value)
+        barcode_image=generate_barcode_image(product.barcode)
     )
 
 
@@ -229,31 +230,38 @@ async def print_barcodes(
     context: TenantContext = Depends(get_tenant_context)
 ):
     """
-    Generate barcode labels for printing
+    Reprint the maker's barcode for manufacturer products (e.g. damaged labels)
     """
     store_name = get_store_name(db, context.tenant_id)
     labels = []
-    
+
     for product_id in request.product_ids:
         product = db.query(Product).filter(
             Product.id == product_id,
             Product.tenant_id == context.tenant_id
         ).first()
-        
+
         if not product:
             continue
 
-        batch = label_batch(db, product, request.batch_id)
-        if not batch and not product.barcode:
-            continue
+        if product.product_type != Product.TYPE_MANUFACTURER:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{product.product_name} is not a manufacturer product; use Own Packed Labels "
+                       "for own-packed items (loose items are labelled by the weighing scale)"
+            )
+        if not product.barcode:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Enter the maker's barcode of {product.product_name} in Products"
+            )
 
-        label = build_label(product, store_name, batch)
+        label = build_label(product, store_name)
 
         # Add copies
         for _ in range(request.copies):
             labels.append(label)
 
-    db.commit()
     return {"labels": labels, "count": len(labels)}
 
 
@@ -287,24 +295,8 @@ async def print_packed_labels(
             status_code=400,
             detail=f"Set the pack size of {product.product_name} in Products"
         )
-    batch = label_batch(db, product, request.batch_id)
-    if not batch and not product.barcode:
-        raise HTTPException(status_code=400, detail="Product has no barcode")
-
-    if batch:
-        mrp = batch.mrp or product.mrp
-        barcode_value = batch.barcode
-        batch_no = request.batch_no or batch.batch_no
-        best_before = request.best_before_date or batch.expiry_date
-        if best_before and best_before < request.packed_date:
-            raise HTTPException(status_code=400, detail="Best before date cannot be earlier than packed date")
-    else:
-        mrp = product.mrp
-        barcode_value = product.barcode
-        batch_no = request.batch_no
-        best_before = request.best_before_date
-    if batch_no == ProductBatch.OPENING:
-        batch_no = None
+    mrp = product.mrp
+    best_before = request.best_before_date
     if not mrp:
         raise HTTPException(
             status_code=400,
@@ -317,6 +309,7 @@ async def print_packed_labels(
             status_code=400,
             detail="Set the store address in Settings (required as packer address)"
         )
+    barcode_value = assign_instore_barcode(db, product)
 
     label = PackedLabelData(
         store_name=store.store_name or "Store",
@@ -331,8 +324,7 @@ async def print_packed_labels(
         mrp=f"₹{mrp:.2f}",
         unit_sale_price=unit_sale_price(mrp, product.net_quantity, product.net_unit),
         packed_date=request.packed_date.strftime("%d/%m/%Y"),
-        best_before_date=best_before.strftime("%d/%m/%Y") if best_before else None,
-        batch_no=batch_no or None
+        best_before_date=best_before.strftime("%d/%m/%Y") if best_before else None
     )
     db.commit()
     return {"labels": [label] * request.copies, "count": request.copies}
@@ -346,36 +338,26 @@ async def generate_new_barcode(
     current_user = Depends(get_current_admin_user)
 ):
     """
-    Generate a new barcode for a product (admin only)
+    Generate an in-store barcode for an own-packed product (admin only)
     """
     product = db.query(Product).filter(
         Product.id == product_id,
         Product.tenant_id == context.tenant_id
     ).first()
-    
+
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    
+
     if product.barcode:
         return {"barcode": product.barcode, "message": "Product already has a barcode"}
 
-    if product.is_loose and product.plu_code:
-        new_barcode = scale_barcode(product.plu_code)
-    else:
-        new_barcode = generate_instore_barcode(product.id)
-    
-    # Check if barcode already exists
-    existing = db.query(Product).filter(
-        Product.tenant_id == context.tenant_id,
-        Product.barcode == new_barcode,
-        Product.id != product_id
-    ).first()
-    
-    if existing:
-        raise HTTPException(status_code=400, detail="Generated barcode already exists")
-    
-    product.barcode = new_barcode
+    if product.product_type == Product.TYPE_MANUFACTURER:
+        raise HTTPException(status_code=400, detail="Enter the maker's barcode in Products")
+    if product.product_type == Product.TYPE_LOOSE:
+        raise HTTPException(status_code=400, detail="Loose items are labelled by the weighing scale")
+
+    new_barcode = assign_instore_barcode(db, product)
     db.commit()
-    
+
     return {"barcode": new_barcode, "message": "Barcode generated successfully"}
 

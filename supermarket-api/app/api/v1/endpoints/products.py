@@ -10,7 +10,7 @@ from app.core.audit import record_audit, snapshot
 from app.core.batches import (
     generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch,
     scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
-    loose_product_name, own_packed_product_name, base_product_name, next_plu_code, STORE_BRAND
+    display_product_name, base_product_name, capitalize_words, next_plu_code, STORE_BRAND
 )
 from app.models.audit_log import AuditLog
 from app.models.product import Product
@@ -27,7 +27,9 @@ from app.api.deps import get_current_user, get_current_admin_user, get_tenant_co
 
 router = APIRouter()
 
-LOOSE_UNITS = ("kg", "g", "ltr", "ml")
+LOOSE_UNITS = ("kg", "g", "L", "ml")
+# Packed items are sold per piece; the pack size holds what is inside
+PACKED_UNIT = "pcs"
 
 
 def generate_product_no(db: Session, tenant_id: int) -> str:
@@ -147,24 +149,50 @@ def ensure_type_rules(product_type: str, unit_type: Optional[str], barcode: Opti
                             detail="Enter the barcode printed on the manufacturer's pack")
 
 
-def apply_type_codes(db: Session, product: Product, previous_type: Optional[str] = None):
-    """Loose: no brand, name ends with 'Loose', auto item number (PLU) and 21 scale barcode.
-    Own packed: brand MF, name ends with 'MF'.
-    Others: no PLU, and an in-store barcode when none is set."""
+def resolve_names(data: dict) -> dict:
+    """item_name with product_name = display name set by hand; item_name alone = generated name;
+    product_name alone (older clients) is taken as the item name"""
+    item_name = capitalize_words((data.pop("item_name", None) or "").strip())
+    product_name = (data.pop("product_name", None) or "").strip()
+    if item_name:
+        return {"item_name": item_name, "product_name": product_name or None,
+                "name_is_custom": bool(product_name)}
+    if product_name:
+        return {"item_name": capitalize_words(base_product_name(product_name) or product_name),
+                "product_name": None, "name_is_custom": False}
+    return {}
+
+
+def apply_naming(product: Product, previous_type: Optional[str] = None):
+    """Loose: no brand. Own packed: brand MF. Display name = item name + pack size + brand
+    (MF for own packed, 'Loose' for loose) unless it was set by hand."""
     if product.product_type == Product.TYPE_LOOSE:
         product.brand = None
-        product.product_name = loose_product_name(product.product_name)
+    elif product.product_type == Product.TYPE_OWN_PACKED:
+        product.brand = STORE_BRAND
+    elif previous_type and previous_type != Product.TYPE_MANUFACTURER \
+            and (product.brand or "").strip().upper() == STORE_BRAND:
+        product.brand = None
+    elif product.brand:
+        product.brand = capitalize_words(product.brand.strip()) or None
+    if not product.item_name:
+        product.item_name = base_product_name(product.product_name or "") or product.product_name
+    if not (product.name_is_custom and product.product_name):
+        product.name_is_custom = False
+        product.product_name = display_product_name(
+            product.product_type, product.item_name, product.net_quantity,
+            product.net_unit, product.brand) or product.item_name
+
+
+def apply_type_codes(db: Session, product: Product, previous_type: Optional[str] = None):
+    """Loose: auto item number (PLU) and 21 scale barcode.
+    Others: no PLU, and an in-store barcode when none is set."""
+    apply_naming(product, previous_type)
+    if product.product_type == Product.TYPE_LOOSE:
         if not product.plu_code:
             product.plu_code = next_plu_code(db, product.tenant_id)
         product.barcode = scale_barcode(product.plu_code)
     else:
-        if product.product_type == Product.TYPE_OWN_PACKED:
-            product.brand = STORE_BRAND
-            product.product_name = own_packed_product_name(product.product_name)
-        elif previous_type and previous_type != Product.TYPE_MANUFACTURER:
-            product.product_name = base_product_name(product.product_name) or product.product_name
-            if (product.brand or "").strip().upper() == STORE_BRAND:
-                product.brand = None
         product.plu_code = None
         if not product.barcode or is_scale_barcode(product.barcode):
             product.barcode = generate_instore_barcode(product.id)
@@ -430,6 +458,8 @@ async def create_product(
     product_data.is_loose = product_data.product_type == Product.TYPE_LOOSE
     if product_data.is_loose:
         product_data.barcode = None
+    else:
+        product_data.unit_type = PACKED_UNIT
     ensure_type_rules(product_data.product_type, product_data.unit_type, product_data.barcode)
     ensure_pack_size(product_data.net_quantity, product_data.net_unit)
     ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
@@ -443,11 +473,14 @@ async def create_product(
         if existing_barcode or barcode_used_by_batch(db, context.tenant_id, product_data.barcode):
             raise HTTPException(status_code=400, detail="Barcode already exists")
 
+    data = product_data.model_dump(exclude={"locations"})
+    data.update(resolve_names(data))
     product = Product(
         tenant_id=context.tenant_id,
-        **product_data.model_dump(exclude={"locations"}),
+        **data,
         created_by=context.user_id
     )
+    apply_naming(product)
 
     db.add(product)
     db.flush()
@@ -497,6 +530,7 @@ async def update_product(
     update_data = product_data.model_dump(exclude_unset=True, exclude={"locations"})
     if "barcode" in update_data and not (update_data["barcode"] or "").strip():
         update_data.pop("barcode")
+    update_data.update(resolve_names(update_data))
 
     mrp = update_data.get("mrp", product.mrp)
     selling_price = update_data.get("selling_price", product.selling_price)
@@ -509,8 +543,10 @@ async def update_product(
     update_data["is_loose"] = product_type == Product.TYPE_LOOSE
     if update_data["is_loose"]:
         update_data.pop("barcode", None)
-    elif product.is_loose and "barcode" not in update_data:
-        update_data["barcode"] = None
+    else:
+        update_data["unit_type"] = PACKED_UNIT
+        if product.is_loose and "barcode" not in update_data:
+            update_data["barcode"] = None
     ensure_type_rules(product_type, update_data.get("unit_type", product.unit_type),
                       update_data.get("barcode", product.barcode),
                       generate_instore_barcode(product.id) if product_type != product.product_type else None)

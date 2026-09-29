@@ -6,11 +6,11 @@ import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, InputAdornment,
-  Chip, ToggleButton, ToggleButtonGroup, Divider, Autocomplete, Typography,
+  Chip, ToggleButton, Divider, Autocomplete, Typography, CardActionArea, Collapse,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Visibility, Add, Download } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh, Visibility, Add, Download, Restore } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -20,26 +20,30 @@ import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
 import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
 
-const PACKED_UNITS = ['pcs', 'pack', 'box', 'bottle', 'dozen'];
-const LOOSE_UNITS = ['kg', 'g', 'ltr', 'ml'];
+const PACKED_UNIT = 'pcs';
+const LOOSE_UNITS = ['kg', 'g', 'L', 'ml'];
 const GST_RATES = ['0', '5', '18', '40'];
-const PACK_UNITS: { value: NetUnit; label: string }[] = [
-  { value: 'g', label: 'g' }, { value: 'kg', label: 'kg' }, { value: 'ml', label: 'ml' },
-  { value: 'l', label: 'L' }, { value: 'pcs', label: 'pcs' },
-];
+const PACK_UNITS: NetUnit[] = ['g', 'kg', 'ml', 'L', 'pcs', 'pages'];
 const ROLE_COLORS: Record<LocationRole, 'primary' | 'secondary' | 'warning'> = { display: 'primary', storage: 'secondary', promo: 'warning' };
-const TYPE_META: Record<ProductType, { label: string; short: string; color: 'primary' | 'secondary' | 'warning'; naming: string }> = {
-  manufacturer: { label: "Manufacturer (maker's barcode)", short: 'Manufacturer', color: 'primary',
-    naming: 'Name: Brand + Product + Size, e.g. Tata Salt 1 kg' },
-  own_packed: { label: 'Own packed (our barcode)', short: 'Own packed', color: 'secondary',
-    naming: 'Name: Product + Size + "MF", brand MF, e.g. Toor Dal 1 kg MF' },
-  loose: { label: 'Loose (weighed on scale)', short: 'Loose', color: 'warning',
-    naming: 'Name: Product + "Loose", no brand, no size, e.g. Toor Dal Loose' },
+const TYPE_META: Record<ProductType, {
+  title: string; description: string; short: string; color: 'primary' | 'secondary' | 'warning';
+}> = {
+  manufacturer: { title: "Manufacturer's barcode", short: 'Manufacturer', color: 'primary',
+    description: 'Packed by the brand - scan the barcode printed on the pack' },
+  own_packed: { title: 'Store label (MF)', short: 'Own packed', color: 'secondary',
+    description: 'We pack and label it - barcode is generated for you' },
+  loose: { title: 'Loose (weighed)', short: 'Loose', color: 'warning',
+    description: 'Sold by weight - the scale prints the label' },
 };
 const SCALE_NAME_LIMIT = 24;
 const STORE_BRAND = 'MF';
 
 const typeOf = (p: Product): ProductType => p.product_type ?? (p.is_loose ? 'loose' : 'own_packed');
+
+// Mirrors capitalize_words in the API: 'toor dal' -> 'Toor Dal', unit words and words with capitals are kept
+const UNIT_WORDS = new Set(['g', 'gm', 'gms', 'kg', 'kgs', 'ml', 'l', 'ltr', 'pcs', 'pages']);
+const capitalizeWords = (text: string) => text.replace(/\S+/g, (w) =>
+  w !== w.toLowerCase() || UNIT_WORDS.has(w) ? w : w.charAt(0).toUpperCase() + w.slice(1));
 
 const baseName = (name: string) => name.trim()
   .replace(/^MF\s+/i, '')
@@ -50,13 +54,18 @@ const looseName = (name: string) => {
   return base ? `${base} Loose` : 'Loose';
 };
 
-const ownPackedName = (name: string) => {
-  const base = baseName(name);
-  return base ? `${base} ${STORE_BRAND}` : STORE_BRAND;
+const packSizeLabel = (quantity: string, unit: NetUnit | '') => {
+  const n = Number(quantity);
+  if (!unit || !(n > 0) || (unit === 'pcs' && n === 1)) return '';
+  return `${n} ${unit}`;
 };
 
-const savedName = (type: ProductType, name: string) =>
-  type === 'loose' ? looseName(name) : type === 'own_packed' ? ownPackedName(name) : name.trim();
+// Mirrors display_product_name in the API: brand last, a single piece shows no size
+const autoName = (type: ProductType | '', item: string, quantity: string, unit: NetUnit | '', brand: string) => {
+  if (type === 'loose') return looseName(item);
+  const last = type === 'own_packed' ? STORE_BRAND : brand.trim();
+  return [baseName(item), packSizeLabel(quantity, unit), last].filter(Boolean).join(' ');
+};
 
 interface FormLocation { location_id: string; is_primary: boolean; }
 
@@ -68,13 +77,13 @@ const formatLocations = (locations?: ProductLocation[]) =>
     `${l.location_code} (${l.role}${l.floor ? `, ${l.floor}` : ''}${l.is_primary ? ', primary' : ''})`).join(', ') : '-';
 
 const emptyForm = {
-  product_name: '', brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
-  purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: 'pcs', product_type: 'own_packed' as ProductType,
+  item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
+  purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
   net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
 
 const formatPackSize = (p: Product) =>
-  p.net_quantity && p.net_unit ? `${Number(p.net_quantity)} ${p.net_unit === 'l' ? 'L' : p.net_unit}` : '-';
+  p.net_quantity && p.net_unit ? `${Number(p.net_quantity)} ${p.net_unit}` : '-';
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -139,13 +148,14 @@ const Products: React.FC = () => {
     if (product) {
       setEditProduct(product);
       setFormData({
-        product_name: product.product_name, brand: product.brand || '', barcode: product.barcode || '',
+        item_name: product.item_name || baseName(product.product_name), product_name: product.product_name,
+        name_edited: !!product.name_is_custom, brand: product.brand || '', barcode: product.barcode || '',
         hsn_code: product.hsn_code || '',
         category_id: product.category_id?.toString() || '', mrp: product.mrp?.toString() || '',
         selling_price: product.selling_price?.toString() || '', purchase_price: product.purchase_price?.toString() || '',
         tax_percent: Number(product.tax_percent ?? 0).toString(),
         reorder_level: Number(product.reorder_level ?? 10).toString(),
-        unit_type: product.unit_type, product_type: typeOf(product),
+        unit_type: typeOf(product) === 'loose' ? product.unit_type : PACKED_UNIT, product_type: typeOf(product),
         net_quantity: product.net_quantity != null ? Number(product.net_quantity).toString() : '',
         net_unit: product.net_unit || '',
         expiry_date: product.expiry_date || '', status: product.status
@@ -164,6 +174,10 @@ const Products: React.FC = () => {
 
   const isLoose = formData.product_type === 'loose';
   const isOwnPacked = formData.product_type === 'own_packed';
+  const isManufacturer = formData.product_type === 'manufacturer';
+  const displayName = formData.name_edited ? formData.product_name
+    : autoName(formData.product_type, capitalizeWords(formData.item_name), formData.net_quantity, formData.net_unit,
+      capitalizeWords(formData.brand));
 
   const handleTypeChange = (type: ProductType) => {
     const toLoose = type === 'loose';
@@ -171,11 +185,10 @@ const Products: React.FC = () => {
     const toManufacturer = type === 'manufacturer' && formData.product_type !== 'manufacturer';
     setFormData({
       ...formData, product_type: type,
-      ...(looseChanged ? { unit_type: toLoose ? 'kg' : 'pcs', barcode: '' } : {}),
-      ...(toLoose ? { brand: '' } : {}),
+      ...(looseChanged ? { unit_type: toLoose ? 'kg' : PACKED_UNIT, barcode: '' } : {}),
+      ...(toLoose ? { brand: '', mrp: '' } : { expiry_date: '' }),
       ...(type === 'own_packed' ? { brand: STORE_BRAND } : {}),
       ...(toManufacturer ? {
-        product_name: baseName(formData.product_name),
         brand: formData.brand.trim().toUpperCase() === STORE_BRAND ? '' : formData.brand,
       } : {}),
       ...(looseChanged && gstRef ? { tax_percent: String(toLoose ? gstRef.loose : gstRef.packed) } : {})
@@ -204,32 +217,35 @@ const Products: React.FC = () => {
   };
 
   const handleSave = async () => {
-    if (!formData.product_name.trim()) { toast.error('Product name is required'); return; }
+    const productType = formData.product_type;
+    if (!productType) { toast.error('Choose how the product is barcoded'); return; }
+    if (!formData.item_name.trim()) { toast.error('Item name is required'); return; }
     if (!formData.selling_price) { toast.error('Selling price is required'); return; }
-    if (formData.product_type === 'manufacturer' && !formData.barcode) {
+    if (isManufacturer && !formData.barcode) {
       toast.error("Enter the barcode printed on the manufacturer's pack"); return;
     }
-    const mrp = formData.mrp ? parseFloat(formData.mrp) : undefined;
+    const mrp = !isLoose && formData.mrp ? parseFloat(formData.mrp) : undefined;
     const sellingPrice = parseFloat(formData.selling_price);
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
     if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
     const netQuantity = !isLoose && formData.net_quantity ? parseFloat(formData.net_quantity) : null;
     const netUnit = !isLoose && formData.net_unit ? formData.net_unit : null;
+    if (!isLoose && (netQuantity === null || netUnit === null)) { toast.error('Enter the pack size and its unit'); return; }
     if (netQuantity !== null && !(netQuantity > 0)) { toast.error('Pack size must be greater than 0'); return; }
-    if ((netQuantity === null) !== (netUnit === null)) { toast.error('Enter both pack size and its unit'); return; }
+    const customName = formData.name_edited ? formData.product_name.trim() : '';
     try {
       const data = {
-        product_name: savedName(formData.product_type, formData.product_name),
-        brand: isLoose ? undefined : isOwnPacked ? STORE_BRAND : formData.brand || undefined,
+        item_name: capitalizeWords(formData.item_name.trim()), product_name: customName || undefined,
+        brand: isLoose ? undefined : isOwnPacked ? STORE_BRAND : capitalizeWords(formData.brand.trim()) || undefined,
         barcode: isLoose ? undefined : formData.barcode || undefined, hsn_code: formData.hsn_code || undefined,
         category_id: formData.category_id ? parseInt(formData.category_id) : undefined,
-        mrp, selling_price: sellingPrice,
+        mrp: isLoose ? null : mrp, selling_price: sellingPrice,
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
-        unit_type: formData.unit_type, product_type: formData.product_type, is_loose: isLoose,
+        unit_type: formData.unit_type, product_type: productType, is_loose: isLoose,
         net_quantity: netQuantity, net_unit: netUnit,
-        expiry_date: formData.expiry_date || undefined, status: formData.status,
+        expiry_date: isLoose ? formData.expiry_date || undefined : null, status: formData.status,
         locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
       };
 
@@ -354,33 +370,44 @@ const Products: React.FC = () => {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
         <DialogContent>
-          <Grid container spacing={2} sx={{ pt: 1 }}>
-            <Grid size={12}>
-              <ToggleButtonGroup exclusive color="primary" value={formData.product_type}
-                onChange={(_, v) => v && handleTypeChange(v)}>
-                {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
-                  <ToggleButton key={t} value={t}>{TYPE_META[t].label}</ToggleButton>
-                ))}
-              </ToggleButtonGroup>
-              <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                {TYPE_META[formData.product_type].naming}
-              </Typography>
-            </Grid>
+          <Typography variant="subtitle2" sx={{ pt: 1, mb: 1 }}>How will this product be barcoded?</Typography>
+          <Grid container spacing={1.5}>
+            {(Object.keys(TYPE_META) as ProductType[]).map((t) => {
+              const selected = formData.product_type === t;
+              return (
+                <Grid key={t} size={{ xs: 12, sm: 4 }}>
+                  <Card variant="outlined" sx={{
+                    height: '100%', borderColor: selected ? 'primary.main' : undefined,
+                    bgcolor: selected ? 'action.selected' : undefined
+                  }}>
+                    <CardActionArea sx={{ height: '100%', p: 1.5 }} onClick={() => !selected && handleTypeChange(t)}>
+                      <Typography variant="subtitle1" fontWeight={600} color={selected ? 'primary' : 'text.primary'}>
+                        {TYPE_META[t].title}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">{TYPE_META[t].description}</Typography>
+                    </CardActionArea>
+                  </Card>
+                </Grid>
+              );
+            })}
+          </Grid>
+          <Collapse in={!!formData.product_type} unmountOnExit>
+          <Grid container spacing={2} sx={{ pt: 2 }}>
             <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label="Product Name" required value={formData.product_name}
-                placeholder={isLoose ? 'e.g. Sugar, Toor Dal, Basmati Rice' : isOwnPacked ? 'e.g. Toor Dal 1 kg' : 'e.g. Maggi Noodles 70g'}
-                error={isLoose && looseName(formData.product_name).length > SCALE_NAME_LIMIT}
-                helperText={(isLoose || isOwnPacked) && formData.product_name.trim()
-                  ? `Saved as "${savedName(formData.product_type, formData.product_name)}"${isLoose && looseName(formData.product_name).length > SCALE_NAME_LIMIT
-                    ? ` - over ${SCALE_NAME_LIMIT} characters, may be cut on the scale label` : ''}` : undefined}
-                onChange={(e) => setFormData({ ...formData, product_name: e.target.value })} />
+              <TextField fullWidth label="Item Name" required value={formData.item_name}
+                placeholder={isLoose ? 'e.g. Sugar, Toor Dal, Basmati Rice' : isOwnPacked ? 'e.g. Toor Dal' : 'e.g. Salt, Maggi Noodles'}
+                helperText={isLoose ? 'Without "Loose"' : `Without size${isManufacturer ? ' or brand' : ' or "MF"'}`}
+                onBlur={() => setFormData({ ...formData, item_name: capitalizeWords(formData.item_name) })}
+                onChange={(e) => setFormData({ ...formData, item_name: e.target.value })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField fullWidth label="Brand" value={isOwnPacked ? STORE_BRAND : formData.brand} disabled={isLoose || isOwnPacked}
-                helperText={isLoose ? 'Not used for loose items' : isOwnPacked ? 'Store brand' : undefined}
-                onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
-            </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
+            {isManufacturer && (
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField fullWidth label="Brand" value={formData.brand}
+                  onBlur={() => setFormData({ ...formData, brand: capitalizeWords(formData.brand) })}
+                  onChange={(e) => setFormData({ ...formData, brand: e.target.value })} />
+              </Grid>
+            )}
+            <Grid size={{ xs: 12, md: isManufacturer ? 3 : 6 }}>
               <SearchableSelect label="Category" value={formData.category_id}
                 onChange={(v) => setFormData({ ...formData, category_id: v })}
                 options={[
@@ -388,18 +415,24 @@ const Products: React.FC = () => {
                   ...categories.map((c) => ({ value: c.id.toString(), label: c.category_name })),
                 ]} />
             </Grid>
-            <Grid size={{ xs: 12, md: 6 }}>
-              <TextField fullWidth label="Barcode" value={formData.barcode} disabled={isLoose}
-                required={formData.product_type === 'manufacturer'}
-                helperText={isLoose
-                  ? (editProduct?.plu_code && typeOf(editProduct) === 'loose'
+            {isLoose ? (
+              <Grid size={12}>
+                <Typography variant="body2" color="text.secondary">
+                  {editProduct?.plu_code && typeOf(editProduct) === 'loose'
                     ? `PLU ${editProduct.plu_code}. The scale prints 21 + PLU + weight on each label`
-                    : 'An item number (PLU) is assigned automatically; the scale prints 21 + PLU + weight')
-                  : formData.product_type === 'manufacturer'
-                    ? "Scan or type the EAN printed on the maker's pack"
-                    : 'Leave blank to auto-generate an in-store barcode'}
-                onChange={(e) => setFormData({ ...formData, barcode: e.target.value.trim() })} />
-            </Grid>
+                    : 'An item number (PLU) is assigned automatically; the scale prints 21 + PLU + weight on each label'}
+                </Typography>
+              </Grid>
+            ) : (
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label={isManufacturer ? 'Barcode' : 'Barcode (optional)'} value={formData.barcode}
+                  required={isManufacturer}
+                  helperText={isManufacturer
+                    ? "Scan or type the barcode printed on the manufacturer's pack"
+                    : 'Leave blank to generate a new MF barcode (print it from the Barcode page). To reuse MF labels already printed, scan one here'}
+                  onChange={(e) => setFormData({ ...formData, barcode: e.target.value.trim() })} />
+              </Grid>
+            )}
             <Grid size={12}>
               <Autocomplete options={GST_RATE_REFERENCE} value={gstRef} onChange={(_, v) => handleGstRefChange(v)}
                 getOptionLabel={(o) => o.item}
@@ -413,54 +446,73 @@ const Products: React.FC = () => {
                     helperText="Packed = pre-packaged and labelled. Rates are a reference; confirm unusual items with your accountant" />
                 )} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: isLoose ? 3 : 4 }}>
               <TextField fullWidth label="HSN Code" value={formData.hsn_code} helperText="Required on GST invoices"
                 onChange={(e) => setFormData({ ...formData, hsn_code: e.target.value.replace(/[^0-9]/g, '') })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
-              <FormControl fullWidth><InputLabel>{isLoose ? 'Selling Unit' : 'Unit'}</InputLabel>
-                <Select value={formData.unit_type} label={isLoose ? 'Selling Unit' : 'Unit'}
-                  onChange={(e) => setFormData({ ...formData, unit_type: e.target.value })}>
-                  {(isLoose ? LOOSE_UNITS : PACKED_UNITS).map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
-                </Select></FormControl>
-            </Grid>
-            {!isLoose && (
+            {isLoose ? (
+              <Grid size={{ xs: 12, md: 3 }}>
+                <FormControl fullWidth><InputLabel>Selling Unit</InputLabel>
+                  <Select value={formData.unit_type} label="Selling Unit"
+                    onChange={(e) => setFormData({ ...formData, unit_type: e.target.value })}>
+                    {LOOSE_UNITS.map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
+                  </Select></FormControl>
+              </Grid>
+            ) : (
               <>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <TextField fullWidth label="Pack Size" type="number" value={formData.net_quantity}
-                    inputProps={{ step: 'any', min: 0 }} helperText="Net quantity per pack, e.g. 500"
+                <Grid size={{ xs: 6, md: 4 }}>
+                  <TextField fullWidth label="Pack Size" type="number" required value={formData.net_quantity}
+                    inputProps={{ step: 'any', min: 0 }} helperText="e.g. 500, or 12 for a dozen"
                     onChange={(e) => setFormData({ ...formData, net_quantity: e.target.value })} />
                 </Grid>
-                <Grid size={{ xs: 6, md: 3 }}>
-                  <FormControl fullWidth><InputLabel>Pack Unit</InputLabel>
+                <Grid size={{ xs: 6, md: 4 }}>
+                  <FormControl fullWidth required><InputLabel>Pack Unit</InputLabel>
                     <Select value={formData.net_unit} label="Pack Unit"
                       onChange={(e) => setFormData({ ...formData, net_unit: e.target.value as NetUnit | '' })}>
-                      <MenuItem value="">None</MenuItem>
-                      {PACK_UNITS.map((u) => <MenuItem key={u.value} value={u.value}>{u.label}</MenuItem>)}
-                    </Select></FormControl>
+                      {PACK_UNITS.map((u) => <MenuItem key={u} value={u}>{u}</MenuItem>)}
+                    </Select>
+                  </FormControl>
                 </Grid>
               </>
             )}
-            <Grid size={12}><Divider>Pricing {isLoose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
-              <TextField fullWidth label="MRP" type="number" value={formData.mrp}
-                inputProps={{ step: 'any', min: 0 }} helperText={isLoose ? 'Optional for loose items' : 'As printed on pack'}
-                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                onChange={(e) => setFormData({ ...formData, mrp: e.target.value })} />
+            <Grid size={12}>
+              <TextField fullWidth label="Display Name" value={displayName}
+                color={formData.name_edited ? 'warning' : undefined} focused={formData.name_edited || undefined}
+                error={isLoose && displayName.length > SCALE_NAME_LIMIT}
+                helperText={`${formData.name_edited
+                  ? 'Changed by hand. Use the reset button to go back to the auto-generated name'
+                  : 'Auto-generated. Change only if necessary'}${
+                  isLoose && displayName.length > SCALE_NAME_LIMIT ? `. Over ${SCALE_NAME_LIMIT} characters, may be cut on the scale label` : ''}`}
+                InputProps={{ endAdornment: formData.name_edited ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" title="Use auto-generated name"
+                      onClick={() => setFormData({ ...formData, name_edited: false, product_name: '' })}><Restore fontSize="small" /></IconButton>
+                  </InputAdornment>
+                ) : undefined }}
+                onChange={(e) => setFormData({ ...formData, product_name: e.target.value, name_edited: true })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={12}><Divider>Pricing {isLoose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
+            {!isLoose && (
+              <Grid size={{ xs: 12, md: 3 }}>
+                <TextField fullWidth label="MRP" type="number" value={formData.mrp}
+                  inputProps={{ step: 'any', min: 0 }} helperText={isOwnPacked ? 'Printed on the MF label' : 'As printed on pack'}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                  onChange={(e) => setFormData({ ...formData, mrp: e.target.value })} />
+              </Grid>
+            )}
+            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
               <TextField fullWidth label="Selling Price" type="number" required value={formData.selling_price}
                 inputProps={{ step: 'any', min: 0 }} helperText="GST inclusive"
                 InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
                 onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
               <TextField fullWidth label="Purchase Price" type="number" value={formData.purchase_price}
                 inputProps={{ step: 'any', min: 0 }}
                 InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
                 onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 3 }}>
+            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
               <FormControl fullWidth><InputLabel>GST %</InputLabel>
                 <Select value={formData.tax_percent} label="GST %"
                   onChange={(e) => setFormData({ ...formData, tax_percent: e.target.value })}>
@@ -474,11 +526,13 @@ const Products: React.FC = () => {
                 inputProps={{ step: isLoose ? 'any' : 1, min: 0 }}
                 onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })} />
             </Grid>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <TextField fullWidth label="Expiry Date" type="date" value={formData.expiry_date}
-                InputLabelProps={{ shrink: true }}
-                onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })} />
-            </Grid>
+            {isLoose && (
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Expiry Date" type="date" value={formData.expiry_date}
+                  InputLabelProps={{ shrink: true }}
+                  onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })} />
+              </Grid>
+            )}
             {editProduct && (
               <Grid size={{ xs: 12, md: 4 }}>
                 <FormControl fullWidth><InputLabel>Status</InputLabel>
@@ -520,10 +574,11 @@ const Products: React.FC = () => {
               </Typography>
             </Grid>
           </Grid>
+          </Collapse>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSave}>Save</Button>
+          <Button variant="contained" onClick={handleSave} disabled={!formData.product_type}>Save</Button>
         </DialogActions>
       </Dialog>
 
@@ -542,7 +597,7 @@ const Products: React.FC = () => {
                 ['Barcode', viewProduct.barcode || '-'],
                 ['Category', viewProduct.category?.category_name ?? viewProduct.category_name ?? '-'],
                 ['HSN Code', viewProduct.hsn_code || '-'],
-                ['MRP', viewProduct.mrp != null ? `₹${Number(viewProduct.mrp).toFixed(2)}` : '-'],
+                ...(viewProduct.is_loose ? [] : [['MRP', viewProduct.mrp != null ? `₹${Number(viewProduct.mrp).toFixed(2)}` : '-']]),
                 ['Selling Price', `₹${Number(viewProduct.selling_price || 0).toFixed(2)}${viewProduct.is_loose ? `/${viewProduct.unit_type}` : ''}`],
                 ['Purchase Price', viewProduct.purchase_price != null ? `₹${Number(viewProduct.purchase_price).toFixed(2)}` : '-'],
                 ['GST %', `${Number(viewProduct.tax_percent ?? 0)}%`],
@@ -550,7 +605,7 @@ const Products: React.FC = () => {
                 ['Reorder Level', `${Number(viewProduct.reorder_level ?? 0)} ${viewProduct.unit_type || ''}`],
                 ['Unit', viewProduct.unit_type || '-'],
                 ...(viewProduct.is_loose ? [] : [['Pack Size', formatPackSize(viewProduct)]]),
-                ['Expiry Date', viewProduct.expiry_date || '-'],
+                ...(viewProduct.is_loose ? [['Expiry Date', viewProduct.expiry_date || '-']] : []),
               ].map(([label, value]) => (
                 <Grid key={label} size={{ xs: 6, md: 3 }}>
                   <Typography variant="caption" color="text.secondary">{label}</Typography>

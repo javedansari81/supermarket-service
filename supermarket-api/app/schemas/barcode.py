@@ -53,18 +53,10 @@ class BarcodeConfigListResponse(BaseModel):
 
 
 class BarcodePrintRequest(BaseModel):
-    """Schema for barcode print request. With batch_id (single product) the labels carry the
-    batch barcode and the batch's MRP, so a scan identifies the batch."""
+    """Schema for a manufacturer barcode reprint request"""
     product_ids: List[int] = Field(..., min_length=1)
     copies: int = Field(1, ge=1, le=500)
     config_id: Optional[int] = None
-    batch_id: Optional[int] = None
-
-    @model_validator(mode="after")
-    def check_batch_single_product(self):
-        if self.batch_id and len(self.product_ids) != 1:
-            raise ValueError("A batch label must be for a single product")
-        return self
 
 
 class BarcodeLabelData(BaseModel):
@@ -83,14 +75,11 @@ class BarcodeLabelData(BaseModel):
 
 
 class PackedLabelRequest(BaseModel):
-    """Schema for a packed-goods (Legal Metrology) label print request. Net quantity and MRP
-    come from the product; with batch_id the label uses the batch barcode and MRP, and batch
-    number and best before default to the batch's."""
+    """Schema for a packed-goods (Legal Metrology) label print request. Net quantity, MRP
+    and barcode come from the product."""
     product_id: int
-    batch_id: Optional[int] = None
     packed_date: date
     best_before_date: Optional[date] = None
-    batch_no: Optional[str] = Field(None, max_length=30)
     copies: int = Field(1, ge=1, le=500)
 
     @model_validator(mode="after")
@@ -115,5 +104,4 @@ class PackedLabelData(BaseModel):
     unit_sale_price: Optional[str] = None
     packed_date: str
     best_before_date: Optional[str] = None
-    batch_no: Optional[str] = None
 

@@ -101,7 +101,7 @@ const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 const QUICK_WEIGHTS: Record<string, number[]> = {
   kg: [0.25, 0.5, 1, 2, 5],
-  ltr: [0.25, 0.5, 1, 2, 5],
+  L: [0.25, 0.5, 1, 2, 5],
   g: [100, 250, 500],
   ml: [100, 250, 500],
 };

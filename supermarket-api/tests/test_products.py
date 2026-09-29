@@ -81,8 +81,20 @@ def test_create_product_price_rules(client, admin_headers):
 def test_create_loose_product_requires_weight_unit(client, admin_headers):
     res = client.post(URL, json=payload(is_loose=True, unit_type="pcs"), headers=admin_headers)
     assert res.status_code == 400
+    res = client.post(URL, json=payload(is_loose=True, unit_type="ltr"), headers=admin_headers)
+    assert res.status_code == 400
     res = client.post(URL, json=payload(is_loose=True, unit_type="kg"), headers=admin_headers)
     assert res.status_code == 201
+    res = client.post(URL, json=payload(is_loose=True, product_name="Oil", unit_type="L"),
+                      headers=admin_headers)
+    assert res.status_code == 201
+
+
+def test_packed_product_is_sold_per_piece(client, admin_headers):
+    res = client.post(URL, json=payload(unit_type="box"), headers=admin_headers)
+    assert res.status_code == 201 and res.json()["unit_type"] == "pcs"
+    res = client.put(f"{URL}/{res.json()['id']}", json={"unit_type": "dozen"}, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["unit_type"] == "pcs"
 
 
 def test_create_loose_product_gets_plu_and_scale_barcode(client, admin_headers):
@@ -103,7 +115,7 @@ def test_product_type_rules(client, admin_headers):
     assert post(product_type="own_packed", barcode="2100001012508").status_code == 400
     res = post(product_type="manufacturer", barcode="8901111111111", brand="Tata")
     assert res.status_code == 201 and res.json()["plu_code"] is None
-    assert (res.json()["product_name"], res.json()["brand"]) == ("Sugar 1kg", "Tata")
+    assert (res.json()["product_name"], res.json()["brand"]) == ("Sugar 1kg Tata", "Tata")
     own = post().json()
     assert own["product_type"] == "own_packed" and own["barcode"].startswith("20")
     # Switching an own-packed item to manufacturer needs the maker's barcode
@@ -127,6 +139,35 @@ def test_own_packed_naming(client, admin_headers):
     res = client.put(f"{URL}/{own['id']}", json={"product_type": "own_packed", "unit_type": "pcs"},
                      headers=admin_headers).json()
     assert (res["product_name"], res["brand"]) == ("Toor Dal 1 kg MF", "MF")
+
+
+def test_display_name_from_item_name(client, admin_headers):
+    post = lambda **kw: client.post(URL, json=payload(product_name=None, **kw),
+                                    headers=admin_headers).json()
+    made = post(product_type="manufacturer", item_name="Salt", brand="Tata",
+                barcode="8903333333333", net_quantity=1, net_unit="kg")
+    assert (made["item_name"], made["product_name"]) == ("Salt", "Salt 1 kg Tata")
+    assert made["name_is_custom"] is False
+    own = post(item_name="Toor Dal", net_quantity=500, net_unit="g")
+    assert own["product_name"] == "Toor Dal 500 g MF"
+    assert post(item_name="Oil", net_quantity=1.5, net_unit="L")["product_name"] == "Oil 1.5 L MF"
+    assert post(item_name="Notebook", net_quantity=200, net_unit="pages")["product_name"] == "Notebook 200 pages MF"
+    typed = post(item_name="toor dal ORS iPhone", net_quantity=1, net_unit="kg")
+    assert (typed["item_name"], typed["product_name"]) == ("Toor Dal ORS iPhone", "Toor Dal ORS iPhone 1 kg MF")
+    branded = post(product_type="manufacturer", item_name="ghee", brand="amul ITC",
+                   barcode="8904444444444", net_quantity=1, net_unit="L")
+    assert (branded["brand"], branded["product_name"]) == ("Amul ITC", "Ghee 1 L Amul ITC")
+    assert post(item_name="Bucket", net_quantity=1, net_unit="pcs")["product_name"] == "Bucket MF"
+    assert post(item_name="Eggs", net_quantity=6, net_unit="pcs")["product_name"] == "Eggs 6 pcs MF"
+    put = lambda body: client.put(f"{URL}/{made['id']}", json=body, headers=admin_headers).json()
+    # Size or brand changes regenerate the name
+    assert put({"net_quantity": 2})["product_name"] == "Salt 2 kg Tata"
+    # A name set by hand is kept until item_name is sent without it
+    res = put({"item_name": "Salt", "product_name": "Tata Salt Iodised 2 kg"})
+    assert (res["product_name"], res["name_is_custom"]) == ("Tata Salt Iodised 2 kg", True)
+    assert put({"brand": "Tata Salt"})["product_name"] == "Tata Salt Iodised 2 kg"
+    res = put({"item_name": "Salt"})
+    assert (res["product_name"], res["name_is_custom"]) == ("Salt 2 kg Tata Salt", False)
 
 
 def test_switch_product_to_loose_and_back(client, product, admin_headers):

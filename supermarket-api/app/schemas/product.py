@@ -9,14 +9,16 @@ from app.schemas.base import TimestampSchema
 from app.schemas.category import CategoryResponse
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
 
-NetUnit = Literal["g", "kg", "ml", "l", "pcs"]
+NetUnit = Literal["g", "kg", "ml", "L", "pcs", "pages"]
 ProductType = Literal["manufacturer", "own_packed", "loose"]
 
 
 class ProductBase(BaseModel):
     """Base product schema"""
     product_no: Optional[str] = None
-    product_name: str = Field(..., min_length=1)
+    # Sent with item_name = display name set by hand; sent alone = item name (older clients)
+    product_name: Optional[str] = Field(None, min_length=1)
+    item_name: Optional[str] = Field(None, min_length=1)
     category_id: Optional[int] = None
     brand: Optional[str] = None
     barcode: Optional[str] = None
@@ -46,10 +48,17 @@ class ProductCreate(ProductBase):
             raise ValueError("Selling price cannot be greater than MRP")
         return self
 
+    @model_validator(mode="after")
+    def check_name_given(self):
+        if not (self.item_name or self.product_name or "").strip():
+            raise ValueError("Item name is required")
+        return self
+
 
 class ProductUpdate(BaseModel):
     """Schema for updating a product"""
     product_name: Optional[str] = Field(None, min_length=1)
+    item_name: Optional[str] = Field(None, min_length=1)
     category_id: Optional[int] = None
     brand: Optional[str] = None
     barcode: Optional[str] = None
@@ -75,6 +84,8 @@ class ProductResponse(ProductBase, TimestampSchema):
     id: int
     tenant_id: int
     product_no: str
+    product_name: str
+    name_is_custom: bool = False
     product_type: str
     plu_code: Optional[int] = None
     stock_quantity: Decimal

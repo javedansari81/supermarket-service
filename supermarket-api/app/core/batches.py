@@ -27,7 +27,7 @@ def generate_instore_barcode(product_id: int) -> str:
 
 SCALE_PREFIX = "21"
 # Loose unit -> units per gram/ml encoded in the scale label
-SCALE_UNIT_FACTORS = {"kg": Decimal("0.001"), "ltr": Decimal("0.001"),
+SCALE_UNIT_FACTORS = {"kg": Decimal("0.001"), "L": Decimal("0.001"),
                       "g": Decimal("1"), "ml": Decimal("1")}
 
 
@@ -57,6 +57,20 @@ def scale_quantity(weight: int, unit_type: Optional[str]) -> Decimal:
 STORE_BRAND = "MF"
 
 
+UNIT_WORDS = {"g", "gm", "gms", "kg", "kgs", "ml", "l", "ltr", "pcs", "pages"}
+
+
+def capitalize_words(text: str) -> str:
+    """'toor dal' -> 'Toor Dal'; unit words (kg, ml) and words already containing
+    capitals (ORS, iPhone) are kept"""
+    def cap(m):
+        word = m.group()
+        if not word.islower() or word in UNIT_WORDS:
+            return word
+        return word[0].upper() + word[1:]
+    return re.sub(r"\S+", cap, text)
+
+
 def base_product_name(name: str) -> str:
     """Product name without the type suffix ('Loose' / 'MF') or a leading store brand"""
     base = name.strip()
@@ -71,10 +85,27 @@ def loose_product_name(name: str) -> str:
     return f"{base} Loose" if base else "Loose"
 
 
-def own_packed_product_name(name: str) -> str:
-    """Naming convention for own-packed products: brand MF, name ends with 'MF'"""
-    base = base_product_name(name)
-    return f"{base} {STORE_BRAND}" if base else STORE_BRAND
+def pack_size_label(net_quantity: Optional[Decimal], net_unit: Optional[str]) -> str:
+    """Pack size for display names (e.g. '1 kg', '500 g', '1.5 L'); a single piece shows nothing"""
+    if net_quantity is None or not net_unit:
+        return ""
+    quantity = Decimal(net_quantity)
+    if net_unit == "pcs" and quantity == 1:
+        return ""
+    text = format(quantity.normalize(), "f")
+    return f"{text} {net_unit}"
+
+
+def display_product_name(product_type: str, item_name: str, net_quantity: Optional[Decimal] = None,
+                         net_unit: Optional[str] = None, brand: Optional[str] = None) -> str:
+    """Display name built from its parts, brand last:
+    manufacturer 'Salt 1 kg Tata', own packed 'Toor Dal 1 kg MF', loose 'Toor Dal Loose'"""
+    base = base_product_name(item_name or "")
+    if product_type == Product.TYPE_LOOSE:
+        return loose_product_name(base)
+    size = pack_size_label(net_quantity, net_unit)
+    last = STORE_BRAND if product_type == Product.TYPE_OWN_PACKED else (brand or "").strip()
+    return " ".join(part for part in (base, size, last) if part)
 
 
 def next_plu_code(db: Session, tenant_id: int) -> int:

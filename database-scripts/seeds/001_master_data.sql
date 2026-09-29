@@ -23,11 +23,9 @@ INSERT INTO unit_types (unit_code, unit_name, description) VALUES
     ('pcs', 'Pieces', 'Individual pieces or units'),
     ('kg', 'Kilogram', 'Weight in kilograms'),
     ('g', 'Gram', 'Weight in grams'),
-    ('l', 'Liter', 'Volume in liters'),
+    ('L', 'Liter', 'Volume in liters'),
     ('ml', 'Milliliter', 'Volume in milliliters'),
-    ('box', 'Box', 'Box or carton'),
-    ('pack', 'Pack', 'Pack or bundle'),
-    ('dozen', 'Dozen', '12 pieces')
+    ('pages', 'Pages', 'Number of pages, e.g. notebooks')
 ON CONFLICT (unit_code) DO NOTHING;
 
 -- =====================================================

@@ -342,21 +342,19 @@ def test_return_and_void_restock_the_sold_batch(client, product, admin_headers, 
     assert stock_of(client, product, cashier_headers) == 108
 
 
-def test_scan_batch_barcode_identifies_batch(client, product, admin_headers, cashier_headers):
+def test_scan_batch_barcode_identifies_batch(client, db, product, admin_headers, cashier_headers):
+    from app.models.product_batch import ProductBatch
+    from app.core.batches import ensure_batch_barcode
     new_id = buy_batch(client, product, admin_headers, mrp=65, selling_price=62)
     res = client.get("/api/v1/products/search", params={"barcode": product.barcode}, headers=cashier_headers)
     assert res.status_code == 200
     assert res.json()["batch_id"] is None and len(res.json()["batches"]) == 2
 
-    labels = client.post("/api/v1/barcode/print", json={"product_ids": [product.id], "batch_id": new_id},
-                         headers=cashier_headers).json()["labels"]
-    code = labels[0]["barcode"]
+    code = ensure_batch_barcode(db, db.get(ProductBatch, new_id))
+    db.commit()
     assert code.startswith("29") and len(code) == 13 and code != product.barcode
-    assert float(labels[0]["mrp"].replace("₹", "")) == 65
 
     res = client.get("/api/v1/products/search", params={"barcode": code}, headers=cashier_headers)
     assert res.status_code == 200
     assert res.json()["batch_id"] == new_id
     assert float(res.json()["mrp"]) == 65 and float(res.json()["selling_price"]) == 62
-    assert client.post("/api/v1/barcode/print", json={"product_ids": [product.id, 99999], "batch_id": new_id},
-                       headers=cashier_headers).status_code == 422

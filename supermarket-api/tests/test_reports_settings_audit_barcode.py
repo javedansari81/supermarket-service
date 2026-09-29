@@ -178,9 +178,19 @@ def test_barcode_label(client, db, seed, product, cashier_headers, admin_b_heade
     assert client.get(f"{BAR}/generate/{product.id}", headers=admin_b_headers).status_code == 404
 
 
-def test_barcode_print(client, product, cashier_headers):
+def test_barcode_print(client, db, product, cashier_headers):
     body = {"product_ids": [product.id, 99999], "copies": 2}
-    assert client.post(f"{BAR}/print", json=body, headers=cashier_headers).json()["count"] == 2
+    res = client.post(f"{BAR}/print", json=body, headers=cashier_headers)
+    assert res.status_code == 400 and "not a manufacturer product" in res.json()["detail"]
+    product.product_type = "manufacturer"
+    db.commit()
+    res = client.post(f"{BAR}/print", json=body, headers=cashier_headers)
+    assert res.json()["count"] == 2 and res.json()["labels"][0]["barcode"] == product.barcode
+    assert client.post(f"{BAR}/print", json={**body, "batch_id": 1}, headers=cashier_headers).json()["count"] == 2
+    product.barcode = None
+    db.commit()
+    res = client.post(f"{BAR}/print", json=body, headers=cashier_headers)
+    assert res.status_code == 400 and "maker's barcode" in res.json()["detail"]
     assert client.post(f"{BAR}/print", json={"product_ids": []}, headers=cashier_headers).status_code == 422
     assert client.post(f"{BAR}/print", json={"product_ids": [product.id], "copies": 0},
                        headers=cashier_headers).status_code == 422
@@ -199,10 +209,17 @@ def test_generate_barcode_code(client, db, seed, product, admin_headers, cashier
     assert res.status_code == 200 and res.json()["barcode"]
     again = client.post(f"{BAR}/generate-code", params={"product_id": product.id}, headers=admin_headers)
     assert again.json()["message"] == "Product already has a barcode"
+    for product_type in ("manufacturer", "loose"):
+        other = Product(tenant_id=seed["tenant_a"].id, product_no=f"P-{product_type}", product_name=product_type,
+                        product_type=product_type, is_loose=product_type == "loose", unit_type="pcs")
+        db.add(other)
+        db.commit()
+        res = client.post(f"{BAR}/generate-code", params={"product_id": other.id}, headers=admin_headers)
+        assert res.status_code == 400 and other.barcode is None
 
 
 def test_packed_labels(client, db, product, admin_headers):
-    body = {"product_id": product.id, "packed_date": "2026-09-01", "copies": 3}
+    body = {"product_id": product.id, "packed_date": "2026-09-01", "copies": 3, "batch_no": "L1"}
     client.put(f"{SET}/store", json={"store_name": "Mart A", "store_address": "MG Road"}, headers=admin_headers)
     no_size = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers)
     assert no_size.status_code == 400 and "pack size" in no_size.json()["detail"]
@@ -212,6 +229,11 @@ def test_packed_labels(client, db, product, admin_headers):
     assert res.status_code == 200 and res.json()["count"] == 3
     label = res.json()["labels"][0]
     assert label["net_quantity"] == "500 g" and label["mrp"] == "₹60.00"
+    assert label["barcode"] == product.barcode and "batch_no" not in label
+    product.net_quantity, product.net_unit = 200, "pages"
+    db.commit()
+    label = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers).json()["labels"][0]
+    assert label["net_quantity"] == "200 pages" and label.get("unit_sale_price") is None
     bad_dates = {**body, "best_before_date": "2026-08-01"}
     assert client.post(f"{BAR}/packed-labels", json=bad_dates, headers=admin_headers).status_code == 422
     product.product_type = "manufacturer"
@@ -234,6 +256,19 @@ def test_scale_export(client, category, admin_headers, cashier_headers):
     assert len(rows) == 2 and rows[1][:4] == ["1", "Toor Dal Loose", "140.00", "kg"]
 
 
+def test_packed_labels_assign_missing_barcode(client, db, product, admin_headers):
+    product.net_quantity, product.net_unit, product.barcode = 1, "kg", None
+    db.commit()
+    client.put(f"{SET}/store", json={"store_name": "Mart A", "store_address": "MG Road"}, headers=admin_headers)
+    body = {"product_id": product.id, "packed_date": "2026-09-01"}
+    res = client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers)
+    assert res.status_code == 200
+    code = res.json()["labels"][0]["barcode"]
+    assert code.startswith("2") and len(code) == 13
+    db.refresh(product)
+    assert product.barcode == code
+
+
 def test_packed_labels_needs_store_address(client, db, product, admin_headers):
     product.net_quantity, product.net_unit = 1, "kg"
     db.commit()
@@ -247,6 +282,7 @@ def test_product_pack_size_pairing(client, product, admin_headers):
     res = client.put(url, json={"net_quantity": 1, "net_unit": "kg"}, headers=admin_headers)
     assert res.status_code == 200 and res.json()["net_unit"] == "kg"
     assert client.put(url, json={"net_unit": "ton"}, headers=admin_headers).status_code == 422
+    assert client.put(url, json={"net_unit": "l"}, headers=admin_headers).status_code == 422
 
 
 def test_barcode_configs(client, seed, admin_headers, cashier_headers):
