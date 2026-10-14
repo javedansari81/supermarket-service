@@ -321,10 +321,9 @@ Reprint the maker's barcode when a pack's label is damaged.
 
 1. Select a **Manufacturer** product that has a barcode.
 2. Set how many labels, then **Add to List**. Same product again adds to the label count.
-3. Choose **Label Size**: Small 38×25mm, Medium 50×30mm, Sticker 50×38mm, Large 70×40mm.
-4. **Print Labels (n)** opens the print window. The label shows store name, product name, barcode and MRP.
+3. **Print Labels (n)** opens the print window. Labels are 2×1 inch (50.8×25.4mm). The label shows product name, barcode and MRP.
 
-The card **Manufacturer Products Without Barcode** lists manufacturer items missing a code. Enter the maker's barcode in **Products**.
+Only manufacturer products with a barcode are listed. Enter the maker's barcode in **Products**.
 
 ### Own Packed Labels
 
@@ -332,9 +331,9 @@ Legal Metrology labels for items packed in the store.
 
 1. Select an **Own packed** product. Only products with a pack size are listed.
 2. Enter **Packed On** and, optionally, **Best Before**; set how many labels, then **Add to List**.
-3. Choose **Label Size** (50×38mm, 75×50mm, 100×50mm) and click **Print Packed Labels (n)**.
+3. Click **Print Packed Labels (n)**. Labels are 2×1 inch (50.8×25.4mm).
 
-The label shows net quantity, MRP, unit sale price, packed / best before dates, barcode, packer address, customer care and FSSAI licence. Pack size, MRP and barcode come from the product; a product without a barcode gets its in-store barcode automatically on first print. The store address must be set in **Settings**.
+The label shows product name, net quantity, MRP, packed / best before dates and barcode. Packer address, customer care and FSSAI licence go on the product's front label. Pack size, MRP and barcode come from the product; a product without a barcode gets its in-store barcode automatically on first print.
 
 Remove a line with trash before printing.
 

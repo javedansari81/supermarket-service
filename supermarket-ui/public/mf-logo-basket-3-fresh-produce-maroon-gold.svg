@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="MF Grace - Warsi Family Mart - Quality, Freshness, Trust">
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8e1b2e" />
+      <stop offset="1" stop-color="#4a0c18" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f7e08a" />
+      <stop offset="0.5" stop-color="#d4a017" />
+      <stop offset="1" stop-color="#9c7412" />
+    </linearGradient>
+    <radialGradient id="cream" cx="0.5" cy="0.4" r="0.6">
+      <stop offset="0" stop-color="#ffffff" />
+      <stop offset="1" stop-color="#f6f0de" />
+    </radialGradient>
+    <path id="topArc" d="M 74,256 A 182,182 0 0 1 438,256" />
+    <path id="bottomArc" d="M 50,256 A 206,206 0 0 0 462,256" />
+    <g id="wheat">
+      <path d="M0,0 L0,-50" stroke="#9c7412" stroke-width="2" stroke-linecap="round" />
+      <g fill="url(#accent)" stroke="#9c7412" stroke-width="0.8">
+        <ellipse cx="0" cy="-55" rx="3" ry="6" />
+        <ellipse cx="-4.5" cy="-44" rx="2.8" ry="5.5" transform="rotate(-30 -4.5 -44)" />
+        <ellipse cx="4.5" cy="-44" rx="2.8" ry="5.5" transform="rotate(30 4.5 -44)" />
+        <ellipse cx="-4.5" cy="-33" rx="2.8" ry="5.5" transform="rotate(-30 -4.5 -33)" />
+        <ellipse cx="4.5" cy="-33" rx="2.8" ry="5.5" transform="rotate(30 4.5 -33)" />
+        <ellipse cx="-4.5" cy="-22" rx="2.8" ry="5.5" transform="rotate(-30 -4.5 -22)" />
+        <ellipse cx="4.5" cy="-22" rx="2.8" ry="5.5" transform="rotate(30 4.5 -22)" />
+      </g>
+    </g>
+  </defs>
+
+  <circle cx="256" cy="256" r="252" fill="url(#accent)" />
+  <circle cx="256" cy="256" r="244" fill="url(#base)" />
+  <circle cx="256" cy="256" r="232" fill="none" stroke="url(#accent)" stroke-width="2" />
+  <circle cx="256" cy="256" r="152" fill="url(#accent)" />
+  <circle cx="256" cy="256" r="145" fill="url(#cream)" />
+
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="38" font-weight="700" fill="#ffffff" letter-spacing="5">
+    <textPath href="#topArc" startOffset="50%" text-anchor="middle">WARSI FAMILY MART</textPath>
+  </text>
+  <text font-family="Georgia, 'Times New Roman', serif" font-size="24" font-style="italic" fill="url(#accent)" letter-spacing="2">
+    <textPath href="#bottomArc" startOffset="50%" text-anchor="middle">Quality · Freshness · Trust</textPath>
+  </text>
+  <g fill="url(#accent)">
+    <polygon points="62,256 70,248 78,256 70,264" />
+    <polygon points="434,256 442,248 450,256 442,264" />
+  </g>
+
+  <g transform="translate(0,-8)">
+    <path d="M186,262 C186,146 326,146 326,262" fill="none" stroke="url(#accent)" stroke-width="10" stroke-linecap="round" />
+
+    <use href="#wheat" transform="translate(196 262) rotate(-14)" />
+    <use href="#wheat" transform="translate(318 262) rotate(14)" />
+    <use href="#wheat" transform="translate(208 262) rotate(-4) scale(0.95)" />
+    <use href="#wheat" transform="translate(305 262) rotate(4) scale(0.95)" />
+
+    <g transform="translate(222 262) scale(1.1)">
+      <path d="M-6,-30 L-9,-37 L-3,-33 L0,-38 L3,-33 L9,-37 L6,-30 Z" fill="#e3c48a" stroke="#9c7412" stroke-width="1" />
+      <path d="M-12,0 Q-16,-14 -10,-26 L-6,-30 L6,-30 L10,-26 Q16,-14 12,0 Z" fill="#e3c48a" stroke="#9c7412" stroke-width="1.2" />
+      <rect x="-7.5" y="-31" width="15" height="3.5" rx="1.5" fill="#6b1424" />
+      <ellipse cx="0" cy="-13" rx="6.5" ry="4.5" fill="#ffffff" stroke="#9c7412" stroke-width="0.8" />
+    </g>
+    <g transform="translate(256 262) scale(1.25)">
+      <rect x="-3.5" y="-43" width="7" height="5" rx="1" fill="url(#accent)" />
+      <path d="M-2.5,-38 L2.5,-38 L2.5,-32 C8,-29 9,-26 9,-22 L9,-3 Q9,0 6,0 L-6,0 Q-9,0 -9,-3 L-9,-22 C-9,-26 -8,-29 -2.5,-32 Z" fill="url(#accent)" stroke="#9c7412" stroke-width="1.5" />
+      <rect x="-6.5" y="-19" width="13" height="10" rx="1.5" fill="#ffffff" />
+      <rect x="-4" y="-15" width="8" height="2" rx="1" fill="#6b1424" />
+    </g>
+    <g transform="translate(290 262) scale(1.05)">
+      <path d="M-10,-32 L10,-32 L13,-35 L-7,-35 Z" fill="#90caf9" stroke="#ffffff" stroke-width="1" />
+      <rect x="-10" y="-32" width="20" height="32" rx="1.5" fill="#1e88e5" stroke="#ffffff" stroke-width="1.5" />
+      <circle cx="0" cy="-17" r="6" fill="#ffffff" />
+      <circle cx="0" cy="-17" r="3" fill="url(#accent)" />
+    </g>
+
+    <rect x="164" y="258" width="184" height="14" rx="7" fill="url(#accent)" />
+    <path d="M172,272 L340,272 L326,342 Q324,350 316,350 L196,350 Q188,350 186,342 Z" fill="url(#base)" />
+    <path d="M222,290 L238,290 M278,290 L294,290" stroke="#d4a017" stroke-width="1.5" />
+    <g fill="url(#accent)" stroke="#6b1424" stroke-width="0.8">
+      <circle cx="247" cy="281" r="3.4" /><path d="M241.5,295 Q241.5,286 247,286 Q252.5,286 252.5,295 Z" />
+      <circle cx="269" cy="281.5" r="3.2" /><path d="M263.5,295 Q264,286.5 269,286.5 Q274,286.5 274.5,295 Z" />
+      <circle cx="258" cy="285.5" r="2.5" /><path d="M254,295 Q254,289.5 258,289.5 Q262,289.5 262,295 Z" />
+    </g>
+    <text x="258" y="324" font-family="Georgia, 'Times New Roman', serif" font-size="36" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="4">MF</text>
+    <text x="259" y="344" font-family="Georgia, 'Times New Roman', serif" font-size="15" font-weight="700" fill="url(#accent)" text-anchor="middle" letter-spacing="6">GRACE</text>
+  </g>
+</svg>

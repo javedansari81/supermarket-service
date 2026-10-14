@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Chip,
+  FormControl, InputLabel, Select, MenuItem, Chip, Typography,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -17,6 +17,10 @@ import { API_ENDPOINTS } from '../config/api';
 import { Category, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
 
+const GST_RATES = ['0', '5', '18', '40'];
+const emptyForm = { category_name: '', description: '', status: 'active', hsn_code: '', gst_percent_loose: '', gst_percent_packed: '' };
+const rateText = (v?: number | string | null) => (v === null || v === undefined || v === '' ? '' : Number(v).toString());
+
 const Categories: React.FC = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +29,7 @@ const Categories: React.FC = () => {
   const [pageSize, setPageSize] = useState(10);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editCategory, setEditCategory] = useState<Category | null>(null);
-  const [formData, setFormData] = useState({ category_name: '', description: '', status: 'active' });
+  const [formData, setFormData] = useState(emptyForm);
 
   const fetchCategories = useCallback(async () => {
     setLoading(true);
@@ -47,21 +51,31 @@ const Categories: React.FC = () => {
   const handleOpenDialog = (category?: Category) => {
     if (category) {
       setEditCategory(category);
-      setFormData({ category_name: category.category_name, description: category.description || '', status: category.status });
+      setFormData({
+        category_name: category.category_name, description: category.description || '', status: category.status,
+        hsn_code: category.hsn_code || '', gst_percent_loose: rateText(category.gst_percent_loose),
+        gst_percent_packed: rateText(category.gst_percent_packed),
+      });
     } else {
       setEditCategory(null);
-      setFormData({ category_name: '', description: '', status: 'active' });
+      setFormData(emptyForm);
     }
     setDialogOpen(true);
   };
 
   const handleSave = async () => {
+    if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
+    const payload = {
+      ...formData, hsn_code: formData.hsn_code || null,
+      gst_percent_loose: formData.gst_percent_loose === '' ? null : parseFloat(formData.gst_percent_loose),
+      gst_percent_packed: formData.gst_percent_packed === '' ? null : parseFloat(formData.gst_percent_packed),
+    };
     try {
       if (editCategory) {
-        await api.put(`${API_ENDPOINTS.CATEGORIES}/${editCategory.id}`, formData);
+        await api.put(`${API_ENDPOINTS.CATEGORIES}/${editCategory.id}`, payload);
         toast.success('Category updated');
       } else {
-        await api.post(API_ENDPOINTS.CATEGORIES, formData);
+        await api.post(API_ENDPOINTS.CATEGORIES, payload);
         toast.success('Category created');
       }
       setDialogOpen(false);
@@ -86,6 +100,11 @@ const Categories: React.FC = () => {
     { field: 'id', headerName: 'ID', width: 70 },
     { field: 'category_name', headerName: 'Category Name', flex: 1, minWidth: 200 },
     { field: 'description', headerName: 'Description', flex: 1, minWidth: 200 },
+    { field: 'hsn_code', headerName: 'HSN', width: 90 },
+    { field: 'gst_percent_loose', headerName: 'GST Loose', width: 100,
+      valueFormatter: (value: number | string | null) => (rateText(value) ? `${rateText(value)}%` : '') },
+    { field: 'gst_percent_packed', headerName: 'GST Packed', width: 100,
+      valueFormatter: (value: number | string | null) => (rateText(value) ? `${rateText(value)}%` : '') },
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
       <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
     )},
@@ -121,6 +140,26 @@ const Categories: React.FC = () => {
             <Grid size={12}>
               <TextField fullWidth label="Description" multiline rows={2} value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })} />
+            </Grid>
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField fullWidth label="HSN Code" value={formData.hsn_code}
+                onChange={(e) => setFormData({ ...formData, hsn_code: e.target.value.replace(/[^0-9]/g, '') })} />
+            </Grid>
+            {([['gst_percent_loose', 'GST % (loose)'], ['gst_percent_packed', 'GST % (packed)']] as const).map(([field, label]) => (
+              <Grid key={field} size={{ xs: 12, md: 4 }}>
+                <FormControl fullWidth><InputLabel>{label}</InputLabel>
+                  <Select value={formData[field]} label={label}
+                    onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}>
+                    <MenuItem value="">Not set</MenuItem>
+                    {(GST_RATES.includes(formData[field]) || !formData[field] ? GST_RATES : [...GST_RATES, formData[field]])
+                      .map((r) => <MenuItem key={r} value={r}>{r}%</MenuItem>)}
+                  </Select></FormControl>
+              </Grid>
+            ))}
+            <Grid size={12}>
+              <Typography variant="body2" color="text.secondary">
+                Filled into new products when this category is chosen. Loose = sold loose or weighed; packed = pre-packaged and labelled
+              </Typography>
             </Grid>
             <Grid size={12}>
               <FormControl fullWidth>

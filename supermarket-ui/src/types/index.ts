@@ -51,6 +51,9 @@ export interface Category {
   id: number;
   category_name: string;
   description?: string;
+  hsn_code?: string | null;
+  gst_percent_loose?: number | string | null;
+  gst_percent_packed?: number | string | null;
   status: string;
   created_at: string;
 }

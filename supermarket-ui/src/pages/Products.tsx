@@ -5,7 +5,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, InputAdornment,
+  FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, Divider, Autocomplete, Typography, CardActionArea, Collapse,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
@@ -68,6 +68,9 @@ const autoName = (type: ProductType | '', item: string, quantity: string, unit: 
 };
 
 interface FormLocation { location_id: string; is_primary: boolean; }
+interface GstRates { loose: number | null; packed: number | null; }
+
+const rateOf = (v?: number | string | null) => (v === null || v === undefined || v === '' ? null : Number(v));
 
 const primaryLocation = (locations?: ProductLocation[]) =>
   locations?.find((l) => l.role === 'display' && l.is_primary) ?? locations?.find((l) => l.is_primary) ?? locations?.[0];
@@ -78,7 +81,7 @@ const formatLocations = (locations?: ProductLocation[]) =>
 
 const emptyForm = {
   item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
-  purchase_price: '', tax_percent: '0', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
+  purchase_price: '', tax_percent: '', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
   net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
 
@@ -97,6 +100,7 @@ const Products: React.FC = () => {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [gstRef, setGstRef] = useState<GstRateRef | null>(null);
+  const [gstRates, setGstRates] = useState<GstRates | null>(null);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [activeLocations, setActiveLocations] = useState<StoreLocation[]>([]);
   const [locationFilter, setLocationFilter] = useState('');
@@ -169,6 +173,7 @@ const Products: React.FC = () => {
       setFormLocations([]);
     }
     setGstRef(null);
+    setGstRates(null);
     setDialogOpen(true);
   };
 
@@ -179,10 +184,30 @@ const Products: React.FC = () => {
     : autoName(formData.product_type, capitalizeWords(formData.item_name), formData.net_quantity, formData.net_unit,
       capitalizeWords(formData.brand));
 
+  const selectedCategory = categories.find((c) => c.id.toString() === formData.category_id);
+  const categoryRates: GstRates | null = selectedCategory
+    ? { loose: rateOf(selectedCategory.gst_percent_loose), packed: rateOf(selectedCategory.gst_percent_packed) } : null;
+  const applicableRates = gstRates ?? categoryRates;
+  const gstOptions = applicableRates
+    ? ([['loose', applicableRates.loose], ['packed', applicableRates.packed]] as const)
+      .filter(([, r]) => r !== null)
+      .reduce<{ value: string; kinds: string[] }[]>((list, [kind, r]) => {
+        const found = list.find((o) => o.value === String(r));
+        if (found) found.kinds.push(kind); else list.push({ value: String(r), kinds: [kind] });
+        return list;
+      }, [])
+    : [];
+  const gstMenu = (gstOptions.length ? gstOptions : GST_RATES.map((r) => ({ value: r, kinds: [] as string[] })));
+  const gstMenuWithCurrent = formData.tax_percent && !gstMenu.some((o) => o.value === formData.tax_percent)
+    ? [...gstMenu, { value: formData.tax_percent, kinds: ['current'] }] : gstMenu;
+  const gstSource = gstRates && gstRef ? `GST lookup: ${gstRef.item}` : gstOptions.length && selectedCategory
+    ? `Category: ${selectedCategory.category_name}` : '';
+
   const handleTypeChange = (type: ProductType) => {
     const toLoose = type === 'loose';
     const looseChanged = toLoose !== isLoose;
     const toManufacturer = type === 'manufacturer' && formData.product_type !== 'manufacturer';
+    const newRate = gstRates && looseChanged ? (toLoose ? gstRates.loose : gstRates.packed) : null;
     setFormData({
       ...formData, product_type: type,
       ...(looseChanged ? { unit_type: toLoose ? 'kg' : PACKED_UNIT, barcode: '' } : {}),
@@ -191,15 +216,34 @@ const Products: React.FC = () => {
       ...(toManufacturer ? {
         brand: formData.brand.trim().toUpperCase() === STORE_BRAND ? '' : formData.brand,
       } : {}),
-      ...(looseChanged && gstRef ? { tax_percent: String(toLoose ? gstRef.loose : gstRef.packed) } : {})
+      ...(newRate !== null ? { tax_percent: String(newRate) } : {})
     });
   };
 
   const handleGstRefChange = (ref: GstRateRef | null) => {
     setGstRef(ref);
     if (ref) {
+      setGstRates({ loose: ref.loose, packed: ref.packed });
       setFormData({ ...formData, hsn_code: ref.hsn, tax_percent: String(isLoose ? ref.loose : ref.packed) });
     }
+  };
+
+  const handleCategoryChange = (categoryId: string) => {
+    const category = categories.find((c) => c.id.toString() === categoryId);
+    const rates = { loose: rateOf(category?.gst_percent_loose), packed: rateOf(category?.gst_percent_packed) };
+    const rate = isLoose ? rates.loose : rates.packed;
+    const hasDefaults = !!category?.hsn_code || rates.loose !== null || rates.packed !== null;
+    if (hasDefaults) {
+      setGstRef(null);
+      setGstRates(rates);
+    } else if (!gstRef) {
+      setGstRates(null);
+    }
+    setFormData({
+      ...formData, category_id: categoryId,
+      ...(category?.hsn_code ? { hsn_code: category.hsn_code } : {}),
+      ...(rate !== null ? { tax_percent: String(rate) } : {}),
+    });
   };
 
   const handleScaleExport = async () => {
@@ -227,6 +271,7 @@ const Products: React.FC = () => {
     const mrp = !isLoose && formData.mrp ? parseFloat(formData.mrp) : undefined;
     const sellingPrice = parseFloat(formData.selling_price);
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
+    if (formData.tax_percent === '') { toast.error('Select GST %'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
     if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
     const netQuantity = !isLoose && formData.net_quantity ? parseFloat(formData.net_quantity) : null;
@@ -409,7 +454,7 @@ const Products: React.FC = () => {
             )}
             <Grid size={{ xs: 12, md: isManufacturer ? 3 : 6 }}>
               <SearchableSelect label="Category" value={formData.category_id}
-                onChange={(v) => setFormData({ ...formData, category_id: v })}
+                onChange={handleCategoryChange}
                 options={[
                   { value: '', label: 'None' },
                   ...categories.map((c) => ({ value: c.id.toString(), label: c.category_name })),
@@ -513,12 +558,17 @@ const Products: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
-              <FormControl fullWidth><InputLabel>GST %</InputLabel>
+              <FormControl fullWidth required><InputLabel>GST %</InputLabel>
                 <Select value={formData.tax_percent} label="GST %"
                   onChange={(e) => setFormData({ ...formData, tax_percent: e.target.value })}>
-                  {(GST_RATES.includes(formData.tax_percent) ? GST_RATES : [...GST_RATES, formData.tax_percent])
-                    .map((r) => <MenuItem key={r} value={r}>{r}%</MenuItem>)}
-                </Select></FormControl>
+                  {gstMenuWithCurrent.map((o) => (
+                    <MenuItem key={o.value} value={o.value}>
+                      {o.value}%{o.kinds.length ? ` (${o.kinds.join(' / ')})` : ''}
+                    </MenuItem>
+                  ))}
+                </Select>
+                {gstSource && <FormHelperText>{gstSource}</FormHelperText>}
+              </FormControl>
             </Grid>
             <Grid size={12}><Divider>Stock</Divider></Grid>
             <Grid size={{ xs: 12, md: 4 }}>

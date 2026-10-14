@@ -4,13 +4,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardContent, TextField, Button,
-  FormControl, InputLabel, Select, MenuItem, Table, TableBody,
+  Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton,
   Checkbox, Chip, Tabs, Tab, Divider,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Print, Delete, Add, LocalOffer, Inventory2 } from '@mui/icons-material';
-import { Link as RouterLink } from 'react-router-dom';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import SearchableSelect from '../components/common/SearchableSelect';
@@ -38,40 +37,12 @@ interface PackedItem {
   packed_date: string; best_before_date: string; copies: number;
 }
 
-const LABEL_SIZES: Record<string, { w: number; h: number; font: number; label: string }> = {
-  small: { w: 38, h: 25, font: 7, label: 'Small (38x25mm)' },
-  medium: { w: 50, h: 30, font: 8, label: 'Medium (50x30mm)' },
-  sticker: { w: 50, h: 38, font: 8, label: 'Sticker (50x38mm)' },
-  large: { w: 70, h: 40, font: 10, label: 'Large (70x40mm)' },
-};
-
-const PACKED_SIZES: Record<string, { w: number; h: number; label: string }> = {
-  '50x38': { w: 50, h: 38, label: '50x38mm' },
-  '75x50': { w: 75, h: 50, label: '75x50mm' },
-  '100x50': { w: 100, h: 50, label: '100x50mm' },
-};
-
-interface PrinterSettings { printer: string; productSize: string; packedSize: string; }
-
-const PRINTER_SETTINGS_KEY = 'labelPrinterSettings';
-
-const loadPrinterSettings = (): PrinterSettings => {
-  const defaults = { printer: '', productSize: 'small', packedSize: '50x38' };
-  try {
-    const saved = JSON.parse(localStorage.getItem(PRINTER_SETTINGS_KEY) || '{}');
-    return {
-      printer: typeof saved.printer === 'string' ? saved.printer : defaults.printer,
-      productSize: LABEL_SIZES[saved.productSize] ? saved.productSize : defaults.productSize,
-      packedSize: PACKED_SIZES[saved.packedSize] ? saved.packedSize : defaults.packedSize,
-    };
-  } catch { return defaults; }
-};
+const LABEL_SIZE = { w: 50.8, h: 25.4, font: 7, label: '2x1 inch (50.8x25.4mm)' };
 
 const packSize = (p?: Product) =>
   p?.net_quantity && p.net_unit ? `${Number(p.net_quantity)} ${p.net_unit}` : '';
 
-const printHint = (printer: string, w: number, h: number) =>
-  `${printer ? `Select printer "${printer}", ` : 'Select the label printer, '}paper ${w}x${h}mm, margins None, scale 100%`;
+const PRINT_HINT = `Select the label printer, paper ${LABEL_SIZE.w}x${LABEL_SIZE.h}mm, margins None, scale 100%`;
 
 const printHtml = (html: string) => {
   const frame = document.createElement('iframe');
@@ -91,56 +62,51 @@ const printHtml = (html: string) => {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 
-const buildPackedLabelsHtml = (labels: PackedLabelData[], size: string) => {
-  const { w, h } = PACKED_SIZES[size] || PACKED_SIZES['50x38'];
+const buildPackedLabelsHtml = (labels: PackedLabelData[]) => {
+  const { w, h } = LABEL_SIZE;
   const s = Math.min(w / 50, h / 38);
   const pt = (n: number) => `${(n * s).toFixed(2)}pt`;
   const e = (s?: string | null) => escapeHtml(s || '');
   const body = labels.map((l) => `<div class="label">
     <div class="name">${e(l.product_name)}</div>
-    <div class="big"><span>Net Qty: ${e(l.net_quantity)}</span><span>MRP ${e(l.mrp)}</span></div>
-    <div class="row"><span>(Incl. of all taxes)</span>${l.unit_sale_price ? `<span>Unit price: ${e(l.unit_sale_price)}</span>` : ''}</div>
+    <div class="row big"><span>Net Qty: ${e(l.net_quantity)}</span><span>MRP ${e(l.mrp)}</span></div>
     <div class="row"><span>Pkd: ${e(l.packed_date)}</span>${l.best_before_date ? `<span>Best before: ${e(l.best_before_date)}</span>` : ''}</div>
     <img src="data:image/png;base64,${l.barcode_image}" /><div class="code">${e(l.barcode)}</div>
-    <div class="small"><b>Packed &amp; Marketed by:</b> ${e(l.store_name)}, ${e(l.store_address)}</div>
-    <div class="small">Customer care: ${[l.store_phone, l.store_email].filter(Boolean).map(e).join(', ')}</div>
-    ${l.fssai_license ? `<div class="small">FSSAI Lic. No. ${e(l.fssai_license)}</div>` : ''}
   </div>`).join('');
   return `<!DOCTYPE html><html><head><title>Packed Labels</title><style>
     @page { size: ${w}mm ${h}mm; margin: 0; }
     html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #000; }
-    .label { width: ${w}mm; height: ${h}mm; box-sizing: border-box; padding: 1mm 1.5mm; overflow: hidden;
-      page-break-after: always; break-after: page; display: flex; flex-direction: column; font-size: ${pt(5.5)}; line-height: 1.15; }
+    .label { width: ${w}mm; height: ${h}mm; box-sizing: border-box; padding: 2mm 2.5mm; overflow: hidden; justify-content: center;
+      page-break-after: always; break-after: page; display: flex; flex-direction: column; font-size: ${pt(6.5)}; line-height: 1.15; }
     .label:last-child { page-break-after: auto; break-after: auto; }
-    .name { font-weight: bold; font-size: ${pt(8)}; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .big { display: flex; justify-content: space-between; font-weight: bold; font-size: ${pt(8)}; }
-    .row { display: flex; justify-content: space-between; }
-    img { height: ${(7 * s).toFixed(1)}mm; max-width: 100%; align-self: center; margin-top: 0.5mm; }
-    .code { text-align: center; letter-spacing: 1px; }
-    .small { font-size: ${pt(5)}; }
+    .label > div { flex: none; white-space: nowrap; overflow: hidden; }
+    .name { font-weight: bold; font-size: ${pt(9)}; text-overflow: ellipsis; }
+    .row { display: flex; justify-content: space-between; gap: 1mm; }
+    .big { font-weight: bold; font-size: ${pt(9)}; }
+    img { flex: 0 1 auto; height: ${(h * 0.38).toFixed(1)}mm; min-height: 0; width: 90%; align-self: center; margin-top: 0.5mm; image-rendering: pixelated; }
+    .code { text-align: center; letter-spacing: 1px; font-size: ${pt(8)}; }
   </style></head><body>${body}</body></html>`;
 };
 
-const buildLabelsHtml = (labels: LabelData[], size: string) => {
-  const { w, h, font } = LABEL_SIZES[size] || LABEL_SIZES.small;
+const buildLabelsHtml = (labels: LabelData[]) => {
+  const { w, h, font } = LABEL_SIZE;
   const body = labels.map((l) => `<div class="label">
-      <div class="store">${escapeHtml(l.store_name)}</div>
       <div class="name">${escapeHtml(l.product_name)}</div>
       <img src="data:image/png;base64,${l.barcode_image}" />
       <div class="code">${escapeHtml(l.barcode)}</div>
-      <div class="price">MRP ${escapeHtml(l.mrp)} (incl. of all taxes)</div>
+      <div class="price">MRP ${escapeHtml(l.mrp)}</div>
     </div>`).join('');
   return `<!DOCTYPE html><html><head><title>Labels</title><style>
     @page { size: ${w}mm ${h}mm; margin: 0; }
     html, body { margin: 0; padding: 0; font-family: Arial, sans-serif; color: #000; }
-    .label { width: ${w}mm; height: ${h}mm; box-sizing: border-box; padding: 1mm; display: flex; flex-direction: column;
-      align-items: center; justify-content: space-between; overflow: hidden; page-break-after: always; break-after: page; font-size: ${font}pt; }
+    .label { width: ${w}mm; height: ${h}mm; box-sizing: border-box; padding: 2mm 2.5mm; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; overflow: hidden; page-break-after: always; break-after: page; font-size: ${font}pt; line-height: 1.15; }
     .label:last-child { page-break-after: auto; break-after: auto; }
-    .store { font-weight: bold; }
-    .name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-    img { max-width: 100%; height: ${Math.round(h * 0.35)}mm; }
+    .label > div { flex: none; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .name { font-weight: bold; }
+    img { flex: 0 1 auto; height: ${(h * 0.38).toFixed(1)}mm; min-height: 0; width: 90%; margin: 0.5mm 0; image-rendering: pixelated; }
     .code { letter-spacing: 1px; }
-    .price { font-weight: bold; }
+    .price { font-weight: bold; font-size: ${font + 1}pt; }
   </style></head><body>${body}</body></html>`;
 };
 
@@ -149,7 +115,6 @@ const Barcode: React.FC = () => {
   const [selectedProduct, setSelectedProduct] = useState('');
   const [printQty, setPrintQty] = useState('1');
   const [printItems, setPrintItems] = useState<PrintItem[]>([]);
-  const [printerSettings, setPrinterSettings] = useState<PrinterSettings>(loadPrinterSettings);
   const [tab, setTab] = useState(0);
   const emptyPacked = () => ({
     product_id: '', packed_date: dayjs().format('YYYY-MM-DD'), best_before_date: '', copies: '1',
@@ -162,14 +127,6 @@ const Barcode: React.FC = () => {
   const packedProducts = products.filter((p) => !p.is_loose && packSize(p) && (p.product_type ?? 'own_packed') === 'own_packed');
   const packedProduct = products.find((p) => p.id === parseInt(packed.product_id));
   const packedMrp = Number(packedProduct?.mrp ?? 0);
-
-  const updatePrinterSettings = (changes: Partial<PrinterSettings>) => {
-    setPrinterSettings((s) => {
-      const next = { ...s, ...changes };
-      localStorage.setItem(PRINTER_SETTINGS_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
 
   const handlePackedProductChange = (productId: string) => {
     setPacked((p) => ({ ...p, product_id: productId, best_before_date: '' }));
@@ -213,9 +170,8 @@ const Barcode: React.FC = () => {
       ));
       const labels = responses.flatMap((r) => r.data.labels);
       if (labels.length === 0) { toast.error('No printable labels'); return; }
-      const { w, h } = PACKED_SIZES[printerSettings.packedSize];
-      printHtml(buildPackedLabelsHtml(labels, printerSettings.packedSize));
-      toast.success(`${labels.length} labels ready. ${printHint(printerSettings.printer, w, h)}`, { duration: 6000 });
+      printHtml(buildPackedLabelsHtml(labels));
+      toast.success(`${labels.length} labels ready. ${PRINT_HINT}`, { duration: 6000 });
       if (packedItems.some((item) => !products.find((p) => p.id === item.product_id)?.barcode)) fetchProducts();
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
@@ -257,9 +213,8 @@ const Barcode: React.FC = () => {
       ));
       const labels = responses.flatMap(r => r.data.labels);
       if (labels.length === 0) { toast.error('No printable labels'); return; }
-      const { w, h } = LABEL_SIZES[printerSettings.productSize];
-      printHtml(buildLabelsHtml(labels, printerSettings.productSize));
-      toast.success(`${labels.length} labels ready. ${printHint(printerSettings.printer, w, h)}`, { duration: 6000 });
+      printHtml(buildLabelsHtml(labels));
+      toast.success(`${labels.length} labels ready. ${PRINT_HINT}`, { duration: 6000 });
     } catch (error: any) {
       const detail = error?.response?.data?.detail;
       toast.error(typeof detail === 'string' ? detail : 'Failed to print barcodes');
@@ -268,8 +223,6 @@ const Barcode: React.FC = () => {
 
   const getTotalLabels = () => printItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalPackedLabels = packedItems.reduce((sum, item) => sum + item.copies, 0);
-  const currentSize = tab === 0 ? LABEL_SIZES[printerSettings.productSize] : PACKED_SIZES[printerSettings.packedSize];
-  const productsWithoutBarcode = manufacturerProducts.filter(p => !p.barcode);
 
   return (
     <Box>
@@ -400,56 +353,15 @@ const Barcode: React.FC = () => {
           <Card>
             <CardContent>
               <Typography variant="h6" gutterBottom>Print</Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Label size: {LABEL_SIZE.label}</Typography>
               {tab === 0 ? (
-                <>
-                  <FormControl fullWidth sx={{ mb: 2 }}>
-                    <InputLabel>Label Size</InputLabel>
-                    <Select value={printerSettings.productSize} label="Label Size"
-                      onChange={(e) => updatePrinterSettings({ productSize: e.target.value })}>
-                      {Object.entries(LABEL_SIZES).map(([key, s]) => <MenuItem key={key} value={key}>{s.label}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <Button fullWidth variant="contained" size="large" startIcon={<Print />} onClick={handlePrint} disabled={printItems.length === 0}>
-                    Print Labels ({getTotalLabels()})
-                  </Button>
-                </>
+                <Button fullWidth variant="contained" size="large" startIcon={<Print />} onClick={handlePrint} disabled={printItems.length === 0}>
+                  Print Labels ({getTotalLabels()})
+                </Button>
               ) : (
-                <>
-                  <FormControl fullWidth sx={{ mb: 2 }}>
-                    <InputLabel>Label Size</InputLabel>
-                    <Select value={printerSettings.packedSize} label="Label Size"
-                      onChange={(e) => updatePrinterSettings({ packedSize: e.target.value })}>
-                      {Object.entries(PACKED_SIZES).map(([key, s]) => <MenuItem key={key} value={key}>{s.label}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                  <Button fullWidth variant="contained" size="large" startIcon={<Print />} onClick={handlePrintPacked} disabled={packedItems.length === 0}>
-                    Print Packed Labels ({totalPackedLabels})
-                  </Button>
-                </>
-              )}
-              <Divider sx={{ my: 2 }}>Printer (this computer)</Divider>
-              <TextField fullWidth size="small" label="Label Printer Name" value={printerSettings.printer}
-                placeholder="e.g. TSC TE244" onChange={(e) => updatePrinterSettings({ printer: e.target.value })} />
-              <Typography variant="caption" color="text.secondary" component="p" sx={{ mt: 1 }}>
-                Saved on this computer. In the print dialog: {printHint(printerSettings.printer, currentSize.w, currentSize.h)}.
-              </Typography>
-            </CardContent>
-          </Card>
-          <Card sx={{ mt: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Manufacturer Products Without Barcode ({productsWithoutBarcode.length})</Typography>
-              {productsWithoutBarcode.length === 0 ? (
-                <Typography variant="body2" color="text.secondary">All manufacturer products have a barcode.</Typography>
-              ) : (
-                <>
-                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 1 }}>
-                    Enter the maker's barcode in Products to reprint their labels.
-                  </Typography>
-                  {productsWithoutBarcode.slice(0, 5).map(p => (
-                    <Typography key={p.id} variant="body2" sx={{ py: 0.5 }}>{p.product_name}</Typography>
-                  ))}
-                  <Button size="small" component={RouterLink} to="/products" sx={{ mt: 1 }}>Open Products</Button>
-                </>
+                <Button fullWidth variant="contained" size="large" startIcon={<Print />} onClick={handlePrintPacked} disabled={packedItems.length === 0}>
+                  Print Packed Labels ({totalPackedLabels})
+                </Button>
               )}
             </CardContent>
           </Card>

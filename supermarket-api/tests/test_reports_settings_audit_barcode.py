@@ -269,11 +269,11 @@ def test_packed_labels_assign_missing_barcode(client, db, product, admin_headers
     assert product.barcode == code
 
 
-def test_packed_labels_needs_store_address(client, db, product, admin_headers):
+def test_packed_labels_without_store_address(client, db, product, admin_headers):
     product.net_quantity, product.net_unit = 1, "kg"
     db.commit()
     body = {"product_id": product.id, "packed_date": "2026-09-01"}
-    assert client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers).status_code == 400
+    assert client.post(f"{BAR}/packed-labels", json=body, headers=admin_headers).status_code == 200
 
 
 def test_product_pack_size_pairing(client, product, admin_headers):

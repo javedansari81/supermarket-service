@@ -58,7 +58,9 @@ async def list_active_categories(
         Category.status == "active"
     ).order_by(Category.category_name).all()
 
-    return [{"id": c.id, "category_name": c.category_name} for c in categories]
+    return [{"id": c.id, "category_name": c.category_name, "hsn_code": c.hsn_code,
+             "gst_percent_loose": c.gst_percent_loose, "gst_percent_packed": c.gst_percent_packed}
+            for c in categories]
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
@@ -105,6 +107,9 @@ async def create_category(
         tenant_id=context.tenant_id,
         category_name=category_data.category_name,
         description=category_data.description,
+        hsn_code=category_data.hsn_code,
+        gst_percent_loose=category_data.gst_percent_loose,
+        gst_percent_packed=category_data.gst_percent_packed,
         created_by=context.user_id
     )
 

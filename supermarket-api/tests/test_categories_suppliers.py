@@ -34,6 +34,23 @@ def test_create_category(client, admin_headers):
     assert res.json()["status"] == "active"
 
 
+def test_category_gst_defaults(client, admin_headers):
+    res = client.post(CAT, json={"category_name": "Rice", "hsn_code": " 1006 ",
+                                 "gst_percent_loose": 0, "gst_percent_packed": 5}, headers=admin_headers)
+    assert res.status_code == 201
+    assert res.json()["hsn_code"] == "1006"
+    active = client.get(f"{CAT}/active", headers=admin_headers).json()[0]
+    assert (active["hsn_code"], float(active["gst_percent_loose"]), float(active["gst_percent_packed"])) \
+        == ("1006", 0, 5)
+    assert client.post(CAT, json={"category_name": "X", "hsn_code": "10a"},
+                       headers=admin_headers).status_code == 422
+    assert client.post(CAT, json={"category_name": "X", "gst_percent_packed": 101},
+                       headers=admin_headers).status_code == 422
+    upd = client.put(f"{CAT}/{res.json()['id']}", json={"hsn_code": "", "gst_percent_packed": 18},
+                     headers=admin_headers).json()
+    assert upd["hsn_code"] is None and float(upd["gst_percent_packed"]) == 18
+
+
 def test_create_category_duplicate(client, category, admin_headers):
     res = client.post(CAT, json={"category_name": "Grocery"}, headers=admin_headers)
     assert res.status_code == 400

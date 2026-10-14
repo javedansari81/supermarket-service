@@ -304,11 +304,6 @@ async def print_packed_labels(
         )
 
     store = build_store_settings(db, context.tenant_id)
-    if not store.store_address:
-        raise HTTPException(
-            status_code=400,
-            detail="Set the store address in Settings (required as packer address)"
-        )
     barcode_value = assign_instore_barcode(db, product)
 
     label = PackedLabelData(
