@@ -6,7 +6,7 @@ import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
-  Chip, ToggleButton, Divider, Autocomplete, Typography, CardActionArea, Collapse,
+  Chip, ToggleButton, Divider, Autocomplete, Typography, CardActionArea, Collapse, createFilterOptions,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -16,7 +16,7 @@ import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
-import { GST_RATE_REFERENCE, GstRateRef } from '../config/gst';
+import { GST_RATE_REFERENCE, GstRateRef, gstRefsForCategory } from '../config/gst';
 import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
 
@@ -39,6 +39,8 @@ const SCALE_NAME_LIMIT = 24;
 const STORE_BRAND = 'MF';
 
 const typeOf = (p: Product): ProductType => p.product_type ?? (p.is_loose ? 'loose' : 'own_packed');
+
+const filterGstRefs = createFilterOptions<GstRateRef>({ stringify: (o) => `${o.item} ${o.hsn}` });
 
 // Mirrors capitalize_words in the API: 'toor dal' -> 'Toor Dal', unit words and words with capitals are kept
 const UNIT_WORDS = new Set(['g', 'gm', 'gms', 'kg', 'kgs', 'ml', 'l', 'ltr', 'pcs', 'pages']);
@@ -202,6 +204,8 @@ const Products: React.FC = () => {
     ? [...gstMenu, { value: formData.tax_percent, kinds: ['current'] }] : gstMenu;
   const gstSource = gstRates && gstRef ? `GST lookup: ${gstRef.item}` : gstOptions.length && selectedCategory
     ? `Category: ${selectedCategory.category_name}` : '';
+  const gstRefOptions = gstRefsForCategory(selectedCategory?.category_name, selectedCategory?.hsn_code);
+  const gstRefsFiltered = gstRefOptions !== GST_RATE_REFERENCE;
 
   const handleTypeChange = (type: ProductType) => {
     const toLoose = type === 'loose';
@@ -236,7 +240,8 @@ const Products: React.FC = () => {
     if (hasDefaults) {
       setGstRef(null);
       setGstRates(rates);
-    } else if (!gstRef) {
+    } else if (!gstRef || !gstRefsForCategory(category?.category_name, category?.hsn_code).includes(gstRef)) {
+      setGstRef(null);
       setGstRates(null);
     }
     setFormData({
@@ -479,16 +484,16 @@ const Products: React.FC = () => {
               </Grid>
             )}
             <Grid size={12}>
-              <Autocomplete options={GST_RATE_REFERENCE} value={gstRef} onChange={(_, v) => handleGstRefChange(v)}
-                getOptionLabel={(o) => o.item}
+              <Autocomplete options={gstRefOptions} value={gstRef} onChange={(_, v) => handleGstRefChange(v)}
+                getOptionLabel={(o) => o.item} filterOptions={filterGstRefs} noOptionsText="No matches"
                 renderOption={(props, o) => (
                   <li {...props} key={`${o.item}-${o.hsn}`}>
                     {o.item} - HSN {o.hsn} - loose {o.loose}% / packed {o.packed}%
                   </li>
                 )}
                 renderInput={(params) => (
-                  <TextField {...params} label="GST rate lookup (fills HSN and GST %)"
-                    helperText="Packed = pre-packaged and labelled. Rates are a reference; confirm unusual items with your accountant" />
+                  <TextField {...params} label="GST rate lookup (fills HSN and GST %)" placeholder="Type item name or HSN to search..."
+                    helperText={`${gstRefsFiltered ? `Showing items for category ${selectedCategory?.category_name}. ` : ''}Packed = pre-packaged and labelled. Rates are a reference; confirm unusual items with your accountant`} />
                 )} />
             </Grid>
             <Grid size={{ xs: 12, md: isLoose ? 3 : 4 }}>

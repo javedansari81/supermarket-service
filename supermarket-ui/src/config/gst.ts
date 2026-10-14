@@ -80,4 +80,68 @@ export const GST_RATE_REFERENCE: GstRateRef[] = [
   { item: 'Batteries', hsn: '8506', loose: 18, packed: 18 },
   { item: 'Sanitary napkins', hsn: '9619', loose: 0, packed: 0 },
   { item: 'Cigarettes / tobacco / pan masala', hsn: '2402', loose: 40, packed: 40 },
+  { item: 'Bread / roti / khakhra', hsn: '1905', loose: 0, packed: 0 },
+  { item: 'Ice cream / frozen desserts', hsn: '2105', loose: 5, packed: 5 },
+  { item: 'Frozen vegetables', hsn: '0710', loose: 5, packed: 5 },
+  { item: 'Fresh chicken / meat', hsn: '0207', loose: 0, packed: 0 },
+  { item: 'Frozen chicken / meat', hsn: '0207', loose: 0, packed: 5 },
+  { item: 'Fresh fish / seafood', hsn: '0302', loose: 0, packed: 0 },
+  { item: 'Frozen fish / prawns', hsn: '0303', loose: 0, packed: 5 },
+  { item: 'Talcum / face powder', hsn: '3304', loose: 5, packed: 5 },
+  { item: 'Shaving cream / aftershave', hsn: '3307', loose: 5, packed: 5 },
+  { item: 'Baby diapers', hsn: '9619', loose: 5, packed: 5 },
+  { item: 'Feeding bottles', hsn: '3926', loose: 5, packed: 5 },
+  { item: 'Candles', hsn: '3406', loose: 5, packed: 5 },
+  { item: 'Steel utensils / kitchenware', hsn: '7323', loose: 5, packed: 5 },
+  { item: 'Notebooks / exercise books', hsn: '4820', loose: 0, packed: 0 },
+  { item: 'Pencils / crayons', hsn: '9609', loose: 0, packed: 0 },
+  { item: 'Pens / markers', hsn: '9608', loose: 18, packed: 18 },
+  { item: 'Medicines (OTC)', hsn: '3004', loose: 5, packed: 5 },
+  { item: 'Dog / cat food', hsn: '2309', loose: 18, packed: 18 },
 ];
+
+// Lookup items per category name (lower case); used where the category HSN is missing, broad or shared
+const CATEGORY_GST_ITEMS: Record<string, string[]> = {
+  'groceries': ['Rice', 'Wheat', 'Atta / wheat flour', 'Suji / rava / dalia', 'Besan / pulse flour',
+    'Dal / pulses (dried)', 'Sugar', 'Jaggery (gur)', 'Salt', 'Edible oil', 'Spices (whole / ground)',
+    'Dry fruits / nuts', 'Tea', 'Coffee'],
+  'beverages': ['Tea', 'Coffee', 'Fruit juice', 'Packaged drinking water', 'Aerated / sugary soft drinks'],
+  'dairy products': ['Fresh milk / UHT milk', 'Curd / lassi / buttermilk', 'Paneer', 'Cheese', 'Ghee / butter'],
+  'household': ['Detergent / washing powder', 'Floor / toilet cleaner', 'Mosquito repellent', 'Agarbatti / dhoop',
+    'Matchbox', 'Candles', 'Steel utensils / kitchenware', 'Batteries'],
+  'snacks': ['Namkeen / bhujia / mixture', 'Biscuits / rusk / cakes', 'Chocolates', 'Sweets / sugar confectionery',
+    'Noodles / pasta'],
+  'bakery': ['Bread / roti / khakhra', 'Biscuits / rusk / cakes'],
+  'baby products': ['Baby diapers', 'Feeding bottles'],
+  'frozen foods': ['Ice cream / frozen desserts', 'Frozen vegetables'],
+  'fruits & vegetables': ['Fresh vegetables', 'Fresh fruits'],
+  'health & wellness': ['Medicines (OTC)', 'Sanitary napkins'],
+  'meat & seafood': ['Fresh chicken / meat', 'Frozen chicken / meat', 'Fresh fish / seafood', 'Frozen fish / prawns'],
+  'personal care': ['Toilet soap', 'Shampoo / hair oil', 'Toothpaste / tooth powder', 'Toothbrush',
+    'Talcum / face powder', 'Shaving cream / aftershave', 'Sanitary napkins'],
+  'pet supplies': ['Dog / cat food'],
+  'stationery': ['Notebooks / exercise books', 'Pencils / crayons', 'Pens / markers'],
+  // Categories sharing an HSN code with a different rate or item
+  'bread, roti & khakhra': ['Bread / roti / khakhra'],
+  'biscuits & cookies': ['Biscuits / rusk / cakes'],
+  'cakes & pastries': ['Biscuits / rusk / cakes'],
+  'sugar': ['Sugar'],
+  'jaggery': ['Jaggery (gur)'],
+  'paneer': ['Paneer'],
+  'cheese': ['Cheese'],
+  'detergents': ['Detergent / washing powder'],
+  'floor & toilet cleaners': ['Floor / toilet cleaner'],
+  'agarbatti & dhoop': ['Agarbatti / dhoop'],
+  'shaving products': ['Shaving cream / aftershave'],
+  'sanitary napkins': ['Sanitary napkins'],
+  'baby diapers': ['Baby diapers'],
+};
+
+// Lookup items for a category: by name, else by HSN heading (first 4 digits), else all
+export const gstRefsForCategory = (name?: string | null, hsn?: string | null): GstRateRef[] => {
+  const items = name ? CATEGORY_GST_ITEMS[name.trim().toLowerCase()] : undefined;
+  const heading = hsn?.slice(0, 4);
+  const matches = items ? GST_RATE_REFERENCE.filter((r) => items.includes(r.item))
+    : heading ? GST_RATE_REFERENCE.filter((r) => r.hsn.slice(0, 4) === heading) : [];
+  return matches.length ? matches : GST_RATE_REFERENCE;
+};
