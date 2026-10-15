@@ -458,7 +458,7 @@ const Dashboard: React.FC = () => {
         </Grid>
 
         <Grid size={{ xs: 12, md: admin ? 6 : 12 }}>
-          <Card sx={{ height: '100%' }}>
+          <Card sx={{ height: '100%', overflowX: 'auto' }}>
             <CardHeader title="Top Products Today" />
             <Table size="small">
               <TableHead>
@@ -485,7 +485,7 @@ const Dashboard: React.FC = () => {
         {admin && (
           <>
             <Grid size={{ xs: 12, md: 6 }}>
-              <Card sx={{ height: '100%' }}>
+              <Card sx={{ height: '100%', overflowX: 'auto' }}>
                 <CardHeader title="Cashier Performance Today" />
                 <Table size="small">
                   <TableHead>
@@ -514,7 +514,7 @@ const Dashboard: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, md: 6 }}>
-              <Card sx={{ height: '100%' }}>
+              <Card sx={{ height: '100%', overflowX: 'auto' }}>
                 <CardHeader
                   title="Reorder Needed"
                   subheader={`${data.out_of_stock_count} out of stock · ${data.low_stock_count} low stock`}
@@ -553,7 +553,7 @@ const Dashboard: React.FC = () => {
             </Grid>
 
             <Grid size={{ xs: 12, md: 6 }}>
-              <Card sx={{ height: '100%' }}>
+              <Card sx={{ height: '100%', overflowX: 'auto' }}>
                 <CardHeader
                   title="Expiry Watch"
                   subheader={

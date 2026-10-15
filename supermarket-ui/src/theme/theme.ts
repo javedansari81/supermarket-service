@@ -2,6 +2,7 @@
  * Material UI Theme Configuration
  */
 import { createTheme } from '@mui/material/styles';
+import type {} from '@mui/x-date-pickers/themeAugmentation';
 
 const theme = createTheme({
   palette: {
@@ -68,6 +69,21 @@ const theme = createTheme({
       defaultProps: {
         variant: 'outlined',
         size: 'small',
+      },
+    },
+    MuiFormControl: {
+      defaultProps: {
+        size: 'small',
+      },
+    },
+    MuiAutocomplete: {
+      defaultProps: {
+        size: 'small',
+      },
+    },
+    MuiDatePicker: {
+      defaultProps: {
+        slotProps: { textField: { size: 'small' } },
       },
     },
     MuiPaper: {

@@ -6,7 +6,7 @@ import {
   Box, Button, Card, TextField, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
-  Chip, ToggleButton, Divider, Autocomplete, Typography, CardActionArea, Collapse, createFilterOptions,
+  Chip, ToggleButton, Divider, Autocomplete, Typography, Collapse, createFilterOptions,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -25,13 +25,13 @@ const GST_RATES = ['0', '5', '18', '40'];
 const PACK_UNITS: NetUnit[] = ['g', 'kg', 'ml', 'L', 'pcs', 'pages'];
 const ROLE_COLORS: Record<LocationRole, 'primary' | 'secondary' | 'warning'> = { display: 'primary', storage: 'secondary', promo: 'warning' };
 const TYPE_META: Record<ProductType, {
-  title: string; description: string; short: string; color: 'primary' | 'secondary' | 'warning';
+  description: string; short: string; color: 'primary' | 'secondary' | 'warning';
 }> = {
-  manufacturer: { title: "Manufacturer's barcode", short: 'Manufacturer', color: 'primary',
+  manufacturer: { short: 'Manufacturer', color: 'primary',
     description: 'Packed by the brand - scan the barcode printed on the pack' },
-  own_packed: { title: 'Store label (MF)', short: 'Own packed', color: 'secondary',
+  own_packed: { short: 'Own packed', color: 'secondary',
     description: 'We pack and label it - barcode is generated for you' },
-  loose: { title: 'Loose (weighed)', short: 'Loose', color: 'warning',
+  loose: { short: 'Loose', color: 'warning',
     description: 'Sold by weight - the scale prints the label' },
 };
 const SCALE_NAME_LIMIT = 24;
@@ -259,7 +259,7 @@ const Products: React.FC = () => {
 
   const handleSave = async () => {
     const productType = formData.product_type;
-    if (!productType) { toast.error('Choose how the product is barcoded'); return; }
+    if (!productType) { toast.error('Select a product type'); return; }
     if (!formData.item_name.trim()) { toast.error('Item name is required'); return; }
     if (!formData.selling_price) { toast.error('Selling price is required'); return; }
     if (isManufacturer && !formData.barcode) {
@@ -376,15 +376,15 @@ const Products: React.FC = () => {
           <TextField size="small" placeholder="Search by name, code or barcode..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }}
-            sx={{ flex: 1, minWidth: 240 }} />
-          <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: 220, flexShrink: 0 }}
+            sx={{ flex: { xs: '1 1 100%', sm: 1 }, minWidth: { sm: 240 } }} />
+          <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: { xs: '100%', sm: 220 }, flexShrink: 0 }}
             onChange={(v) => { setLocationFilter(v); setPage(0); }}
             options={[
               { value: '', label: 'All locations' },
               { value: 'unassigned', label: 'No location assigned' },
               ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
             ]} />
-          <FormControl size="small" sx={{ width: 220, flexShrink: 0 }}>
+          <FormControl size="small" sx={{ width: { xs: '100%', sm: 220 }, flexShrink: 0 }}>
             <InputLabel shrink>Type</InputLabel>
             <Select label="Type" value={typeFilter} displayEmpty notched
               onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}>
@@ -414,26 +414,21 @@ const Products: React.FC = () => {
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>
         <DialogContent>
-          <Typography variant="subtitle2" sx={{ pt: 1, mb: 1 }}>How will this product be barcoded?</Typography>
-          <Grid container spacing={1.5}>
-            {(Object.keys(TYPE_META) as ProductType[]).map((t) => {
-              const selected = formData.product_type === t;
-              return (
-                <Grid key={t} size={{ xs: 12, sm: 4 }}>
-                  <Card variant="outlined" sx={{
-                    height: '100%', borderColor: selected ? 'primary.main' : undefined,
-                    bgcolor: selected ? 'action.selected' : undefined
-                  }}>
-                    <CardActionArea sx={{ height: '100%', p: 1.5 }} onClick={() => !selected && handleTypeChange(t)}>
-                      <Typography variant="subtitle1" fontWeight={600} color={selected ? 'primary' : 'text.primary'}>
-                        {TYPE_META[t].title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">{TYPE_META[t].description}</Typography>
-                    </CardActionArea>
-                  </Card>
-                </Grid>
-              );
-            })}
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            <Grid size={{ xs: 12, md: 6 }}>
+              <FormControl fullWidth required>
+                <InputLabel>Product Type</InputLabel>
+                <Select label="Product Type" value={formData.product_type}
+                  onChange={(e) => e.target.value !== formData.product_type && handleTypeChange(e.target.value as ProductType)}>
+                  {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
+                    <MenuItem key={t} value={t}>{TYPE_META[t].short}</MenuItem>
+                  ))}
+                </Select>
+                <FormHelperText>
+                  {formData.product_type ? TYPE_META[formData.product_type].description : 'Select a type to fill in the product details'}
+                </FormHelperText>
+              </FormControl>
+            </Grid>
           </Grid>
           <Collapse in={!!formData.product_type} unmountOnExit>
           <Grid container spacing={2} sx={{ pt: 2 }}>

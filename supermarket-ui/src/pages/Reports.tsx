@@ -93,7 +93,7 @@ const Reports: React.FC = () => {
       </Tabs>
       {tab === 0 && (
         <TableContainer component={Paper}>
-          <Table><TableHead><TableRow><TableCell>Product</TableCell><TableCell>Qty Sold</TableCell><TableCell>Revenue</TableCell></TableRow></TableHead>
+          <Table size="small"><TableHead><TableRow><TableCell>Product</TableCell><TableCell>Qty Sold</TableCell><TableCell>Revenue</TableCell></TableRow></TableHead>
             <TableBody>
               {topProducts.map((p, i) => (
                 <TableRow key={i}><TableCell>{p.product_name}</TableCell><TableCell>{p.total_quantity}</TableCell><TableCell>₹{p.total_revenue?.toFixed(2)}</TableCell></TableRow>
@@ -104,7 +104,7 @@ const Reports: React.FC = () => {
       )}
       {tab === 1 && (
         <TableContainer component={Paper}>
-          <Table><TableHead><TableRow><TableCell>Category</TableCell><TableCell>Items Sold</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
+          <Table size="small"><TableHead><TableRow><TableCell>Category</TableCell><TableCell>Items Sold</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
             <TableBody>
               {categorySales.map((c, i) => (
                 <TableRow key={i}><TableCell>{c.category_name}</TableCell><TableCell>{c.total_quantity}</TableCell><TableCell>₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>
@@ -115,7 +115,7 @@ const Reports: React.FC = () => {
       )}
       {tab === 2 && (
         <TableContainer component={Paper}>
-          <Table><TableHead><TableRow><TableCell>Cashier</TableCell><TableCell>Transactions</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
+          <Table size="small"><TableHead><TableRow><TableCell>Cashier</TableCell><TableCell>Transactions</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
             <TableBody>
               {cashierPerf.map((c, i) => (
                 <TableRow key={i}><TableCell>{c.full_name}</TableCell><TableCell>{c.total_transactions}</TableCell><TableCell>₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>

@@ -148,7 +148,7 @@ The display name can be changed by hand if really needed; it then stops followin
 ### Add a product
 
 1. Click **Add Product**.
-2. Under **How will this product be barcoded?**, pick a card: **Manufacturer's barcode** (Manufacturer), **Store label (MF)** (Own packed) or **Loose (weighed)** (Loose). The form opens with only the fields that apply to that type; **Save** stays disabled until a type is picked.
+2. Pick a **Product Type**: **Manufacturer**, **Own packed** or **Loose**. A short description of the type appears below the box, and the form opens with only the fields that apply to that type; **Save** stays disabled until a type is picked.
 3. Enter at least **Item Name**, and **Pack Size** / **Pack Unit** for manufacturer and own-packed items. Check the generated **Display Name**. Enter **Barcode** for manufacturer items. For own-packed items the barcode is optional: leave it blank to generate a new one (print it from **Barcode** → **Own Packed Labels**), or scan an MF label you already printed to reuse its barcode.
 4. Click **Save**.
 
