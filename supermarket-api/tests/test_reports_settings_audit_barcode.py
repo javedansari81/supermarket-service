@@ -196,16 +196,21 @@ def test_barcode_print(client, db, product, cashier_headers):
                        headers=cashier_headers).status_code == 422
 
 
-def test_generate_barcode_code(client, db, seed, product, admin_headers, cashier_headers):
+def test_generate_barcode_code(client, db, seed, product, admin_headers, cashier_headers,
+                               supervisor_headers):
     from app.models import Product
     bare = Product(tenant_id=seed["tenant_a"].id, product_no="P0002", product_name="Salt",
                    mrp=20, selling_price=20, unit_type="pcs", stock_quantity=5)
-    db.add(bare)
+    supervised = Product(tenant_id=seed["tenant_a"].id, product_no="P0003", product_name="Jaggery",
+                         mrp=30, selling_price=30, unit_type="pcs", stock_quantity=5)
+    db.add_all([bare, supervised])
     db.commit()
     assert client.get(f"{BAR}/generate/{bare.id}", headers=admin_headers).status_code == 400
     assert client.post(f"{BAR}/generate-code", params={"product_id": bare.id},
                        headers=cashier_headers).status_code == 403
     res = client.post(f"{BAR}/generate-code", params={"product_id": bare.id}, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["barcode"]
+    res = client.post(f"{BAR}/generate-code", params={"product_id": supervised.id}, headers=supervisor_headers)
     assert res.status_code == 200 and res.json()["barcode"]
     again = client.post(f"{BAR}/generate-code", params={"product_id": product.id}, headers=admin_headers)
     assert again.json()["message"] == "Product already has a barcode"

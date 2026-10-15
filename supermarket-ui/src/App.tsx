@@ -50,13 +50,13 @@ function App() {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="billing" element={<Billing />} />
-                <Route path="products" element={<ProtectedRoute requireAdmin><Products /></ProtectedRoute>} />
+                <Route path="products" element={<ProtectedRoute requireSupervisor><Products /></ProtectedRoute>} />
                 <Route path="categories" element={<ProtectedRoute requireAdmin><Categories /></ProtectedRoute>} />
-                <Route path="locations" element={<ProtectedRoute requireAdmin><Locations /></ProtectedRoute>} />
+                <Route path="locations" element={<ProtectedRoute requireSupervisor><Locations /></ProtectedRoute>} />
                 <Route path="suppliers" element={<ProtectedRoute requireAdmin><Suppliers /></ProtectedRoute>} />
                 <Route path="purchases" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
                 <Route path="inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
-                <Route path="barcode" element={<ProtectedRoute requireAdmin><Barcode /></ProtectedRoute>} />
+                <Route path="barcode" element={<ProtectedRoute requireSupervisor><Barcode /></ProtectedRoute>} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="customers" element={<Customers />} />
                 <Route path="reports" element={<ProtectedRoute requireAdmin><Reports /></ProtectedRoute>} />

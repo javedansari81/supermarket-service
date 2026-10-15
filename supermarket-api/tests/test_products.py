@@ -252,6 +252,13 @@ def test_update_product(client, product, admin_headers):
     assert float(res.json()["selling_price"]) == 50
 
 
+def test_supervisor_can_edit_but_not_create_or_delete_product(client, product, supervisor_headers):
+    res = client.put(f"{URL}/{product.id}", json={"barcode": "8901234567899"}, headers=supervisor_headers)
+    assert res.status_code == 200 and res.json()["barcode"] == "8901234567899"
+    assert client.post(URL, json=payload(), headers=supervisor_headers).status_code == 403
+    assert client.delete(f"{URL}/{product.id}", headers=supervisor_headers).status_code == 403
+
+
 def test_update_product_errors(client, db, seed, product, admin_headers, admin_b_headers):
     from app.models import Category
     other_cat = Category(tenant_id=seed["tenant_b"].id, category_name="B-cat")
@@ -308,6 +315,16 @@ def test_location_crud(client, seed, admin_headers, cashier_headers, admin_b_hea
     assert client.delete(f"{LOC}/{loc['id']}", headers=admin_headers).status_code == 204
     assert client.get(f"{LOC}/{loc['id']}", headers=admin_headers).json()["status"] == "inactive"
     assert client.get(f"{LOC}/active", headers=admin_headers).json() == []
+
+
+def test_location_crud_by_supervisor(client, seed, supervisor_headers):
+    body = {"location_type": "storage", "floor": "1st", "rack_no": "S05", "shelf_no": "1"}
+    res = client.post(LOC, json=body, headers=supervisor_headers)
+    assert res.status_code == 201
+    loc_id = res.json()["id"]
+    res = client.put(f"{LOC}/{loc_id}", json={"shelf_no": "2"}, headers=supervisor_headers)
+    assert res.status_code == 200 and res.json()["location_code"] == "S05-2"
+    assert client.delete(f"{LOC}/{loc_id}", headers=supervisor_headers).status_code == 204
 
 
 def test_location_rack_rules(client, locations, admin_headers):

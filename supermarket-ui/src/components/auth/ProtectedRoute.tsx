@@ -9,10 +9,11 @@ import { CircularProgress, Box } from '@mui/material';
 interface ProtectedRouteProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requireSupervisor?: boolean;
 }
 
-const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false }) => {
-  const { isAuthenticated, isLoading, isAdmin } = useAuth();
+const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin = false, requireSupervisor = false }) => {
+  const { isAuthenticated, isLoading, isAdmin, isSupervisor } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -33,6 +34,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, requireAdmin 
   }
 
   if (requireAdmin && !isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  if (requireSupervisor && !isAdmin && !isSupervisor) {
     return <Navigate to="/dashboard" replace />;
   }
 

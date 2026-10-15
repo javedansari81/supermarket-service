@@ -79,7 +79,7 @@ const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth, onMenuC
               {user?.full_name || user?.username}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              {user?.role === 'admin' ? 'Administrator' : 'Cashier'}
+              {user?.role === 'admin' ? 'Administrator' : user?.role === 'supervisor' ? 'Supervisor' : 'Cashier'}
             </Typography>
           </Box>
           

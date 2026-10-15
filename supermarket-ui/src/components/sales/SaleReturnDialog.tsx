@@ -30,7 +30,7 @@ const REASONS: Record<SaleActionMode, string[]> = {
 };
 
 const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) => {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isSupervisor } = useAuth();
   const [info, setInfo] = useState<ReturnableSale | null>(null);
   const [qty, setQty] = useState<Record<number, string>>({});
   const [restock, setRestock] = useState<Record<number, boolean>>({});
@@ -98,9 +98,9 @@ const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) =>
               {Number(info.returned_amount) > 0 && ` · Already returned ₹${money(info.returned_amount)}`}
             </Typography>
             {blockReason && <Alert severity="warning" sx={{ mb: 2 }}>{blockReason}</Alert>}
-            {mode === 'return' && allowed && !info.within_window && isAdmin && (
+            {mode === 'return' && allowed && !info.within_window && (isAdmin || isSupervisor) && (
               <Alert severity="info" sx={{ mb: 2 }}>
-                This sale is older than {info.return_window_days} days. The return will be recorded as an admin override.
+                This sale is older than {info.return_window_days} days. The return will be recorded as {isAdmin ? 'an admin' : 'a supervisor'} override.
               </Alert>
             )}
             {mode === 'void' && allowed && (

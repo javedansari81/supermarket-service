@@ -94,10 +94,11 @@ def auth_headers(user):
 
 @pytest.fixture()
 def seed(db, password_hash):
-    """Two tenants: tenant A (admin + cashier) and tenant B (admin)"""
+    """Two tenants: tenant A (admin + cashier + supervisor) and tenant B (admin)"""
     admin_role = Role(role_name="admin", description="Administrator")
     cashier_role = Role(role_name="cashier", description="Cashier")
-    db.add_all([admin_role, cashier_role])
+    supervisor_role = Role(role_name="supervisor", description="Supervisor")
+    db.add_all([admin_role, cashier_role, supervisor_role])
     db.flush()
 
     tenant_a = Tenant(tenant_code="TA", tenant_name="Tenant A")
@@ -108,10 +109,12 @@ def seed(db, password_hash):
     data = {
         "admin_role": admin_role,
         "cashier_role": cashier_role,
+        "supervisor_role": supervisor_role,
         "tenant_a": tenant_a,
         "tenant_b": tenant_b,
         "admin": make_user(db, tenant_a, admin_role, "admin_a", password_hash),
         "cashier": make_user(db, tenant_a, cashier_role, "cashier_a", password_hash),
+        "supervisor": make_user(db, tenant_a, supervisor_role, "supervisor_a", password_hash),
         "admin_b": make_user(db, tenant_b, admin_role, "admin_b", password_hash),
     }
     db.commit()
@@ -126,6 +129,11 @@ def admin_headers(seed):
 @pytest.fixture()
 def cashier_headers(seed):
     return auth_headers(seed["cashier"])
+
+
+@pytest.fixture()
+def supervisor_headers(seed):
+    return auth_headers(seed["supervisor"])
 
 
 @pytest.fixture()

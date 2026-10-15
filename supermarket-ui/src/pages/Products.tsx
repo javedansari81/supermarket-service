@@ -19,6 +19,7 @@ import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
+import { useAuth } from '../context/AuthContext';
 import { Product, Category, GstItem, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
 
@@ -134,6 +135,7 @@ const downloadImportReport = (result: ImportResult) => {
 };
 
 const Products: React.FC = () => {
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -469,7 +471,9 @@ const Products: React.FC = () => {
       <>
         <IconButton size="small" title="View" onClick={() => setViewProduct(params.row)}><Visibility fontSize="small" /></IconButton>
         <IconButton size="small" title="Edit" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" title="Delete" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        {isAdmin && (
+          <IconButton size="small" title="Delete" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        )}
       </>
     )},
   ];
@@ -487,12 +491,16 @@ const Products: React.FC = () => {
           <Tooltip title="Refresh">
             <IconButton onClick={fetchProducts} aria-label="Refresh"><Refresh /></IconButton>
           </Tooltip>
-          <Tooltip title="Import products from an Excel or CSV file">
-            <IconButton color="primary" onClick={openImport} aria-label="Import products"><UploadFile /></IconButton>
-          </Tooltip>
-          <Tooltip title="Export scale file: loose items with PLU and rate, for loading into the weighing scale">
-            <IconButton color="primary" onClick={handleScaleExport} aria-label="Export scale file"><FileDownload /></IconButton>
-          </Tooltip>
+          {isAdmin && (
+            <>
+              <Tooltip title="Import products from an Excel or CSV file">
+                <IconButton color="primary" onClick={openImport} aria-label="Import products"><UploadFile /></IconButton>
+              </Tooltip>
+              <Tooltip title="Export scale file: loose items with PLU and rate, for loading into the weighing scale">
+                <IconButton color="primary" onClick={handleScaleExport} aria-label="Export scale file"><FileDownload /></IconButton>
+              </Tooltip>
+            </>
+          )}
         </Box>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -548,7 +556,7 @@ const Products: React.FC = () => {
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
           pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
       </Card>
-      <PageFab label="Add Product" onClick={() => handleOpenDialog()} />
+      {isAdmin && <PageFab label="Add Product" onClick={() => handleOpenDialog()} />}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editProduct ? 'Edit Product' : 'Add Product'}</DialogTitle>

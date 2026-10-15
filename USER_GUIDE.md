@@ -28,27 +28,29 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 | Area | What it does |
 |------|----------------|
 | Left sidebar | Menu. Shows your store name (tenant) under **SuperMart**. Click the arrow next to **SuperMart** to collapse it to icons only (hover an icon to see its name); click the menu icon to expand it again. Your choice is remembered. On smaller screens it starts collapsed until you choose otherwise. |
-| Top bar | Current page title (with page actions such as refresh on the left), signed-in name, role (**Administrator** or **Cashier**), and avatar menu. |
+| Top bar | Current page title (with page actions such as refresh on the left), signed-in name, role (**Administrator**, **Supervisor** or **Cashier**), and avatar menu. |
 | Avatar menu | **Logout** — ends the session and returns to login. |
 | Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Location**, **Add Supplier**, **New Purchase**, **Add User**. |
 
-Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Admins see the full menu.
+Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisors also see **Products**, **Locations** and **Barcode**. Admins see the full menu.
 
 ---
 
 ## 2. User roles
 
-| | Admin | Cashier |
-|---|--------|---------|
-| Dashboard (sales today / month) | Yes (store-wide) | Yes (own bills only) |
-| Margin, stock value, reorder, expiry, cashier panels | Yes | No |
-| Billing / POS | Yes | Yes |
-| Products, categories, store locations, suppliers | Yes | No |
-| Purchases, inventory, barcodes | Yes | No |
-| Invoices (view / print) | Yes | Yes |
-| Return items | Yes (any time) | Yes (within 7 days of sale) |
-| Void a sale | Yes (any sale without returns) | Own same-day sales only |
-| Reports, users, audit logs, settings | Yes | No |
+| | Admin | Supervisor | Cashier |
+|---|--------|------------|---------|
+| Dashboard (sales today / month) | Yes (store-wide) | Yes (own bills only) | Yes (own bills only) |
+| Margin, stock value, reorder, expiry, cashier panels | Yes | No | No |
+| Billing / POS | Yes | Yes | Yes |
+| Products | Yes | View and edit (no add, delete, import or scale export) | No |
+| Store locations | Yes | Yes (add, edit, delete) | No |
+| Barcodes (labels, generate code) | Yes | Yes | No |
+| Categories, suppliers, purchases, inventory | Yes | No | No |
+| Invoices (view / print) | Yes | Yes | Yes |
+| Return items | Yes (any time) | Yes (within 15 days of sale) | Yes (within 7 days of sale) |
+| Void a sale | Yes (any sale without returns) | Any sale within 7 days | Own same-day sales only |
+| Reports, users, audit logs, settings | Yes | No | No |
 
 ---
 
@@ -388,14 +390,14 @@ Walk-in sales have no customer name. Use this for reprints and end-of-day checks
 5. A credit note number (`CN…`) and the refund amount are shown. Refund the customer that amount.
 
 - A sale can have several partial returns. Once every item is returned, its status becomes **Returned**.
-- Cashiers can return items up to **7 days** after the sale. After that, an admin must process the return; it is marked **Override**.
+- Cashiers can return items up to **7 days** after the sale. Supervisors can return items up to **15 days** after the sale; after that, an admin must process the return. Returns past the 7-day window are marked **Override**.
 
 ### Void a sale
 
 Use this for billing mistakes. Click the void icon (or **Void** in the detail dialog), pick a reason (Wrong items billed, Wrong quantity or price, Wrong payment mode, Customer cancelled purchase, or **Other** to type your own) and confirm.
 
 - The whole sale is cancelled and all items go back into stock. The invoice stays on record as **Voided**.
-- Cashiers can only void their own sales on the same day. Admins can void any sale.
+- Cashiers can only void their own sales on the same day. Supervisors can void any sale up to 7 days old. Admins can void any sale.
 - A sale that already has returns cannot be voided. Return the remaining items instead.
 
 ---
@@ -424,7 +426,7 @@ Use this for purchasing, staffing, and daily/monthly review.
 
 ## 14. Users (Admin)
 
-Staff accounts. Roles: **admin** or **cashier**.
+Staff accounts. Roles: **admin**, **supervisor** or **cashier**.
 
 ### Add a user
 
@@ -439,7 +441,7 @@ Staff accounts. Roles: **admin** or **cashier**.
 - Trash — confirm delete
 - Search as on other lists
 
-Inactive users should not sign in. Give cashiers **cashier**; keep **admin** for owners and managers.
+Inactive users should not sign in. Give cashiers **cashier**, floor supervisors **supervisor**; keep **admin** for owners and managers.
 
 ---
 
@@ -508,8 +510,8 @@ Save after changes. Currency in the UI is **₹**.
 | Product missing in Manufacturer Labels | Only manufacturer products with a barcode are listed. Enter the maker's barcode in Products. |
 | Product missing in Own Packed Labels | Only own-packed products with a pack size are listed. Set the pack size in Products. |
 | Invoice print window blank | Allow pop-ups for the site and try Print again. |
-| "Return window of 7 days has passed" | Ask an admin to process the return. |
-| Cannot void a sale | Cashiers can only void their own same-day sales. Sales with returns cannot be voided. |
+| "Return window of 7 days has passed" | Ask a supervisor (up to 15 days) or an admin to process the return. |
+| Cannot void a sale | Cashiers can only void their own same-day sales; supervisors, any sale up to 7 days old. Sales with returns cannot be voided. |
 | Session lost | Sign in again. Logout, or 30 minutes without activity, clears the stored token. |
 | Location missing in product form | Only active locations are listed. Create or reactivate it on **Locations**. |
 | Put-away List shows **Unassigned** | Assign a location to that product on **Products**. |
@@ -522,13 +524,13 @@ Save after changes. Currency in the UI is **₹**.
 |------|------|-----|
 | Dashboard | `/dashboard` | All |
 | Billing / POS | `/billing` | All |
-| Products | `/products` | Admin |
+| Products | `/products` | Admin, Supervisor |
 | Categories | `/categories` | Admin |
-| Locations | `/locations` | Admin |
+| Locations | `/locations` | Admin, Supervisor |
 | Suppliers | `/suppliers` | Admin |
 | Purchases | `/purchases` | Admin |
 | Inventory | `/inventory` | Admin |
-| Barcode | `/barcode` | Admin |
+| Barcode | `/barcode` | Admin, Supervisor |
 | Invoices | `/invoices` | All |
 | Reports | `/reports` | Admin |
 | Users | `/users` | Admin |

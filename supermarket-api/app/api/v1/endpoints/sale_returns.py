@@ -1,7 +1,8 @@
 """
 Sale return (credit note) and void sale endpoints.
 Cashiers can return items within RETURN_WINDOW_DAYS of the sale and void their own same-day sales;
-admins can do both at any time.
+supervisors can return within SUPERVISOR_RETURN_WINDOW_DAYS and void any sale within
+SUPERVISOR_VOID_WINDOW_DAYS; admins can do both at any time.
 """
 from typing import Optional, List, Dict
 from datetime import datetime, date
@@ -33,6 +34,8 @@ router = APIRouter()
 sales_router = APIRouter()
 
 RETURN_WINDOW_DAYS = 7
+SUPERVISOR_RETURN_WINDOW_DAYS = 15
+SUPERVISOR_VOID_WINDOW_DAYS = 7
 CENTS = Decimal("0.01")
 AMOUNT_FIELDS = ("taxable_value", "tax_amount", "cgst_amount", "sgst_amount", "igst_amount",
                  "discount_amount", "line_total")
@@ -83,8 +86,16 @@ def return_block(sale: Sale, context: TenantContext, days: int):
         return 400, "Sale has been voided"
     if sale.status == "refunded":
         return 400, "All items on this sale have already been returned"
-    if days > RETURN_WINDOW_DAYS and not context.is_admin:
-        return 403, f"Return window of {RETURN_WINDOW_DAYS} days has passed; ask an admin to process this return"
+    if context.is_admin:
+        return None
+    if context.is_supervisor:
+        if days > SUPERVISOR_RETURN_WINDOW_DAYS:
+            return 403, (f"Supervisor return window of {SUPERVISOR_RETURN_WINDOW_DAYS} days has passed; "
+                         "ask an admin to process this return")
+        return None
+    if days > RETURN_WINDOW_DAYS:
+        return 403, (f"Return window of {RETURN_WINDOW_DAYS} days has passed; "
+                     "ask a supervisor or admin to process this return")
     return None
 
 
@@ -94,11 +105,16 @@ def void_block(sale: Sale, context: TenantContext, days: int, has_returns: bool)
         return 400, "Sale is already voided"
     if has_returns:
         return 400, "Sale has returns; process a return instead of voiding"
-    if not context.is_admin:
-        if sale.created_by != context.user_id:
-            return 403, "Cashiers can only void their own sales"
-        if days != 0:
-            return 403, "Cashiers can only void same-day sales; ask an admin"
+    if context.is_admin:
+        return None
+    if context.is_supervisor:
+        if days > SUPERVISOR_VOID_WINDOW_DAYS:
+            return 403, f"Supervisors can only void sales from the last {SUPERVISOR_VOID_WINDOW_DAYS} days; ask an admin"
+        return None
+    if sale.created_by != context.user_id:
+        return 403, "Cashiers can only void their own sales; ask a supervisor"
+    if days != 0:
+        return 403, "Cashiers can only void same-day sales; ask a supervisor"
     return None
 
 
@@ -298,7 +314,8 @@ async def create_return(
 ):
     """
     Return some or all items of a sale (credit note).
-    Cashiers: within RETURN_WINDOW_DAYS of the sale. Admins: any time.
+    Cashiers: within RETURN_WINDOW_DAYS of the sale. Supervisors: within
+    SUPERVISOR_RETURN_WINDOW_DAYS. Admins: any time.
     """
     sale = get_sale_or_404(db, context.tenant_id, sale_id, lock=True)
     days = days_since_sale(sale)
@@ -438,7 +455,8 @@ async def void_sale(
 ):
     """
     Void (cancel) a whole sale and restore its stock.
-    Cashiers: only their own same-day sales. Admins: any sale without returns.
+    Cashiers: only their own same-day sales. Supervisors: any sale within
+    SUPERVISOR_VOID_WINDOW_DAYS. Admins: any sale without returns.
     """
     sale = get_sale_or_404(db, context.tenant_id, sale_id, lock=True)
     days = days_since_sale(sale)

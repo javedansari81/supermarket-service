@@ -28,7 +28,9 @@ from app.schemas.product import (
     ProductBatchResponse, ProductBatchUpdate
 )
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
-from app.api.deps import get_current_user, get_current_admin_user, get_tenant_context, TenantContext
+from app.api.deps import (
+    get_current_user, get_current_admin_user, get_current_supervisor_user, get_tenant_context, TenantContext
+)
 from app.core.product_import import (
     ImportRowError, import_display_name, read_import_file, map_headers, row_to_product_data,
     build_import_template, validation_message, MAX_IMPORT_ROWS, MAX_IMPORT_BYTES
@@ -682,10 +684,10 @@ async def update_product(
     request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_supervisor_user)
 ):
     """
-    Update a product (admin only)
+    Update a product (admin or supervisor)
     """
     product = db.query(Product).filter(
         Product.id == product_id,

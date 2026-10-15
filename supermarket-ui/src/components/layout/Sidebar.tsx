@@ -54,18 +54,19 @@ interface NavItem {
   path: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  supervisor?: boolean;
 }
 
 const navItems: NavItem[] = [
   { title: 'Dashboard', path: '/dashboard', icon: <Dashboard /> },
   { title: 'Billing / POS', path: '/billing', icon: <PointOfSale /> },
-  { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true },
+  { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true, supervisor: true },
   { title: 'Categories', path: '/categories', icon: <Category />, adminOnly: true },
-  { title: 'Locations', path: '/locations', icon: <Place />, adminOnly: true },
+  { title: 'Locations', path: '/locations', icon: <Place />, adminOnly: true, supervisor: true },
   { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true },
   { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true },
   { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },
-  { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true },
+  { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true },
   { title: 'Invoices', path: '/invoices', icon: <Receipt /> },
   { title: 'Customers', path: '/customers', icon: <Contacts /> },
   { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true },
@@ -83,10 +84,10 @@ const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAdmin, user } = useAuth();
+  const { isAdmin, isSupervisor, user } = useAuth();
 
   const filteredNavItems = navItems.filter(
-    (item) => !item.adminOnly || isAdmin
+    (item) => !item.adminOnly || isAdmin || (item.supervisor && isSupervisor)
   );
 
   const collapsed = !mobile && collapsedProp;

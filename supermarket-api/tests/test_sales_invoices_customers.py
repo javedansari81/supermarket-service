@@ -216,6 +216,37 @@ def test_return_window_cashier_vs_admin(client, db, product, cashier_headers, ad
     assert res.status_code == 201 and res.json()["window_override"] is True
 
 
+def test_return_window_supervisor(client, db, product, cashier_headers, supervisor_headers, admin_headers):
+    sale = sell(client, product, cashier_headers, qty=3).json()
+    backdate(db, sale, 15)
+    info = client.get(f"{SALES}/{sale['id']}/returnable", headers=supervisor_headers).json()
+    assert info["within_window"] is False and info["can_return"] is True
+    res = return_items(client, sale, supervisor_headers)
+    assert res.status_code == 201 and res.json()["window_override"] is True
+    backdate(db, sale, 16)
+    assert return_items(client, sale, supervisor_headers).status_code == 403
+    assert return_items(client, sale, admin_headers).status_code == 201
+
+
+def test_void_rules_supervisor(client, db, product, cashier_headers, supervisor_headers, admin_headers):
+    void = {"reason": "Mistake"}
+    sale = sell(client, product, cashier_headers).json()
+    backdate(db, sale, 7)
+    assert client.post(f"{SALES}/{sale['id']}/void", json=void, headers=cashier_headers).status_code == 403
+    assert client.post(f"{SALES}/{sale['id']}/void", json=void, headers=supervisor_headers).status_code == 200
+
+    admin_sale = sell(client, product, admin_headers).json()
+    assert client.post(f"{SALES}/{admin_sale['id']}/void", json=void,
+                       headers=supervisor_headers).status_code == 200
+
+    old_sale = sell(client, product, cashier_headers).json()
+    backdate(db, old_sale, 8)
+    info = client.get(f"{SALES}/{old_sale['id']}/returnable", headers=supervisor_headers).json()
+    assert info["can_void"] is False
+    assert client.post(f"{SALES}/{old_sale['id']}/void", json=void, headers=supervisor_headers).status_code == 403
+    assert client.post(f"{SALES}/{old_sale['id']}/void", json=void, headers=admin_headers).status_code == 200
+
+
 def test_void_sale_restores_stock(client, product, cashier_headers):
     sale = sell(client, product, cashier_headers).json()
     res = client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Wrong item billed"},

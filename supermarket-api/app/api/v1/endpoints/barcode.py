@@ -21,7 +21,7 @@ from app.schemas.barcode import (
     BarcodeConfigListResponse, BarcodePrintRequest, BarcodeLabelData,
     PackedLabelRequest, PackedLabelData
 )
-from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
+from app.api.deps import get_current_admin_user, get_current_supervisor_user, get_tenant_context, TenantContext
 from app.core.batches import generate_instore_barcode, SCALE_PREFIX
 from app.api.v1.endpoints.settings import build_store_settings
 
@@ -330,10 +330,10 @@ async def generate_new_barcode(
     product_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_supervisor_user)
 ):
     """
-    Generate an in-store barcode for an own-packed product (admin only)
+    Generate an in-store barcode for an own-packed product (admin or supervisor)
     """
     product = db.query(Product).filter(
         Product.id == product_id,

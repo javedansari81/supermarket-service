@@ -81,6 +81,20 @@ def get_current_admin_user(
     return current_user
 
 
+def get_current_supervisor_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get current user and verify admin or supervisor role
+    """
+    if current_user.role.role_name not in ("admin", "supervisor"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Supervisor access required"
+        )
+    return current_user
+
+
 def get_tenant_id(current_user: User = Depends(get_current_user)) -> int:
     """
     Get tenant ID from current user
@@ -97,6 +111,7 @@ class TenantContext:
         self.user_id = user_id
         self.role = role
         self.is_admin = role == "admin"
+        self.is_supervisor = role == "supervisor"
 
 
 def get_tenant_context(

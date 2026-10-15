@@ -15,7 +15,7 @@ def test_list_users_scoped_to_tenant(client, admin_headers):
     res = client.get(URL, headers=admin_headers)
     assert res.status_code == 200
     names = {u["username"] for u in res.json()["items"]}
-    assert names == {"admin_a", "cashier_a"}
+    assert names == {"admin_a", "cashier_a", "supervisor_a"}
 
 
 def test_list_users_forbidden_for_cashier(client, cashier_headers):

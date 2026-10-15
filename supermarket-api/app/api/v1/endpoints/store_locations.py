@@ -15,7 +15,7 @@ from app.schemas.store_location import (
     StoreLocationCreate, StoreLocationUpdate, StoreLocationResponse, StoreLocationListResponse,
     LocationProduct, LocationSuggestion
 )
-from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
+from app.api.deps import get_current_supervisor_user, get_tenant_context, TenantContext
 
 router = APIRouter()
 
@@ -220,10 +220,10 @@ async def create_location(
     request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_supervisor_user)
 ):
     """
-    Create a new store location (admin only)
+    Create a new store location (admin or supervisor)
     """
     data = location_data.model_dump()
     data["rack_no"] = normalize_part(data["rack_no"], "Rack")
@@ -262,10 +262,10 @@ async def update_location(
     request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_supervisor_user)
 ):
     """
-    Update a store location (admin only)
+    Update a store location (admin or supervisor)
     """
     location = get_tenant_location(db, location_id, context.tenant_id)
     update_data = location_data.model_dump(exclude_unset=True)
@@ -329,10 +329,10 @@ async def delete_location(
     request: Request,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
-    current_user = Depends(get_current_admin_user)
+    current_user = Depends(get_current_supervisor_user)
 ):
     """
-    Deactivate a store location (admin only). Existing product assignments are kept.
+    Deactivate a store location (admin or supervisor). Existing product assignments are kept.
     """
     location = get_tenant_location(db, location_id, context.tenant_id)
     old_value = snapshot(location)
