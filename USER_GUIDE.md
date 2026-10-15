@@ -124,12 +124,16 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 ### Browse and search
 
-- Table columns: Product No, Name, Barcode, Type, PLU, Category, MRP, Price, Stock, Location, Status, Actions
+- Table columns: Product No, Name, Barcode, Type, PLU, Category, MRP, Price, Stock, Expiry, Location, Status, Actions
+- **Expiry** shows the date as DD/MM/YYYY: red when expired, orange within 7 days, outlined within 30 days; hover it to see the days left
 - **Location** shows the primary display location (or the first assigned one); hover it to see all locations
 - Search by name or related text; click refresh to reload
 - **Location** filter: All locations, **No location assigned**, or one active location
 - **Type** filter (dropdown): All types, **Manufacturer**, **Own packed**, **Loose**
-- **Scale file** downloads loose items (PLU, name, rate, unit) as CSV for loading into the weighing scale
+- **Barcode** filter: All, or **Missing barcode** (e.g. manufacturer items imported without one)
+- **Expiry** filter: All, **Expired**, **Within 7 days** or **Within 30 days** (earliest expiry first)
+- Upload icon — **Import Products** from an Excel or CSV file (see below)
+- Download icon — exports the scale file: loose items (PLU, name, rate, unit) as CSV for loading into the weighing scale
 - Paginate with 10 / 25 / 50 rows per page
 - Status chip: **active** (green) or inactive
 
@@ -137,7 +141,7 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 | Type | Barcode | Brand | Name format | Example |
 |---|---|---|---|---|
-| **Manufacturer** | Maker's EAN printed on the pack (required) | Maker's brand | Item + Pack size + Brand | `Salt 1 kg Tata` |
+| **Manufacturer** | Maker's EAN printed on the pack (required; may be left empty on import) | Maker's brand | Item + Pack size + Brand | `Salt 1 kg Tata` |
 | **Own packed** | In-store barcode, auto-generated if blank | `MF` (set automatically) | Item + Pack size + `MF` | `Toor Dal 1 kg MF` |
 | **Loose** | Scale label: `21` + PLU (5) + weight in g/ml (5) + check digit | None | Item + `Loose`, no size | `Toor Dal Loose` |
 
@@ -158,9 +162,26 @@ The display name can be changed by hand if really needed; it then stops followin
 | Barcode | Required | Optional | No (PLU assigned automatically) |
 | Pack Size / Pack Unit | Required | Required | No |
 | MRP | Yes | Yes | No |
-| Expiry Date | No (tracked per purchase batch) | No (tracked per purchase batch) | Yes |
+| Expiry Date | Yes | Yes | Yes |
 
-The form also holds category, MRP, selling price, purchase price, tax %, reorder level, unit type, and status. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
+The form also holds category, MRP, selling price, tax %, reorder level, unit type, and status. The purchase price is not entered here; it is set from the unit cost when stock is received on the **Purchases** page. If those fields are not visible in the dialog, set prices and category after create by editing, or ensure the product dialog is fully filled before save.
+
+### Import products (bulk)
+
+1. Click the upload icon next to Refresh to open **Import Products**.
+2. Click **Download template** and fill the **Products** sheet, one product per row. Columns: **Item Name**, **Product Type** (Manufacturer, Own packed or Loose), Brand, Pack Size, Pack Unit, HSN Code, GST %, MRP, Selling Price and Expiry Date (all types). Only Item Name and Product Type are required. The **Instructions** sheet explains each column and has examples.
+3. Click **Choose file** and pick the Excel (.xlsx) or CSV file. Old .xls files must be saved as .xlsx first.
+4. Optionally click **Check file** to see the result without saving anything, then click **Import**.
+
+- Other columns in the file (e.g. Barcode, Category) are ignored. Set barcode, category, GST item and locations later by editing each product; purchase price and stock come from **Purchases**.
+- Manufacturer items are imported without a barcode; no in-store barcode is generated for them. Find them later with the **Missing barcode** filter and add the barcode by editing each product.
+- Own-packed items get an in-store barcode; loose items are sold per kg and get the next PLU.
+- Reorder level is set to 10 for every imported product.
+- **Expiry Date:** best entered as an Excel date (the template column is already formatted DD/MM/YYYY). Text is also accepted as `30/03/2027`, `30-03-2027`, `30.03.2027` or `2027-03-30`, always read as day/month/year. An invalid date fails the row.
+- **Skipped** rows: a product with the same display name and type already exists. A repeat of an earlier row in the same file is also skipped.
+- **Failed** rows: something in the row is wrong; the reason lists every problem.
+- After the import, the summary shows created / skipped / failed counts and a table of skipped and failed rows. **Download report** saves those rows as CSV with Row, Status and Reason columns; fix the failed rows and import them again.
+- Up to 5000 rows and 5 MB per file.
 
 ### Assign store locations
 
@@ -177,7 +198,7 @@ A product can be placed at several locations. Each location's role comes from it
 
 ### View, edit or delete
 
-- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP (packed items), selling price, purchase price, GST %, stock, reorder level, unit, expiry date (loose items) and locations; click **Edit** to open the edit form
+- Eye — detail dialog: product no, name, type, status, brand, barcode, category, HSN code, MRP (packed items), selling price, purchase price, GST %, stock, reorder level, unit, expiry date (with days left) and locations; click **Edit** to open the edit form
 - Pencil — edit and **Save**
 - Trash — confirm **Delete this product?**
 
@@ -266,7 +287,7 @@ Goods-in: receiving stock from a supplier increases inventory.
 1. Click **New Purchase**.
 2. Select **Supplier** and **Purchase Date**.
 3. Optionally click **Attach Bill** to add the supplier's bill (JPG, PNG, WEBP or PDF, up to 10 MB).
-4. For each line: product, quantity, unit price → **Add**.
+4. For each line: product, quantity, unit price → **Add**. MRP, selling price and **Expiry** are pre-filled from the product; change the expiry if this delivery has a different date. Saving the purchase sets that date as the product's expiry (a line left without an expiry keeps the current one).
 5. Remove a line with the trash icon. The table shows line totals and a grand total.
 6. **Save Purchase**.
 

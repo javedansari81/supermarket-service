@@ -2,8 +2,11 @@
 Product management endpoints
 """
 from typing import Optional, List
+from datetime import date, timedelta
 from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
+from fastapi.responses import Response
+from pydantic import ValidationError
 from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.database import get_db
@@ -26,6 +29,10 @@ from app.schemas.product import (
 )
 from app.schemas.store_location import ProductLocationIn, ProductLocationResponse
 from app.api.deps import get_current_user, get_current_admin_user, get_tenant_context, TenantContext
+from app.core.product_import import (
+    ImportRowError, import_display_name, read_import_file, map_headers, row_to_product_data,
+    build_import_template, validation_message, MAX_IMPORT_ROWS, MAX_IMPORT_BYTES
+)
 
 router = APIRouter()
 
@@ -170,8 +177,9 @@ def resolve_product_type(product_type: Optional[str], is_loose: Optional[bool],
 
 
 def ensure_type_rules(product_type: str, unit_type: Optional[str], barcode: Optional[str],
-                      instore_barcode: Optional[str] = None):
-    """Loose items are sold by weight; manufacturer items need the maker's barcode;
+                      instore_barcode: Optional[str] = None, allow_missing_barcode: bool = False):
+    """Loose items are sold by weight; manufacturer items need the maker's barcode
+    (may be left empty when allow_missing_barcode, e.g. bulk import);
     barcodes starting with 21 are reserved for weighing-scale labels"""
     if product_type == Product.TYPE_LOOSE:
         if unit_type not in LOOSE_UNITS:
@@ -182,6 +190,8 @@ def ensure_type_rules(product_type: str, unit_type: Optional[str], barcode: Opti
         raise HTTPException(status_code=400,
                             detail="Barcodes starting with 21 are reserved for loose products")
     if product_type == Product.TYPE_MANUFACTURER and (not barcode or barcode == instore_barcode):
+        if not barcode and allow_missing_barcode:
+            return
         raise HTTPException(status_code=400,
                             detail="Enter the barcode printed on the manufacturer's pack")
 
@@ -221,9 +231,11 @@ def apply_naming(product: Product, previous_type: Optional[str] = None):
             product.net_unit, product.brand) or product.item_name
 
 
-def apply_type_codes(db: Session, product: Product, previous_type: Optional[str] = None):
+def apply_type_codes(db: Session, product: Product, previous_type: Optional[str] = None,
+                     allow_missing_barcode: bool = False):
     """Loose: auto item number (PLU) and 21 scale barcode.
-    Others: no PLU, and an in-store barcode when none is set."""
+    Others: no PLU, and an in-store barcode when none is set
+    (a manufacturer item keeps an empty barcode when allow_missing_barcode)."""
     apply_naming(product, previous_type)
     if product.product_type == Product.TYPE_LOOSE:
         if not product.plu_code:
@@ -231,7 +243,10 @@ def apply_type_codes(db: Session, product: Product, previous_type: Optional[str]
         product.barcode = scale_barcode(product.plu_code)
     else:
         product.plu_code = None
-        if not product.barcode or is_scale_barcode(product.barcode):
+        if not product.barcode and allow_missing_barcode \
+                and product.product_type == Product.TYPE_MANUFACTURER:
+            product.barcode = None
+        elif not product.barcode or is_scale_barcode(product.barcode):
             product.barcode = generate_instore_barcode(product.id)
 
 
@@ -254,6 +269,8 @@ async def list_products(
     unassigned: Optional[bool] = None,
     is_loose: Optional[bool] = None,
     product_type: Optional[str] = Query(None, pattern="^(manufacturer|own_packed|loose)$"),
+    missing_barcode: Optional[bool] = None,
+    expiry: Optional[str] = Query(None, pattern="^(expired|7|30)$"),
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -282,6 +299,17 @@ async def list_products(
     if product_type:
         query = query.filter(Product.product_type == product_type)
 
+    if missing_barcode:
+        query = query.filter(or_(Product.barcode.is_(None), Product.barcode == ""))
+
+    if expiry:
+        today = date.today()
+        if expiry == "expired":
+            query = query.filter(Product.expiry_date < today)
+        else:
+            query = query.filter(Product.expiry_date >= today,
+                                 Product.expiry_date <= today + timedelta(days=int(expiry)))
+
     words = search.split() if search else []
     for word in words:
         pattern = f"%{word}%"
@@ -296,6 +324,8 @@ async def list_products(
 
     total = query.count()
     order = [Product.product_name]
+    if expiry:
+        order.insert(0, Product.expiry_date)
     if words:
         order.insert(0, Product.product_name.ilike(f"{words[0]}%").desc())
     items = query.order_by(*order).offset((page - 1) * page_size).limit(page_size).all()
@@ -380,6 +410,107 @@ async def search_product(
         batches=[ProductBatchResponse.model_validate(b) for b in batches],
         scanned_quantity=scale_quantity(scanned_weight, product.unit_type) if scanned_weight else None
     )
+
+
+@router.get("/import/template")
+async def download_import_template(
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Excel template for bulk product import (admin only)
+    """
+    return Response(
+        content=build_import_template(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="product_import_template.xlsx"'}
+    )
+
+
+@router.post("/import")
+async def import_products(
+    request: Request,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(False),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Bulk create products from an Excel (.xlsx) or CSV file (admin only).
+    Valid rows are created; rows matching an existing product (same display name and type)
+    are skipped; invalid rows are reported as failed.
+    dry_run=true checks the file and reports the result without saving anything.
+    """
+    content = await file.read(MAX_IMPORT_BYTES + 1)
+    if len(content) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=400,
+                            detail=f"File is larger than {MAX_IMPORT_BYTES // (1024 * 1024)} MB")
+    headers, rows = read_import_file(file.filename or "", content)
+    if len(rows) > MAX_IMPORT_ROWS:
+        raise HTTPException(status_code=400,
+                            detail=f"File has {len(rows)} rows; the limit is {MAX_IMPORT_ROWS} per import")
+    columns = map_headers(headers)
+
+    existing_names = {
+        (name.lower(), ptype): no for name, ptype, no in db.query(
+            Product.product_name, Product.product_type, Product.product_no
+        ).filter(Product.tenant_id == context.tenant_id).all()
+    }
+    file_names: dict = {}
+
+    created = 0
+    issues = []
+    for row_no, values in rows:
+        def report(state: str, reason: str):
+            issues.append({"row": row_no, "status": state, "reason": reason,
+                           "values": ["" if v is None else str(v) for v in values]})
+
+        try:
+            data = row_to_product_data(values, columns)
+            product_data = ProductCreate(**data)
+        except ImportRowError as exc:
+            report("failed", str(exc))
+            continue
+        except ValidationError as exc:
+            report("failed", validation_message(exc))
+            continue
+
+        product_type = product_data.product_type
+        name_key = (import_display_name(product_data).lower(), product_type)
+        if name_key in file_names:
+            report("skipped", f"Duplicate of row {file_names[name_key]} (same name and type)")
+            continue
+        if name_key in existing_names:
+            report("skipped", f"Product already exists ({existing_names[name_key]})")
+            continue
+
+        savepoint = db.begin_nested()
+        try:
+            product = build_product(db, request, context, product_data, allow_missing_barcode=True)
+            savepoint.commit()
+        except HTTPException as exc:
+            savepoint.rollback()
+            report("failed", str(exc.detail))
+            continue
+        created += 1
+        file_names.setdefault(name_key, row_no)
+        existing_names.setdefault((product.product_name.lower(), product_type), product.product_no)
+
+    if dry_run:
+        db.rollback()
+    else:
+        db.commit()
+
+    return {
+        "dry_run": dry_run,
+        "total": len(rows),
+        "created": created,
+        "skipped": sum(1 for i in issues if i["status"] == "skipped"),
+        "failed": sum(1 for i in issues if i["status"] == "failed"),
+        "columns": ["" if h is None else str(h) for h in headers],
+        "issues": issues,
+    }
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
@@ -478,6 +609,16 @@ async def create_product(
     """
     Create a new product (admin only)
     """
+    product = build_product(db, request, context, product_data)
+    db.commit()
+    db.refresh(product)
+
+    return ProductResponse.model_validate(product)
+
+
+def build_product(db: Session, request: Optional[Request], context: TenantContext,
+                  product_data: ProductCreate, allow_missing_barcode: bool = False) -> Product:
+    """Validate and add a new product with its audit entry; the caller commits"""
     product_data.product_no = (product_data.product_no or "").strip() or None
     product_data.barcode = (product_data.barcode or "").strip() or None
 
@@ -497,7 +638,8 @@ async def create_product(
         product_data.barcode = None
     else:
         product_data.unit_type = PACKED_UNIT
-    ensure_type_rules(product_data.product_type, product_data.unit_type, product_data.barcode)
+    ensure_type_rules(product_data.product_type, product_data.unit_type, product_data.barcode,
+                      allow_missing_barcode=allow_missing_barcode)
     ensure_pack_size(product_data.net_quantity, product_data.net_unit)
     ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
     gst_item = ensure_gst_item(db, context.tenant_id, product_data.gst_item_id, product_data.category_id)
@@ -523,17 +665,14 @@ async def create_product(
 
     db.add(product)
     db.flush()
-    apply_type_codes(db, product)
+    apply_type_codes(db, product, allow_missing_barcode=allow_missing_barcode)
     if product_data.locations:
         apply_product_locations(db, product, product_data.locations)
     sync_batches(db, product)
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "product", product.id, new_value=product_snapshot(product))
-    db.commit()
-    db.refresh(product)
-
-    return ProductResponse.model_validate(product)
+    return product
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
@@ -586,9 +725,13 @@ async def update_product(
         update_data["unit_type"] = PACKED_UNIT
         if product.is_loose and "barcode" not in update_data:
             update_data["barcode"] = None
+    # A manufacturer item imported without a barcode may stay without one until it is entered
+    keep_missing_barcode = (product_type == product.product_type == Product.TYPE_MANUFACTURER
+                            and not product.barcode)
     ensure_type_rules(product_type, update_data.get("unit_type", product.unit_type),
                       update_data.get("barcode", product.barcode),
-                      generate_instore_barcode(product.id) if product_type != product.product_type else None)
+                      generate_instore_barcode(product.id) if product_type != product.product_type else None,
+                      allow_missing_barcode=keep_missing_barcode)
     ensure_pack_size(update_data.get("net_quantity", product.net_quantity),
                      update_data.get("net_unit", product.net_unit))
     if "category_id" in update_data:
@@ -612,7 +755,7 @@ async def update_product(
         setattr(product, field, value)
     apply_gst_item(product, gst_item, fill_hsn=gst_item_changed and "hsn_code" not in update_data,
                    fill_tax=gst_item_changed and "tax_percent" not in update_data)
-    apply_type_codes(db, product, previous_type)
+    apply_type_codes(db, product, previous_type, allow_missing_barcode=keep_missing_barcode)
     if product_data.locations is not None:
         apply_product_locations(db, product, product_data.locations)
 

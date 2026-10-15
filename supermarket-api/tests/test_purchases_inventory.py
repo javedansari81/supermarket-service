@@ -250,6 +250,15 @@ def test_purchase_new_mrp_creates_batch(client, product, admin_headers):
     assert float(prod["stock_quantity"]) == 110
 
 
+def test_purchase_expiry_updates_product_expiry(client, product, admin_headers):
+    assert buy(client, product, admin_headers, expiry_date="2027-03-01").status_code == 201
+    url = f"/api/v1/products/{product.id}"
+    assert client.get(url, headers=admin_headers).json()["expiry_date"] == "2027-03-01"
+    # A line without an expiry keeps the product's current expiry
+    assert buy(client, product, admin_headers).status_code == 201
+    assert client.get(url, headers=admin_headers).json()["expiry_date"] == "2027-03-01"
+
+
 def test_purchase_same_prices_reuses_batch(client, product, admin_headers):
     first = buy(client, product, admin_headers, mrp=65, selling_price=62).json()
     second = buy(client, product, admin_headers, qty=5, mrp=65, selling_price=62).json()

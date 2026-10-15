@@ -66,7 +66,7 @@ def line_prices(product: Product, item_data):
 def receive_line(db: Session, product: Product, item_data, purchase: Purchase,
                  candidates: Optional[List[ProductBatch]] = None) -> PurchaseItem:
     """Add a purchase line's quantity to stock. Packed items go into the batch with the same
-    MRP / price / expiry (or a new one); the product keeps the latest prices."""
+    MRP / price / expiry (or a new one); the product keeps the latest prices and expiry."""
     mrp, selling_price = line_prices(product, item_data)
     batch = None
     if uses_batches(product):
@@ -80,6 +80,8 @@ def receive_line(db: Session, product: Product, item_data, purchase: Purchase,
     product.stock_quantity = (product.stock_quantity or 0) + item_data.quantity
     product.purchase_price = item_data.unit_cost
     product.mrp, product.selling_price = mrp, selling_price
+    if item_data.expiry_date:
+        product.expiry_date = item_data.expiry_date
     return PurchaseItem(
         product_id=product.id,
         quantity=item_data.quantity,

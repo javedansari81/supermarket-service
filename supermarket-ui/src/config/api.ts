@@ -28,6 +28,8 @@ export const API_ENDPOINTS = {
   // Products
   PRODUCTS: '/products',
   PRODUCT_SEARCH: '/products/search',
+  PRODUCTS_IMPORT: '/products/import',
+  PRODUCTS_IMPORT_TEMPLATE: '/products/import/template',
 
   // Store locations
   LOCATIONS: '/locations',

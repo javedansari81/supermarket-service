@@ -413,3 +413,145 @@ def test_list_unassigned_products(client, product, locations, admin_headers):
     assert client.get(URL, params={"unassigned": True}, headers=admin_headers).json()["total"] == 0
     res = client.get(f"{URL}/search", params={"barcode": "8901234567890"}, headers=admin_headers)
     assert res.json()["locations"][0]["location_code"] == "D01-4"
+
+
+IMPORT_HEADERS = ["Item Name*", "Product Type*", "Brand", "Pack Size", "Pack Unit", "MRP",
+                  "Selling Price"]
+
+
+def xlsx_file(rows, headers=IMPORT_HEADERS):
+    import io
+    from openpyxl import Workbook
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(row)
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return {"file": ("products.xlsx", buffer.getvalue(),
+                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}
+
+
+def import_file(client, headers, files, dry_run=False):
+    return client.post(f"{URL}/import", files=files, params={"dry_run": dry_run}, headers=headers)
+
+
+def test_import_template(client, admin_headers, cashier_headers):
+    res = client.get(f"{URL}/import/template", headers=admin_headers)
+    assert res.status_code == 200 and res.content.startswith(b"PK")
+    assert client.get(f"{URL}/import/template", headers=cashier_headers).status_code == 403
+
+
+def test_import_products_excel(client, admin_headers):
+    rows = [
+        ["Salt", "Manufacturer", "Tata", 1, "kg", 28, 27],
+        ["Toor Dal", "Own packed", None, 500, "g", 90, 85],
+        ["Sugar", "Loose", None, None, None, None, 45],
+        ["Jaggery", "loose", None, None, None, None, 60],
+    ]
+    res = import_file(client, admin_headers, xlsx_file(rows))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert (body["total"], body["created"], body["skipped"], body["failed"]) == (4, 4, 0, 0)
+
+    items = {p["product_name"]: p for p in client.get(
+        URL, params={"page_size": 50}, headers=admin_headers).json()["items"]}
+    # Manufacturer item is imported without a barcode and gets no in-store one
+    salt = items["Salt 1 kg Tata"]
+    assert salt["barcode"] is None and float(salt["reorder_level"]) == 10
+    assert items["Toor Dal 500 g MF"]["barcode"].startswith("20")
+    assert (items["Sugar Loose"]["plu_code"], items["Jaggery Loose"]["plu_code"]) == (1, 2)
+    assert items["Jaggery Loose"]["unit_type"] == "kg"
+
+    missing = client.get(URL, params={"missing_barcode": True}, headers=admin_headers).json()
+    assert [p["product_name"] for p in missing["items"]] == ["Salt 1 kg Tata"]
+
+
+def test_import_skips_existing_and_reports_failures(client, admin_headers):
+    rows = [
+        ["Oil", "Manufacturer", "Fortune", 1, "L", 150, 140],
+        ["Oil", "Manufacturer", "Fortune", 1, "L", 150, 140],
+        ["Bad", "Other", None, None, "box", None, "abc"],
+        ["Pricey", "Own packed", None, 1, "kg", 50, 60],
+        ["Rice", "Manufacturer", None, 5, "kg", 400, 380],
+    ]
+    body = import_file(client, admin_headers, xlsx_file(rows)).json()
+    assert (body["created"], body["skipped"], body["failed"]) == (2, 1, 2)
+    issues = {i["row"]: i for i in body["issues"]}
+    assert issues[3]["reason"] == "Duplicate of row 2 (same name and type)"
+    bad = issues[4]["reason"]
+    assert issues[4]["status"] == "failed"
+    for text in ("Product Type 'Other'", "Selling Price must be a number", "Pack Unit 'box'"):
+        assert text in bad
+    assert "MRP" in issues[5]["reason"]
+    assert body["issues"][0]["values"][0] == "Oil"
+
+    # Importing the same file again skips everything that was created
+    again = import_file(client, admin_headers, xlsx_file(rows)).json()
+    assert (again["created"], again["skipped"], again["failed"]) == (0, 3, 2)
+    assert "Product already exists (" in again["issues"][0]["reason"]
+
+
+def test_import_dry_run_saves_nothing(client, admin_headers):
+    rows = [["Salt", "Own packed", None, 1, "kg", 28, 27]]
+    body = import_file(client, admin_headers, xlsx_file(rows), dry_run=True).json()
+    assert (body["dry_run"], body["created"]) == (True, 1)
+    assert client.get(URL, headers=admin_headers).json()["total"] == 0
+
+
+def test_import_expiry_for_every_type_and_expiry_filter(client, admin_headers):
+    from datetime import date, datetime, timedelta
+    soon = date.today() + timedelta(days=5)
+    headers = ["Item Name", "Product Type", "Brand", "Pack Size", "Pack Unit", "Selling Price",
+               "Expiry Date"]
+    rows = [
+        ["Salt", "Manufacturer", "Tata", 1, "kg", 27, datetime(soon.year, soon.month, soon.day)],
+        ["Guava", "Own packed", None, 1, "kg", 80, "30/03/2027"],
+        ["Sugar", "Loose", None, None, None, 45, "2020-01-01"],
+        ["Rice", "Loose", None, None, None, 60, "31/02/2027"],
+    ]
+    body = import_file(client, admin_headers, xlsx_file(rows, headers)).json()
+    assert (body["created"], body["failed"]) == (3, 1)
+    items = {p["item_name"]: p["expiry_date"]
+             for p in client.get(URL, headers=admin_headers).json()["items"]}
+    assert items == {"Salt": soon.isoformat(), "Guava": "2027-03-30", "Sugar": "2020-01-01"}
+
+    names = lambda expiry: [p["item_name"] for p in client.get(
+        URL, params={"expiry": expiry}, headers=admin_headers).json()["items"]]
+    assert names("expired") == ["Sugar"]
+    assert names("7") == ["Salt"]
+    assert names("30") == ["Salt"]
+    assert client.get(URL, params={"expiry": "bad"}, headers=admin_headers).status_code == 422
+
+
+def test_import_csv_and_file_errors(client, admin_headers, admin_b_headers, cashier_headers):
+    # Columns that are not in the template (e.g. Barcode) are ignored
+    csv = "Item Name,Product Type,Barcode,Selling Price\r\nSalt,Manufacturer,8901058000016,27\r\n"
+    files = {"file": ("p.csv", csv.encode(), "text/csv")}
+    body = import_file(client, admin_headers, files).json()
+    assert (body["created"], body["failed"]) == (1, 0)
+    assert client.get(URL, headers=admin_headers).json()["items"][0]["barcode"] is None
+    # Each store has its own products: the same product is new for tenant B
+    assert import_file(client, admin_b_headers, files).json()["created"] == 1
+    assert import_file(client, cashier_headers, files).status_code == 403
+
+    bad = lambda name, content: import_file(client, admin_headers, {"file": (name, content, "x")})
+    assert bad("p.txt", b"x").status_code == 400
+    assert bad("p.xls", b"x").status_code == 400
+    assert bad("p.xlsx", b"not excel").status_code == 400
+    assert bad("p.csv", b"Item Name\r\nSalt\r\n").json()["detail"].startswith("Missing column(s): Product Type")
+    assert bad("p.csv", b"Item Name,Product Type\r\n").status_code == 400
+
+
+def test_edit_manufacturer_without_barcode(client, admin_headers):
+    rows = [["Atta", "Manufacturer", "Aashirvaad", 5, "kg", 300, 290]]
+    import_file(client, admin_headers, xlsx_file(rows))
+    atta = client.get(URL, headers=admin_headers).json()["items"][0]
+    put = lambda body: client.put(f"{URL}/{atta['id']}", json=body, headers=admin_headers)
+    res = put({"selling_price": 280})
+    assert res.status_code == 200 and res.json()["barcode"] is None
+    res = put({"barcode": "8901725000011"})
+    assert res.status_code == 200 and res.json()["barcode"] == "8901725000011"
+    # Once set, an empty barcode keeps the current one
+    assert put({"barcode": ""}).json()["barcode"] == "8901725000011"

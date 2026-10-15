@@ -7,10 +7,11 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, Divider, Autocomplete, Typography, Collapse, createFilterOptions,
+  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Visibility, Add, Download, Restore } from '@mui/icons-material';
+import { Edit, Delete, Search, Refresh, Visibility, Add, Download, Restore, Upload } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -86,12 +87,49 @@ const formatLocations = (locations?: ProductLocation[]) =>
 
 const emptyForm = {
   item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', gst_item_id: '', category_id: '', mrp: '', selling_price: '',
-  purchase_price: '', tax_percent: '', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
+  tax_percent: '', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
   net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
 
 const formatPackSize = (p: Product) =>
   p.net_quantity && p.net_unit ? `${Number(p.net_quantity)} ${p.net_unit}` : '-';
+
+// Expiry as DD/MM/YYYY with days left: red when expired, orange within 7 days, yellow within 30
+const expiryInfo = (value?: string | null) => {
+  if (!value) return null;
+  const [y, m, d] = value.split('-').map(Number);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const days = Math.round((new Date(y, m - 1, d).getTime() - today.getTime()) / 86400000);
+  const label = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
+  const color: 'error' | 'warning' | 'default' = days < 0 ? 'error' : days <= 7 ? 'warning' : 'default';
+  const note = days < 0 ? 'Expired' : days === 0 ? 'Expires today' : `${days} day${days === 1 ? '' : 's'} left`;
+  return { label, days, color, note };
+};
+
+interface ImportIssue { row: number; status: 'skipped' | 'failed'; reason: string; values: string[]; }
+interface ImportResult {
+  dry_run: boolean; total: number; created: number; skipped: number; failed: number;
+  columns: string[]; issues: ImportIssue[];
+}
+
+const csvCell = (value: string) => /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
+
+const downloadBlob = (data: Blob, filename: string) => {
+  const url = URL.createObjectURL(data);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+// Original rows plus Row, Status and Reason; the file can be fixed and uploaded again
+const downloadImportReport = (result: ImportResult) => {
+  const lines = [['Row', 'Status', 'Reason', ...result.columns],
+    ...result.issues.map((i) => [String(i.row), i.status, i.reason, ...i.values])];
+  const csv = '\uFEFF' + lines.map((l) => l.map(csvCell).join(',')).join('\r\n');
+  downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), 'product_import_report.csv');
+};
 
 const Products: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
@@ -109,7 +147,13 @@ const Products: React.FC = () => {
   const [activeLocations, setActiveLocations] = useState<StoreLocation[]>([]);
   const [locationFilter, setLocationFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [barcodeFilter, setBarcodeFilter] = useState('');
+  const [expiryFilter, setExpiryFilter] = useState('');
   const [formLocations, setFormLocations] = useState<FormLocation[]>([]);
+  const [importOpen, setImportOpen] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -119,7 +163,9 @@ const Products: React.FC = () => {
           page: page + 1, page_size: pageSize, search,
           location_id: locationFilter && locationFilter !== 'unassigned' ? parseInt(locationFilter) : undefined,
           unassigned: locationFilter === 'unassigned' ? true : undefined,
-          product_type: typeFilter || undefined
+          product_type: typeFilter || undefined,
+          missing_barcode: barcodeFilter === 'missing' ? true : undefined,
+          expiry: expiryFilter || undefined
         }
       });
       setProducts(response.data.items);
@@ -129,7 +175,7 @@ const Products: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, search, locationFilter, typeFilter]);
+  }, [page, pageSize, search, locationFilter, typeFilter, barcodeFilter, expiryFilter]);
 
   const fetchCategories = async () => {
     try {
@@ -169,7 +215,7 @@ const Products: React.FC = () => {
         name_edited: !!product.name_is_custom, brand: product.brand || '', barcode: product.barcode || '',
         hsn_code: product.hsn_code || '', gst_item_id: product.gst_item_id?.toString() || '',
         category_id: product.category_id?.toString() || '', mrp: product.mrp?.toString() || '',
-        selling_price: product.selling_price?.toString() || '', purchase_price: product.purchase_price?.toString() || '',
+        selling_price: product.selling_price?.toString() || '',
         tax_percent: Number(product.tax_percent ?? 0).toString(),
         reorder_level: Number(product.reorder_level ?? 10).toString(),
         unit_type: typeOf(product) === 'loose' ? product.unit_type : PACKED_UNIT, product_type: typeOf(product),
@@ -221,7 +267,7 @@ const Products: React.FC = () => {
     setFormData({
       ...formData, product_type: type,
       ...(looseChanged ? { unit_type: toLoose ? 'kg' : PACKED_UNIT, barcode: '' } : {}),
-      ...(toLoose ? { brand: '', mrp: '' } : { expiry_date: '' }),
+      ...(toLoose ? { brand: '', mrp: '' } : {}),
       ...(type === 'own_packed' ? { brand: STORE_BRAND } : {}),
       ...(toManufacturer ? {
         brand: formData.brand.trim().toUpperCase() === STORE_BRAND ? '' : formData.brand,
@@ -246,23 +292,59 @@ const Products: React.FC = () => {
   const handleScaleExport = async () => {
     try {
       const response = await api.get(API_ENDPOINTS.BARCODE_SCALE_EXPORT, { responseType: 'blob' });
-      const url = URL.createObjectURL(response.data);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'scale_items.csv';
-      link.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(response.data, 'scale_items.csv');
     } catch (error) {
       toast.error('Failed to export scale items');
     }
   };
+
+  const handleTemplateDownload = async () => {
+    try {
+      const response = await api.get(API_ENDPOINTS.PRODUCTS_IMPORT_TEMPLATE, { responseType: 'blob' });
+      downloadBlob(response.data, 'product_import_template.xlsx');
+    } catch (error) {
+      toast.error('Failed to download the template');
+    }
+  };
+
+  const openImport = () => {
+    setImportFile(null);
+    setImportResult(null);
+    setImportOpen(true);
+  };
+
+  const runImport = async (dryRun: boolean) => {
+    if (!importFile) return;
+    const form = new FormData();
+    form.append('file', importFile);
+    setImportBusy(true);
+    try {
+      const response = await api.post<ImportResult>(API_ENDPOINTS.PRODUCTS_IMPORT, form, {
+        params: { dry_run: dryRun },
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setImportResult(response.data);
+      if (!dryRun) {
+        toast.success(`${response.data.created} product(s) imported`);
+        fetchProducts();
+      }
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to import products');
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  // A manufacturer product imported without a barcode can be saved again without one
+  const barcodeOptional = !!editProduct && typeOf(editProduct) === 'manufacturer' && !editProduct.barcode;
 
   const handleSave = async () => {
     const productType = formData.product_type;
     if (!productType) { toast.error('Select a product type'); return; }
     if (!formData.item_name.trim()) { toast.error('Item name is required'); return; }
     if (!formData.selling_price) { toast.error('Selling price is required'); return; }
-    if (isManufacturer && !formData.barcode) {
+    if (isManufacturer && !formData.barcode && !barcodeOptional) {
       toast.error("Enter the barcode printed on the manufacturer's pack"); return;
     }
     const mrp = !isLoose && formData.mrp ? parseFloat(formData.mrp) : undefined;
@@ -285,11 +367,10 @@ const Products: React.FC = () => {
         gst_item_id: formData.gst_item_id ? parseInt(formData.gst_item_id) : undefined,
         category_id: formData.category_id ? parseInt(formData.category_id) : undefined,
         mrp: isLoose ? null : mrp, selling_price: sellingPrice,
-        purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
         unit_type: formData.unit_type, product_type: productType, is_loose: isLoose,
         net_quantity: netQuantity, net_unit: netUnit,
-        expiry_date: isLoose ? formData.expiry_date || undefined : null, status: formData.status,
+        expiry_date: formData.expiry_date || null, status: formData.status,
         locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
       };
 
@@ -351,6 +432,13 @@ const Products: React.FC = () => {
       `₹${Number(params.value || 0).toFixed(2)}${params.row.is_loose ? `/${params.row.unit_type}` : ''}` },
     { field: 'stock_quantity', headerName: 'Stock', width: 100, renderCell: (params: GridRenderCellParams) =>
       `${Number(params.value || 0)} ${params.row.unit_type || ''}` },
+    { field: 'expiry_date', headerName: 'Expiry', width: 115, renderCell: (params: GridRenderCellParams) => {
+      const info = expiryInfo(params.value);
+      if (!info) return '-';
+      return info.days <= 30
+        ? <Chip label={info.label} size="small" color={info.color} variant={info.color === 'default' ? 'outlined' : 'filled'} title={info.note} />
+        : <span title={info.note}>{info.label}</span>;
+    }},
     { field: 'locations', headerName: 'Location', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => {
       const loc = primaryLocation(params.row.locations);
       return loc ? <span title={formatLocations(params.row.locations)}>{loc.location_code}</span> : '-';
@@ -394,10 +482,30 @@ const Products: React.FC = () => {
               ))}
             </Select>
           </FormControl>
+          <FormControl size="small" sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}>
+            <InputLabel shrink>Barcode</InputLabel>
+            <Select label="Barcode" value={barcodeFilter} displayEmpty notched
+              onChange={(e) => { setBarcodeFilter(e.target.value); setPage(0); }}>
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="missing">Missing barcode</MenuItem>
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}>
+            <InputLabel shrink>Expiry</InputLabel>
+            <Select label="Expiry" value={expiryFilter} displayEmpty notched
+              onChange={(e) => { setExpiryFilter(e.target.value); setPage(0); }}>
+              <MenuItem value="">All</MenuItem>
+              <MenuItem value="expired">Expired</MenuItem>
+              <MenuItem value="7">Within 7 days</MenuItem>
+              <MenuItem value="30">Within 30 days</MenuItem>
+            </Select>
+          </FormControl>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', ml: 'auto' }}>
             <IconButton title="Refresh" onClick={fetchProducts}><Refresh /></IconButton>
-            <Button variant="outlined" startIcon={<Download />} onClick={handleScaleExport} sx={{ height: 40 }}
-              title="Loose items with PLU and rate, for loading into the weighing scale">Scale file</Button>
+            <IconButton onClick={openImport} aria-label="Import products"
+              title="Import products from an Excel or CSV file"><Upload /></IconButton>
+            <IconButton onClick={handleScaleExport} aria-label="Export scale file"
+              title="Export scale file: loose items with PLU and rate, for loading into the weighing scale"><Download /></IconButton>
           </Box>
         </Box>
       </Card>
@@ -464,10 +572,10 @@ const Products: React.FC = () => {
               </Grid>
             ) : (
               <Grid size={{ xs: 12, md: 6 }}>
-                <TextField fullWidth label={isManufacturer ? 'Barcode' : 'Barcode (optional)'} value={formData.barcode}
-                  required={isManufacturer}
+                <TextField fullWidth label={isManufacturer && !barcodeOptional ? 'Barcode' : 'Barcode (optional)'} value={formData.barcode}
+                  required={isManufacturer && !barcodeOptional}
                   helperText={isManufacturer
-                    ? "Scan or type the barcode printed on the manufacturer's pack"
+                    ? `Scan or type the barcode printed on the manufacturer's pack${barcodeOptional ? '. Imported without one; can be added later' : ''}`
                     : 'Leave blank to generate a new MF barcode (print it from the Barcode page). To reuse MF labels already printed, scan one here'}
                   onChange={(e) => setFormData({ ...formData, barcode: e.target.value.trim() })} />
               </Grid>
@@ -537,26 +645,20 @@ const Products: React.FC = () => {
             </Grid>
             <Grid size={12}><Divider>Pricing {isLoose ? `(per ${formData.unit_type})` : '(per unit)'}</Divider></Grid>
             {!isLoose && (
-              <Grid size={{ xs: 12, md: 3 }}>
+              <Grid size={{ xs: 12, md: 4 }}>
                 <TextField fullWidth label="MRP" type="number" value={formData.mrp}
                   inputProps={{ step: 'any', min: 0 }} helperText={isOwnPacked ? 'Printed on the MF label' : 'As printed on pack'}
                   InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
                   onChange={(e) => setFormData({ ...formData, mrp: e.target.value })} />
               </Grid>
             )}
-            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
+            <Grid size={{ xs: 12, md: isLoose ? 6 : 4 }}>
               <TextField fullWidth label="Selling Price" type="number" required value={formData.selling_price}
                 inputProps={{ step: 'any', min: 0 }} helperText="GST inclusive"
                 InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
                 onChange={(e) => setFormData({ ...formData, selling_price: e.target.value })} />
             </Grid>
-            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
-              <TextField fullWidth label="Purchase Price" type="number" value={formData.purchase_price}
-                inputProps={{ step: 'any', min: 0 }}
-                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} />
-            </Grid>
-            <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
+            <Grid size={{ xs: 12, md: isLoose ? 6 : 4 }}>
               <FormControl fullWidth required color={gstOverridden ? 'warning' : undefined} focused={gstOverridden || undefined}>
                 <InputLabel>GST %</InputLabel>
                 <Select value={formData.tax_percent} label="GST %"
@@ -582,13 +684,11 @@ const Products: React.FC = () => {
                 inputProps={{ step: isLoose ? 'any' : 1, min: 0 }}
                 onChange={(e) => setFormData({ ...formData, reorder_level: e.target.value })} />
             </Grid>
-            {isLoose && (
-              <Grid size={{ xs: 12, md: 4 }}>
-                <TextField fullWidth label="Expiry Date" type="date" value={formData.expiry_date}
-                  InputLabelProps={{ shrink: true }}
-                  onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })} />
-              </Grid>
-            )}
+            <Grid size={{ xs: 12, md: 4 }}>
+              <TextField fullWidth label="Expiry Date" type="date" value={formData.expiry_date}
+                InputLabelProps={{ shrink: true }} helperText="Updated by each purchase that has an expiry"
+                onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })} />
+            </Grid>
             {editProduct && (
               <Grid size={{ xs: 12, md: 4 }}>
                 <FormControl fullWidth><InputLabel>Status</InputLabel>
@@ -662,7 +762,7 @@ const Products: React.FC = () => {
                 ['Reorder Level', `${Number(viewProduct.reorder_level ?? 0)} ${viewProduct.unit_type || ''}`],
                 ['Unit', viewProduct.unit_type || '-'],
                 ...(viewProduct.is_loose ? [] : [['Pack Size', formatPackSize(viewProduct)]]),
-                ...(viewProduct.is_loose ? [['Expiry Date', viewProduct.expiry_date || '-']] : []),
+                ['Expiry Date', (() => { const info = expiryInfo(viewProduct.expiry_date); return info ? `${info.label} (${info.note})` : '-'; })()],
               ].map(([label, value]) => (
                 <Grid key={label} size={{ xs: 6, md: 3 }}>
                   <Typography variant="caption" color="text.secondary">{label}</Typography>
@@ -680,6 +780,67 @@ const Products: React.FC = () => {
           <Button onClick={() => setViewProduct(null)}>Close</Button>
           <Button variant="contained" startIcon={<Edit />}
             onClick={() => { const p = viewProduct; setViewProduct(null); if (p) handleOpenDialog(p); }}>Edit</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={importOpen} onClose={() => !importBusy && setImportOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Import Products</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Fill the template, one product per row, and upload it as Excel (.xlsx) or CSV.
+            Products that already exist (same barcode, or same name and type when there is no barcode) are skipped.
+            Manufacturer items may be left without a barcode and updated later.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+            <Button variant="outlined" startIcon={<Download />} onClick={handleTemplateDownload}>Download template</Button>
+            <Button variant="outlined" component="label" startIcon={<Upload />} disabled={importBusy}>
+              Choose file
+              <input hidden type="file" accept=".xlsx,.csv"
+                onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); e.target.value = ''; }} />
+            </Button>
+            <Typography variant="body2">{importFile?.name ?? 'No file chosen'}</Typography>
+          </Box>
+          {importBusy && <LinearProgress sx={{ mb: 2 }} />}
+          {importResult && (
+            <>
+              <Alert severity={importResult.failed ? 'warning' : 'success'} sx={{ mb: 2 }}>
+                {importResult.dry_run ? 'Check only, nothing saved. ' : ''}
+                {importResult.total} row(s): {importResult.created} {importResult.dry_run ? 'can be created' : 'created'},
+                {' '}{importResult.skipped} skipped, {importResult.failed} failed
+              </Alert>
+              {importResult.issues.length > 0 && (
+                <>
+                  <Box sx={{ maxHeight: 300, overflow: 'auto', mb: 1 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow><TableCell>Row</TableCell><TableCell>Status</TableCell><TableCell>Reason</TableCell></TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {importResult.issues.map((i) => (
+                          <TableRow key={i.row}>
+                            <TableCell>{i.row}</TableCell>
+                            <TableCell>
+                              <Chip size="small" label={i.status} color={i.status === 'failed' ? 'error' : 'default'} />
+                            </TableCell>
+                            <TableCell>{i.reason}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                  <Button size="small" startIcon={<Download />} onClick={() => downloadImportReport(importResult)}>
+                    Download report
+                  </Button>
+                </>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportOpen(false)} disabled={importBusy}>Close</Button>
+          <Button onClick={() => runImport(true)} disabled={!importFile || importBusy}>Check file</Button>
+          <Button variant="contained" onClick={() => runImport(false)}
+            disabled={!importFile || importBusy || (!!importResult && !importResult.dry_run)}>Import</Button>
         </DialogActions>
       </Dialog>
     </Box>

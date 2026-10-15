@@ -43,6 +43,7 @@ const productBatchDefaults = (product?: Product): BatchFields => ({
   ...EMPTY_BATCH,
   mrp: product?.mrp != null ? String(Number(product.mrp)) : '',
   selling_price: product?.selling_price != null ? String(Number(product.selling_price)) : '',
+  expiry_date: product?.expiry_date || '',
 });
 
 const batchFieldsError = (b: BatchFields): string | null => {
@@ -290,7 +291,7 @@ const Purchases: React.FC = () => {
     <>
       <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="MRP" type="number" value={b.mrp} onChange={(e) => set({ ...b, mrp: e.target.value })} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
       <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Selling Price" type="number" value={b.selling_price} onChange={(e) => set({ ...b, selling_price: e.target.value })} inputProps={{ step: 'any', min: 0 }} fullWidth /></Grid>
-      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Expiry" type="date" value={b.expiry_date} disabled={loose} onChange={(e) => set({ ...b, expiry_date: e.target.value })} InputLabelProps={{ shrink: true }} fullWidth /></Grid>
+      <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Expiry" type="date" value={b.expiry_date} onChange={(e) => set({ ...b, expiry_date: e.target.value })} InputLabelProps={{ shrink: true }} fullWidth /></Grid>
       <Grid size={{ xs: 6, sm: 3 }}><TextField size="small" label="Batch No" value={b.batch_no} disabled={loose} onChange={(e) => set({ ...b, batch_no: e.target.value })} inputProps={{ maxLength: 50 }} fullWidth /></Grid>
     </>
   );
@@ -567,7 +568,7 @@ const Purchases: React.FC = () => {
                       <TableCell><TextField size="small" type="number" value={item.unit_price} onChange={(e) => updateEditItem(index, 'unit_price', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
                       <TableCell><TextField size="small" type="number" value={item.mrp} onChange={(e) => updateEditItem(index, 'mrp', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
                       <TableCell><TextField size="small" type="number" value={item.selling_price} onChange={(e) => updateEditItem(index, 'selling_price', e.target.value)} inputProps={{ step: 'any', min: 0 }} /></TableCell>
-                      <TableCell><TextField size="small" type="date" value={item.expiry_date} disabled={loose} onChange={(e) => updateEditItem(index, 'expiry_date', e.target.value)} /></TableCell>
+                      <TableCell><TextField size="small" type="date" value={item.expiry_date} onChange={(e) => updateEditItem(index, 'expiry_date', e.target.value)} /></TableCell>
                       <TableCell><TextField size="small" value={item.batch_no} disabled={loose} onChange={(e) => updateEditItem(index, 'batch_no', e.target.value)} inputProps={{ maxLength: 50 }} /></TableCell>
                       <TableCell align="right">{money((parseFloat(item.quantity) || 0) * (parseFloat(item.unit_price) || 0))}</TableCell>
                       <TableCell><IconButton size="small" onClick={() => setEditItems(editItems.filter((_, i) => i !== index))}><Delete fontSize="small" /></IconButton></TableCell>
