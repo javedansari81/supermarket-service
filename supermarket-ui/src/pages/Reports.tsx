@@ -1,7 +1,7 @@
 /**
  * Reports Page
  */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Typography, Card, CardContent, Tabs, Tab,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
@@ -33,10 +33,8 @@ const Reports: React.FC = () => {
   const [topProducts, setTopProducts] = useState<TopProduct[]>([]);
   const [categorySales, setCategorySales] = useState<CategorySales[]>([]);
   const [cashierPerf, setCashierPerf] = useState<CashierPerf[]>([]);
-  const [loading, setLoading] = useState(false);
 
-  const fetchData = async () => {
-    setLoading(true);
+  const fetchData = useCallback(async () => {
     const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD') };
     try {
       const [summary, products, categories, cashiers] = await Promise.all([
@@ -50,10 +48,9 @@ const Reports: React.FC = () => {
       setCategorySales(categories.data.categories || []);
       setCashierPerf(cashiers.data.cashiers || []);
     } catch (error) { toast.error('Failed to fetch reports'); }
-    finally { setLoading(false); }
-  };
+  }, [fromDate, toDate]);
 
-  useEffect(() => { fetchData(); }, [fromDate, toDate]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   return (
     <Box>
