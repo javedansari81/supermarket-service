@@ -33,6 +33,8 @@ api.interceptors.response.use(
       // Clear auth data and redirect to login
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
+      localStorage.removeItem('token_expires_at');
+      localStorage.removeItem('last_activity');
       window.location.href = '/login';
     }
     return Promise.reject(error);

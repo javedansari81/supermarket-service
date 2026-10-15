@@ -21,7 +21,7 @@ For install and database setup, see [README.md](README.md).
 3. Click the eye icon to show or hide the password.
 4. Click **Sign In**.
 
-On success you land on **Dashboard**. Invalid credentials show an error. Your session is stored in the browser until you log out.
+On success you land on **Dashboard**. Invalid credentials show an error. Your session is stored in the browser until you log out, and you are logged out automatically after **30 minutes of inactivity**.
 
 ### Screen layout
 
@@ -511,7 +511,7 @@ Save after changes. Currency in the UI is **₹**.
 | Invoice print window blank | Allow pop-ups for the site and try Print again. |
 | "Return window of 7 days has passed" | Ask an admin to process the return. |
 | Cannot void a sale | Cashiers can only void their own same-day sales. Sales with returns cannot be voided. |
-| Session lost | Sign in again. Logout clears the stored token. |
+| Session lost | Sign in again. Logout, or 30 minutes without activity, clears the stored token. |
 | Location missing in product form | Only active locations are listed. Create or reactivate it on **Locations**. |
 | Put-away List shows **Unassigned** | Assign a location to that product on **Products**. |
 

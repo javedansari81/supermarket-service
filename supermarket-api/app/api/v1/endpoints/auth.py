@@ -18,6 +18,31 @@ from app.api.deps import get_current_user
 router = APIRouter()
 
 
+def _issue_token(user: User, tenant: Tenant) -> Token:
+    """Create a fresh access token response for the user"""
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={
+            "user_id": user.id,
+            "username": user.username,
+            "tenant_id": user.tenant_id,
+            "role": user.role.role_name
+        },
+        expires_delta=access_token_expires
+    )
+
+    return Token(
+        access_token=access_token,
+        token_type="bearer",
+        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        user_id=user.id,
+        username=user.username,
+        role=user.role.role_name,
+        tenant_id=user.tenant_id,
+        tenant_name=tenant.tenant_name
+    )
+
+
 @router.post("/login", response_model=Token)
 async def login(
     request: Request,
@@ -60,29 +85,16 @@ async def login(
     user.last_login = datetime.utcnow()
     record_audit(db, request, user.tenant_id, user.id, AuditLog.ACTION_LOGIN, "user", user.id)
     db.commit()
-    
-    # Create access token
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={
-            "user_id": user.id,
-            "username": user.username,
-            "tenant_id": user.tenant_id,
-            "role": user.role.role_name
-        },
-        expires_delta=access_token_expires
-    )
-    
-    return Token(
-        access_token=access_token,
-        token_type="bearer",
-        expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user_id=user.id,
-        username=user.username,
-        role=user.role.role_name,
-        tenant_id=user.tenant_id,
-        tenant_name=tenant.tenant_name
-    )
+
+    return _issue_token(user, tenant)
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(current_user: User = Depends(get_current_user)):
+    """
+    Issue a new access token for an active session
+    """
+    return _issue_token(current_user, current_user.tenant)
 
 
 @router.post("/logout")

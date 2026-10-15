@@ -114,3 +114,25 @@ def test_logout(client, admin_headers):
 
 def test_logout_requires_token(client, seed):
     assert client.post("/api/v1/auth/logout").status_code == 401
+
+
+def test_refresh_issues_new_token(client, admin_headers):
+    res = client.post("/api/v1/auth/refresh", headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["access_token"]
+    assert body["expires_in"] > 0
+    assert body["username"] == "admin_a"
+    assert body["tenant_name"] == "Tenant A"
+    new_headers = {"Authorization": f"Bearer {body['access_token']}"}
+    assert client.get("/api/v1/auth/me", headers=new_headers).status_code == 200
+
+
+def test_refresh_requires_token(client, seed):
+    assert client.post("/api/v1/auth/refresh").status_code == 401
+
+
+def test_refresh_rejects_expired_token(client, seed):
+    token = create_access_token({"user_id": seed["admin"].id}, expires_delta=timedelta(minutes=-1))
+    res = client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {token}"})
+    assert res.status_code == 401
