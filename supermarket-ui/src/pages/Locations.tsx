@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Block, Refresh, Search, Inventory2 } from '@mui/icons-material';
+import { Edit, Block, Search, Inventory2 } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -192,7 +192,7 @@ const Locations: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Store Locations" actions={<IconButton onClick={refresh}><Refresh /></IconButton>} />
+      <PageHeader title="Store Locations" />
 
       <Card sx={{ mb: 2, p: 2 }}>
         <TextField fullWidth placeholder="Search by code or description..." value={search}

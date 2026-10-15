@@ -219,7 +219,6 @@ Groups products (Groceries, Beverages, Dairy, and so on). Sample data is seeded 
 1. Open **Categories**.
 2. **Add Category** — name (required), description, status Active / Inactive.
 3. Pencil to edit; trash to delete (confirm first).
-4. Refresh reloads the list.
 
 Inactive categories stay in history but should not be used for new products. Assign a category on each product so **Reports → Category Sales** is meaningful.
 
@@ -258,7 +257,7 @@ A location is a rack, or one shelf of a rack. The rack name starts with its type
 - Pencil — edit
 - Block icon — deactivate (confirm first). Products assigned there keep the assignment, but the location can no longer be newly assigned.
 
-Search by code or description; refresh reloads the list. Print each location code as a shelf label so staff can match products to shelves.
+Search by code or description. Print each location code as a shelf label so staff can match products to shelves.
 
 ---
 
@@ -275,7 +274,7 @@ Vendor master used when recording purchases.
 3. Optional: contact person, phone, email, address, status.
 4. **Save**. A supplier code is assigned.
 
-Search and refresh work like Products. Only **active** suppliers appear in the New Purchase supplier list.
+Search works like Products. Only **active** suppliers appear in the New Purchase supplier list.
 
 ---
 
@@ -438,7 +437,7 @@ Staff accounts. Roles: **admin** or **cashier**.
 - Pencil — email, name, role, status
 - Lock — **Reset Password** (new password → **Reset**)
 - Trash — confirm delete
-- Search and refresh as on other lists
+- Search as on other lists
 
 Inactive users should not sign in. Give cashiers **cashier**; keep **admin** for owners and managers.
 

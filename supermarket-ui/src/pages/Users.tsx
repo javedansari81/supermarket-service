@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Lock } from '@mui/icons-material';
+import { Edit, Delete, Search, Lock } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -141,7 +141,6 @@ const Users: React.FC = () => {
         <Box sx={{ display: 'flex', gap: 2 }}>
           <TextField placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1 }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
-          <IconButton onClick={fetchUsers}><Refresh /></IconButton>
         </Box>
       </Card>
       <Card>

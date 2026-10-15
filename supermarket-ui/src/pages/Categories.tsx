@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Refresh } from '@mui/icons-material';
+import { Edit, Delete } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -121,7 +121,7 @@ const Categories: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Categories" actions={<IconButton onClick={fetchCategories}><Refresh /></IconButton>} />
+      <PageHeader title="Categories" />
 
       <Card>
         <DataGrid rows={categories} columns={columns} loading={loading} rowCount={total}

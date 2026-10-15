@@ -3,11 +3,10 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Card, IconButton,
+  Box, Card,
   FormControl, InputLabel, Select, MenuItem, Chip, Tooltip,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Refresh } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
@@ -79,7 +78,7 @@ const AuditLogs: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Audit Logs" actions={<IconButton onClick={fetchLogs}><Refresh /></IconButton>} />
+      <PageHeader title="Audit Logs" />
       <Card sx={{ mb: 2, p: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <FormControl sx={{ minWidth: 120, flex: { xs: '1 1 calc(50% - 8px)', sm: '0 0 auto' } }}>

@@ -10,7 +10,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { AttachFile, Block, CloudUpload, Delete, Edit, OpenInNew, Place, Refresh, Visibility } from '@mui/icons-material';
+import { AttachFile, Block, CloudUpload, Delete, Edit, OpenInNew, Place, Visibility } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
@@ -366,7 +366,7 @@ const Purchases: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Purchases" actions={<IconButton onClick={fetchPurchases}><Refresh /></IconButton>} />
+      <PageHeader title="Purchases" />
       <Card>
         <DataGrid rows={purchases} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
