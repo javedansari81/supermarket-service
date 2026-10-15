@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     tenants,
     users,
     categories,
+    gst_items,
     products,
     store_locations,
     suppliers,
@@ -35,6 +36,9 @@ api_router.include_router(users.router, prefix="/users", tags=["Users"])
 
 # Category management
 api_router.include_router(categories.router, prefix="/categories", tags=["Categories"])
+
+# GST lookup items (HSN code and GST %)
+api_router.include_router(gst_items.router, prefix="/gst-items", tags=["GST Items"])
 
 # Product management
 api_router.include_router(products.router, prefix="/products", tags=["Products"])

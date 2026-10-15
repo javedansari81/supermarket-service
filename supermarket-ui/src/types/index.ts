@@ -51,11 +51,20 @@ export interface Category {
   id: number;
   category_name: string;
   description?: string;
-  hsn_code?: string | null;
-  gst_percent_loose?: number | string | null;
-  gst_percent_packed?: number | string | null;
+  gst_item_ids?: number[];
   status: string;
   created_at: string;
+}
+
+// GST lookup item (shared by all stores) and the category it is listed under in this store
+export interface GstItem {
+  id: number;
+  item_name: string;
+  hsn_code: string;
+  gst_percent_loose: number | string;  // sold loose / weighed in front of customer
+  gst_percent_packed: number | string; // pre-packaged and labelled
+  category_id?: number | null;
+  category_name?: string | null;
 }
 
 // Store location types
@@ -124,6 +133,8 @@ export interface Product {
   category?: Category;
   brand?: string;
   hsn_code?: string;
+  gst_item_id?: number | null;
+  gst_overridden?: boolean;
   is_loose?: boolean;
   product_type?: ProductType;
   plu_code?: number | null;

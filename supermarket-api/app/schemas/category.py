@@ -2,43 +2,27 @@
 Category schemas
 """
 from typing import Optional, List, Literal
-from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 from app.schemas.base import TimestampSchema
 
 
-class CategoryGstFields(BaseModel):
-    """HSN and GST % filled into new products of the category"""
-    hsn_code: Optional[str] = None
-    gst_percent_loose: Optional[Decimal] = Field(None, ge=0, le=100)
-    gst_percent_packed: Optional[Decimal] = Field(None, ge=0, le=100)
-
-    @field_validator("hsn_code", mode="before")
-    @classmethod
-    def validate_hsn_code(cls, v):
-        if isinstance(v, str):
-            v = v.strip() or None
-        if v is not None and not (v.isdigit() and 4 <= len(v) <= 8):
-            raise ValueError("HSN code must be 4 to 8 digits")
-        return v
-
-
-class CategoryBase(CategoryGstFields):
+class CategoryBase(BaseModel):
     """Base category schema"""
     category_name: str
     description: Optional[str] = None
 
 
 class CategoryCreate(CategoryBase):
-    """Schema for creating a category"""
-    pass
+    """Schema for creating a category. GST items listed here move from any other category."""
+    gst_item_ids: Optional[List[int]] = None
 
 
-class CategoryUpdate(CategoryGstFields):
+class CategoryUpdate(BaseModel):
     """Schema for updating a category"""
     category_name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[Literal["active", "inactive"]] = None
+    gst_item_ids: Optional[List[int]] = None
 
 
 class CategoryResponse(CategoryBase, TimestampSchema):
@@ -46,6 +30,7 @@ class CategoryResponse(CategoryBase, TimestampSchema):
     id: int
     tenant_id: int
     status: str
+    gst_item_ids: List[int] = []
 
 
 class CategoryListResponse(BaseModel):

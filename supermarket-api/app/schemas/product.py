@@ -30,6 +30,7 @@ class ProductBase(BaseModel):
     is_loose: bool = False
     product_type: Optional[ProductType] = None
     hsn_code: Optional[str] = None
+    gst_item_id: Optional[int] = None
     net_quantity: Optional[Decimal] = Field(None, gt=0)
     net_unit: Optional[NetUnit] = None
     reorder_level: Optional[Decimal] = Field(Decimal("0"), ge=0)
@@ -70,6 +71,7 @@ class ProductUpdate(BaseModel):
     is_loose: Optional[bool] = None
     product_type: Optional[ProductType] = None
     hsn_code: Optional[str] = None
+    gst_item_id: Optional[int] = None
     net_quantity: Optional[Decimal] = Field(None, gt=0)
     net_unit: Optional[NetUnit] = None
     reorder_level: Optional[Decimal] = Field(None, ge=0)
@@ -86,6 +88,7 @@ class ProductResponse(ProductBase, TimestampSchema):
     product_no: str
     product_name: str
     name_is_custom: bool = False
+    gst_overridden: bool = False
     product_type: str
     plu_code: Optional[int] = None
     stock_quantity: Decimal

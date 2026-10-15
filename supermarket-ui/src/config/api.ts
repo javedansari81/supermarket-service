@@ -21,7 +21,10 @@ export const API_ENDPOINTS = {
   // Categories
   CATEGORIES: '/categories',
   CATEGORIES_ACTIVE: '/categories/active',
-  
+
+  // GST lookup items
+  GST_ITEMS: '/gst-items',
+
   // Products
   PRODUCTS: '/products',
   PRODUCT_SEARCH: '/products/search',

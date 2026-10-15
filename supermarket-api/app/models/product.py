@@ -32,6 +32,9 @@ class Product(Base, TimestampMixin, StatusMixin):
                           server_default='own_packed')
     plu_code = Column(Integer)
     hsn_code = Column(String(20))
+    # GST item decides HSN and GST %; gst_overridden = either was changed on this product
+    gst_item_id = Column(Integer, ForeignKey('gst_items.id'), index=True)
+    gst_overridden = Column(Boolean, nullable=False, default=False, server_default='false')
     net_quantity = Column(Numeric(10, 3))
     net_unit = Column(String(5))
     stock_quantity = Column(Numeric(12, 3), default=0)
@@ -44,6 +47,7 @@ class Product(Base, TimestampMixin, StatusMixin):
     # Relationships
     tenant = relationship("Tenant", back_populates="products")
     category = relationship("Category", back_populates="products")
+    gst_item = relationship("GstItem")
     purchase_items = relationship("PurchaseItem", back_populates="product")
     sale_items = relationship("SaleItem", back_populates="product")
     stock_movements = relationship("StockMovement", back_populates="product")

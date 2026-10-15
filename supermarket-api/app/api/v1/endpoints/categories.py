@@ -1,17 +1,46 @@
 """
 Category management endpoints
 """
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.models.audit_log import AuditLog
 from app.models.category import Category
+from app.models.gst_item import GstItem, CategoryGstItem
 from app.schemas.category import CategoryCreate, CategoryUpdate, CategoryResponse, CategoryListResponse
 from app.api.deps import get_current_user, get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
+
+
+def category_snapshot(category: Category) -> dict:
+    """Category columns plus its GST items for audit logging"""
+    return {**snapshot(category), "gst_item_ids": sorted(category.gst_item_ids)}
+
+
+def apply_gst_items(db: Session, category: Category, gst_item_ids: List[int]):
+    """List exactly these GST items under the category; an item listed under
+    another category of the tenant moves here"""
+    ids = list(dict.fromkeys(gst_item_ids))
+    found = {row.id for row in db.query(GstItem.id).filter(GstItem.id.in_(ids)).all()} if ids else set()
+    if len(found) != len(ids):
+        raise HTTPException(status_code=400, detail="Invalid GST item")
+
+    if ids:
+        db.query(CategoryGstItem).filter(
+            CategoryGstItem.tenant_id == category.tenant_id,
+            CategoryGstItem.gst_item_id.in_(ids),
+            CategoryGstItem.category_id != category.id
+        ).delete(synchronize_session="fetch")
+    for link in list(category.gst_links):
+        if link.gst_item_id not in found:
+            category.gst_links.remove(link)
+    linked = set(category.gst_item_ids)
+    for gst_item_id in ids:
+        if gst_item_id not in linked:
+            category.gst_links.append(CategoryGstItem(tenant_id=category.tenant_id, gst_item_id=gst_item_id))
 
 
 @router.get("", response_model=CategoryListResponse)
@@ -58,9 +87,7 @@ async def list_active_categories(
         Category.status == "active"
     ).order_by(Category.category_name).all()
 
-    return [{"id": c.id, "category_name": c.category_name, "hsn_code": c.hsn_code,
-             "gst_percent_loose": c.gst_percent_loose, "gst_percent_packed": c.gst_percent_packed}
-            for c in categories]
+    return [{"id": c.id, "category_name": c.category_name} for c in categories]
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
@@ -107,16 +134,16 @@ async def create_category(
         tenant_id=context.tenant_id,
         category_name=category_data.category_name,
         description=category_data.description,
-        hsn_code=category_data.hsn_code,
-        gst_percent_loose=category_data.gst_percent_loose,
-        gst_percent_packed=category_data.gst_percent_packed,
         created_by=context.user_id
     )
 
     db.add(category)
     db.flush()
+    if category_data.gst_item_ids:
+        apply_gst_items(db, category, category_data.gst_item_ids)
+        db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
-                 "category", category.id, new_value=snapshot(category))
+                 "category", category.id, new_value=category_snapshot(category))
     db.commit()
     db.refresh(category)
 
@@ -153,15 +180,17 @@ async def update_category(
         if existing:
             raise HTTPException(status_code=400, detail="Category name already exists")
 
-    old_value = snapshot(category)
-    update_data = category_data.model_dump(exclude_unset=True)
+    old_value = category_snapshot(category)
+    update_data = category_data.model_dump(exclude_unset=True, exclude={"gst_item_ids"})
     for field, value in update_data.items():
         setattr(category, field, value)
+    if category_data.gst_item_ids is not None:
+        apply_gst_items(db, category, category_data.gst_item_ids)
 
     category.updated_by = context.user_id
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
-                 "category", category.id, old_value=old_value, new_value=snapshot(category))
+                 "category", category.id, old_value=old_value, new_value=category_snapshot(category))
     db.commit()
     db.refresh(category)
 

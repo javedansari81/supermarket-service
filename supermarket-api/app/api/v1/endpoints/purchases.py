@@ -1,6 +1,7 @@
 """
 Purchase/Procurement management endpoints
 """
+import logging
 import os
 import uuid
 from typing import Optional, List
@@ -29,6 +30,7 @@ from app.schemas.store_location import PutawayItem, ProductLocationResponse
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 def generate_purchase_no(db: Session, tenant_id: int) -> str:
@@ -534,6 +536,7 @@ async def upload_purchase_bill(
     try:
         storage.upload_file(key, content, content_type)
     except Exception:
+        logger.exception("Bill upload failed for purchase %s (key %s)", purchase.id, key)
         raise HTTPException(status_code=502, detail="Could not upload bill to storage")
 
     old_value = snapshot(purchase)
@@ -551,7 +554,8 @@ async def upload_purchase_bill(
         try:
             storage.delete_file(old_key)
         except Exception:
-            pass
+            logger.warning("Could not delete old bill %s for purchase %s", old_key, purchase.id,
+                           exc_info=True)
     return PurchaseResponse.model_validate(get_tenant_purchase(db, purchase_id, context.tenant_id))
 
 
@@ -595,6 +599,8 @@ async def delete_purchase_bill(
     try:
         storage.delete_file(purchase.bill_file_key)
     except Exception:
+        logger.exception("Bill delete failed for purchase %s (key %s)", purchase.id,
+                         purchase.bill_file_key)
         raise HTTPException(status_code=502, detail="Could not delete bill from storage")
 
     old_value = snapshot(purchase)

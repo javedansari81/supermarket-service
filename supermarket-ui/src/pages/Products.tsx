@@ -16,8 +16,7 @@ import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
-import { GST_RATE_REFERENCE, GstRateRef, gstRefsForCategory } from '../config/gst';
-import { Product, Category, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
+import { Product, Category, GstItem, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
 
 const PACKED_UNIT = 'pcs';
@@ -40,7 +39,7 @@ const STORE_BRAND = 'MF';
 
 const typeOf = (p: Product): ProductType => p.product_type ?? (p.is_loose ? 'loose' : 'own_packed');
 
-const filterGstRefs = createFilterOptions<GstRateRef>({ stringify: (o) => `${o.item} ${o.hsn}` });
+const filterGstItems = createFilterOptions<GstItem>({ stringify: (o) => `${o.item_name} ${o.hsn_code}` });
 
 // Mirrors capitalize_words in the API: 'toor dal' -> 'Toor Dal', unit words and words with capitals are kept
 const UNIT_WORDS = new Set(['g', 'gm', 'gms', 'kg', 'kgs', 'ml', 'l', 'ltr', 'pcs', 'pages']);
@@ -70,9 +69,13 @@ const autoName = (type: ProductType | '', item: string, quantity: string, unit: 
 };
 
 interface FormLocation { location_id: string; is_primary: boolean; }
-interface GstRates { loose: number | null; packed: number | null; }
 
-const rateOf = (v?: number | string | null) => (v === null || v === undefined || v === '' ? null : Number(v));
+const gstRateFor = (item: GstItem, loose: boolean) =>
+  String(Number(loose ? item.gst_percent_loose : item.gst_percent_packed));
+
+// Mirrors apply_gst_item in the API: HSN must start with the item's HSN and GST % must match its rate
+const isGstOverridden = (item: GstItem | undefined, hsn: string, taxPercent: string, loose: boolean) =>
+  !!item && taxPercent !== '' && (!hsn.startsWith(item.hsn_code) || Number(taxPercent) !== Number(gstRateFor(item, loose)));
 
 const primaryLocation = (locations?: ProductLocation[]) =>
   locations?.find((l) => l.role === 'display' && l.is_primary) ?? locations?.find((l) => l.is_primary) ?? locations?.[0];
@@ -82,7 +85,7 @@ const formatLocations = (locations?: ProductLocation[]) =>
     `${l.location_code} (${l.role}${l.floor ? `, ${l.floor}` : ''}${l.is_primary ? ', primary' : ''})`).join(', ') : '-';
 
 const emptyForm = {
-  item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', category_id: '', mrp: '', selling_price: '',
+  item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', gst_item_id: '', category_id: '', mrp: '', selling_price: '',
   purchase_price: '', tax_percent: '', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
   net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
 };
@@ -101,8 +104,7 @@ const Products: React.FC = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState(emptyForm);
-  const [gstRef, setGstRef] = useState<GstRateRef | null>(null);
-  const [gstRates, setGstRates] = useState<GstRates | null>(null);
+  const [gstItems, setGstItems] = useState<GstItem[]>([]);
   const [viewProduct, setViewProduct] = useState<Product | null>(null);
   const [activeLocations, setActiveLocations] = useState<StoreLocation[]>([]);
   const [locationFilter, setLocationFilter] = useState('');
@@ -138,6 +140,15 @@ const Products: React.FC = () => {
     }
   };
 
+  const fetchGstItems = async () => {
+    try {
+      const response = await api.get<GstItem[]>(API_ENDPOINTS.GST_ITEMS);
+      setGstItems(response.data);
+    } catch (error) {
+      console.error('Failed to fetch GST items');
+    }
+  };
+
   const fetchActiveLocations = async () => {
     try {
       const response = await api.get<StoreLocation[]>(API_ENDPOINTS.LOCATIONS_ACTIVE);
@@ -148,7 +159,7 @@ const Products: React.FC = () => {
   };
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
-  useEffect(() => { fetchCategories(); fetchActiveLocations(); }, []);
+  useEffect(() => { fetchCategories(); fetchGstItems(); fetchActiveLocations(); }, []);
 
   const handleOpenDialog = (product?: Product) => {
     if (product) {
@@ -156,7 +167,7 @@ const Products: React.FC = () => {
       setFormData({
         item_name: product.item_name || baseName(product.product_name), product_name: product.product_name,
         name_edited: !!product.name_is_custom, brand: product.brand || '', barcode: product.barcode || '',
-        hsn_code: product.hsn_code || '',
+        hsn_code: product.hsn_code || '', gst_item_id: product.gst_item_id?.toString() || '',
         category_id: product.category_id?.toString() || '', mrp: product.mrp?.toString() || '',
         selling_price: product.selling_price?.toString() || '', purchase_price: product.purchase_price?.toString() || '',
         tax_percent: Number(product.tax_percent ?? 0).toString(),
@@ -174,8 +185,6 @@ const Products: React.FC = () => {
       setFormData(emptyForm);
       setFormLocations([]);
     }
-    setGstRef(null);
-    setGstRates(null);
     setDialogOpen(true);
   };
 
@@ -187,31 +196,28 @@ const Products: React.FC = () => {
       capitalizeWords(formData.brand));
 
   const selectedCategory = categories.find((c) => c.id.toString() === formData.category_id);
-  const categoryRates: GstRates | null = selectedCategory
-    ? { loose: rateOf(selectedCategory.gst_percent_loose), packed: rateOf(selectedCategory.gst_percent_packed) } : null;
-  const applicableRates = gstRates ?? categoryRates;
-  const gstOptions = applicableRates
-    ? ([['loose', applicableRates.loose], ['packed', applicableRates.packed]] as const)
-      .filter(([, r]) => r !== null)
-      .reduce<{ value: string; kinds: string[] }[]>((list, [kind, r]) => {
-        const found = list.find((o) => o.value === String(r));
-        if (found) found.kinds.push(kind); else list.push({ value: String(r), kinds: [kind] });
-        return list;
-      }, [])
-    : [];
-  const gstMenu = (gstOptions.length ? gstOptions : GST_RATES.map((r) => ({ value: r, kinds: [] as string[] })));
+  const selectedGstItem = gstItems.find((g) => g.id.toString() === formData.gst_item_id);
+  // Items listed under the category; all items when no category is chosen or it lists none
+  const gstItemsFor = (categoryId: string) => {
+    const listed = gstItems.filter((g) => g.category_id?.toString() === categoryId);
+    return categoryId && listed.length ? listed : gstItems;
+  };
+  const gstItemOptions = gstItemsFor(formData.category_id);
+  const gstItemsFiltered = gstItemOptions !== gstItems;
+  const gstItemRequired = !editProduct || !!editProduct.gst_item_id;
+  const gstOverridden = isGstOverridden(selectedGstItem, formData.hsn_code, formData.tax_percent, isLoose);
+  const gstMenu = selectedGstItem
+    ? [{ value: gstRateFor(selectedGstItem, isLoose), kinds: [isLoose ? 'loose' : 'packed'] },
+      ...GST_RATES.filter((r) => r !== gstRateFor(selectedGstItem, isLoose)).map((r) => ({ value: r, kinds: [] as string[] }))]
+    : GST_RATES.map((r) => ({ value: r, kinds: [] as string[] }));
   const gstMenuWithCurrent = formData.tax_percent && !gstMenu.some((o) => o.value === formData.tax_percent)
     ? [...gstMenu, { value: formData.tax_percent, kinds: ['current'] }] : gstMenu;
-  const gstSource = gstRates && gstRef ? `GST lookup: ${gstRef.item}` : gstOptions.length && selectedCategory
-    ? `Category: ${selectedCategory.category_name}` : '';
-  const gstRefOptions = gstRefsForCategory(selectedCategory?.category_name, selectedCategory?.hsn_code);
-  const gstRefsFiltered = gstRefOptions !== GST_RATE_REFERENCE;
 
   const handleTypeChange = (type: ProductType) => {
     const toLoose = type === 'loose';
     const looseChanged = toLoose !== isLoose;
     const toManufacturer = type === 'manufacturer' && formData.product_type !== 'manufacturer';
-    const newRate = gstRates && looseChanged ? (toLoose ? gstRates.loose : gstRates.packed) : null;
+    const newRate = selectedGstItem && looseChanged && !gstOverridden ? gstRateFor(selectedGstItem, toLoose) : null;
     setFormData({
       ...formData, product_type: type,
       ...(looseChanged ? { unit_type: toLoose ? 'kg' : PACKED_UNIT, barcode: '' } : {}),
@@ -220,35 +226,21 @@ const Products: React.FC = () => {
       ...(toManufacturer ? {
         brand: formData.brand.trim().toUpperCase() === STORE_BRAND ? '' : formData.brand,
       } : {}),
-      ...(newRate !== null ? { tax_percent: String(newRate) } : {})
+      ...(newRate !== null ? { tax_percent: newRate } : {})
     });
   };
 
-  const handleGstRefChange = (ref: GstRateRef | null) => {
-    setGstRef(ref);
-    if (ref) {
-      setGstRates({ loose: ref.loose, packed: ref.packed });
-      setFormData({ ...formData, hsn_code: ref.hsn, tax_percent: String(isLoose ? ref.loose : ref.packed) });
-    }
-  };
-
-  const handleCategoryChange = (categoryId: string) => {
-    const category = categories.find((c) => c.id.toString() === categoryId);
-    const rates = { loose: rateOf(category?.gst_percent_loose), packed: rateOf(category?.gst_percent_packed) };
-    const rate = isLoose ? rates.loose : rates.packed;
-    const hasDefaults = !!category?.hsn_code || rates.loose !== null || rates.packed !== null;
-    if (hasDefaults) {
-      setGstRef(null);
-      setGstRates(rates);
-    } else if (!gstRef || !gstRefsForCategory(category?.category_name, category?.hsn_code).includes(gstRef)) {
-      setGstRef(null);
-      setGstRates(null);
-    }
+  const handleGstItemChange = (item: GstItem | null) => {
     setFormData({
-      ...formData, category_id: categoryId,
-      ...(category?.hsn_code ? { hsn_code: category.hsn_code } : {}),
-      ...(rate !== null ? { tax_percent: String(rate) } : {}),
+      ...formData, gst_item_id: item ? item.id.toString() : '',
+      ...(item ? { hsn_code: item.hsn_code, tax_percent: gstRateFor(item, isLoose) } : {}),
     });
+  };
+
+  // An item not listed under the new category is cleared; HSN and GST % stay until another item is picked
+  const handleCategoryChange = (categoryId: string) => {
+    const keepItem = !selectedGstItem || gstItemsFor(categoryId).includes(selectedGstItem);
+    setFormData({ ...formData, category_id: categoryId, ...(keepItem ? {} : { gst_item_id: '' }) });
   };
 
   const handleScaleExport = async () => {
@@ -276,6 +268,7 @@ const Products: React.FC = () => {
     const mrp = !isLoose && formData.mrp ? parseFloat(formData.mrp) : undefined;
     const sellingPrice = parseFloat(formData.selling_price);
     if (mrp !== undefined && sellingPrice > mrp) { toast.error('Selling price cannot be greater than MRP'); return; }
+    if (gstItemRequired && !formData.gst_item_id) { toast.error('Select the GST item'); return; }
     if (formData.tax_percent === '') { toast.error('Select GST %'); return; }
     if (formData.hsn_code && !/^[0-9]{4,8}$/.test(formData.hsn_code)) { toast.error('HSN code must be 4 to 8 digits'); return; }
     if (formLocations.some((l) => !l.location_id)) { toast.error('Select a location for every location row'); return; }
@@ -289,6 +282,7 @@ const Products: React.FC = () => {
         item_name: capitalizeWords(formData.item_name.trim()), product_name: customName || undefined,
         brand: isLoose ? undefined : isOwnPacked ? STORE_BRAND : capitalizeWords(formData.brand.trim()) || undefined,
         barcode: isLoose ? undefined : formData.barcode || undefined, hsn_code: formData.hsn_code || undefined,
+        gst_item_id: formData.gst_item_id ? parseInt(formData.gst_item_id) : undefined,
         category_id: formData.category_id ? parseInt(formData.category_id) : undefined,
         mrp: isLoose ? null : mrp, selling_price: sellingPrice,
         purchase_price: formData.purchase_price ? parseFloat(formData.purchase_price) : undefined,
@@ -484,20 +478,25 @@ const Products: React.FC = () => {
               </Grid>
             )}
             <Grid size={12}>
-              <Autocomplete options={gstRefOptions} value={gstRef} onChange={(_, v) => handleGstRefChange(v)}
-                getOptionLabel={(o) => o.item} filterOptions={filterGstRefs} noOptionsText="No matches"
+              <Autocomplete options={gstItemOptions} value={selectedGstItem ?? null} onChange={(_, v) => handleGstItemChange(v)}
+                getOptionLabel={(o) => o.item_name} filterOptions={filterGstItems} noOptionsText="No matches"
+                isOptionEqualToValue={(o, v) => o.id === v.id} disableClearable={gstItemRequired && !!selectedGstItem}
                 renderOption={(props, o) => (
-                  <li {...props} key={`${o.item}-${o.hsn}`}>
-                    {o.item} - HSN {o.hsn} - loose {o.loose}% / packed {o.packed}%
+                  <li {...props} key={o.id}>
+                    {o.item_name} - HSN {o.hsn_code} - loose {Number(o.gst_percent_loose)}% / packed {Number(o.gst_percent_packed)}%
                   </li>
                 )}
                 renderInput={(params) => (
-                  <TextField {...params} label="GST rate lookup (fills HSN and GST %)" placeholder="Type item name or HSN to search..."
-                    helperText={`${gstRefsFiltered ? `Showing items for category ${selectedCategory?.category_name}. ` : ''}Packed = pre-packaged and labelled. Rates are a reference; confirm unusual items with your accountant`} />
+                  <TextField {...params} label="GST Item (fills HSN and GST %)" placeholder="Type item name or HSN to search..."
+                    required={gstItemRequired}
+                    helperText={`${!gstItemRequired && !selectedGstItem ? 'Not linked yet. ' : ''}${gstItemsFiltered ? `Showing items for category ${selectedCategory?.category_name}. ` : ''}Packed = pre-packaged and labelled. Rates are a reference; confirm unusual items with your accountant`} />
                 )} />
             </Grid>
             <Grid size={{ xs: 12, md: isLoose ? 3 : 4 }}>
-              <TextField fullWidth label="HSN Code" value={formData.hsn_code} helperText="Required on GST invoices"
+              <TextField fullWidth label="HSN Code" value={formData.hsn_code}
+                color={gstOverridden ? 'warning' : undefined} focused={gstOverridden || undefined}
+                helperText={selectedGstItem && !formData.hsn_code.startsWith(selectedGstItem.hsn_code)
+                  ? `Overridden; GST item HSN is ${selectedGstItem.hsn_code}` : 'Required on GST invoices'}
                 onChange={(e) => setFormData({ ...formData, hsn_code: e.target.value.replace(/[^0-9]/g, '') })} />
             </Grid>
             {isLoose ? (
@@ -563,7 +562,8 @@ const Products: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, purchase_price: e.target.value })} />
             </Grid>
             <Grid size={{ xs: 12, md: isLoose ? 4 : 3 }}>
-              <FormControl fullWidth required><InputLabel>GST %</InputLabel>
+              <FormControl fullWidth required color={gstOverridden ? 'warning' : undefined} focused={gstOverridden || undefined}>
+                <InputLabel>GST %</InputLabel>
                 <Select value={formData.tax_percent} label="GST %"
                   onChange={(e) => setFormData({ ...formData, tax_percent: e.target.value })}>
                   {gstMenuWithCurrent.map((o) => (
@@ -572,7 +572,13 @@ const Products: React.FC = () => {
                     </MenuItem>
                   ))}
                 </Select>
-                {gstSource && <FormHelperText>{gstSource}</FormHelperText>}
+                {selectedGstItem && (
+                  <FormHelperText>
+                    {Number(formData.tax_percent) !== Number(gstRateFor(selectedGstItem, isLoose))
+                      ? `Overridden; GST item rate is ${gstRateFor(selectedGstItem, isLoose)}%`
+                      : `GST item: ${selectedGstItem.item_name}`}
+                  </FormHelperText>
+                )}
               </FormControl>
             </Grid>
             <Grid size={12}><Divider>Stock</Divider></Grid>
@@ -651,7 +657,8 @@ const Products: React.FC = () => {
                 ['Brand', viewProduct.brand || '-'],
                 ['Barcode', viewProduct.barcode || '-'],
                 ['Category', viewProduct.category?.category_name ?? viewProduct.category_name ?? '-'],
-                ['HSN Code', viewProduct.hsn_code || '-'],
+                ['GST Item', gstItems.find((g) => g.id === viewProduct.gst_item_id)?.item_name || 'Not linked'],
+                ['HSN Code', `${viewProduct.hsn_code || '-'}${viewProduct.gst_overridden ? ' (overridden)' : ''}`],
                 ...(viewProduct.is_loose ? [] : [['MRP', viewProduct.mrp != null ? `₹${Number(viewProduct.mrp).toFixed(2)}` : '-']]),
                 ['Selling Price', `₹${Number(viewProduct.selling_price || 0).toFixed(2)}${viewProduct.is_loose ? `/${viewProduct.unit_type}` : ''}`],
                 ['Purchase Price', viewProduct.purchase_price != null ? `₹${Number(viewProduct.purchase_price).toFixed(2)}` : '-'],

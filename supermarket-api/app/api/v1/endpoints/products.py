@@ -2,6 +2,7 @@
 Product management endpoints
 """
 from typing import Optional, List
+from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -16,6 +17,7 @@ from app.models.audit_log import AuditLog
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
 from app.models.category import Category
+from app.models.gst_item import GstItem, CategoryGstItem
 from app.models.store_location import StoreLocation, ProductLocation
 from app.schemas.product import (
     ProductCreate, ProductUpdate, ProductResponse,
@@ -53,6 +55,41 @@ def ensure_category_in_tenant(db: Session, tenant_id: int, category_id: Optional
     ).first()
     if not exists:
         raise HTTPException(status_code=400, detail="Invalid category")
+
+
+def ensure_gst_item(db: Session, tenant_id: int, gst_item_id: Optional[int],
+                    category_id: Optional[int]) -> Optional[GstItem]:
+    """GST item must exist and, when the category lists GST items, be one of them"""
+    if gst_item_id is None:
+        return None
+    item = db.query(GstItem).filter(GstItem.id == gst_item_id).first()
+    if not item:
+        raise HTTPException(status_code=400, detail="Invalid GST item")
+    if category_id is not None:
+        listed = {row.gst_item_id for row in db.query(CategoryGstItem.gst_item_id).filter(
+            CategoryGstItem.tenant_id == tenant_id,
+            CategoryGstItem.category_id == category_id
+        ).all()}
+        if listed and gst_item_id not in listed:
+            raise HTTPException(status_code=400, detail="GST item is not listed under this category")
+    return item
+
+
+def apply_gst_item(product: Product, item: Optional[GstItem], fill_hsn: bool = False,
+                   fill_tax: bool = False):
+    """Fill HSN and GST % from the GST item; mark the product overridden when either differs"""
+    if item is None:
+        product.gst_overridden = False
+        return
+    expected = item.gst_percent_for(product.product_type)
+    if fill_hsn or not (product.hsn_code or "").strip():
+        product.hsn_code = item.hsn_code
+    if fill_tax:
+        product.tax_percent = expected
+    product.gst_overridden = not (
+        product.hsn_code.startswith(item.hsn_code)
+        and Decimal(str(product.tax_percent or 0)) == Decimal(str(expected))
+    )
 
 
 def with_locations():
@@ -463,6 +500,7 @@ async def create_product(
     ensure_type_rules(product_data.product_type, product_data.unit_type, product_data.barcode)
     ensure_pack_size(product_data.net_quantity, product_data.net_unit)
     ensure_category_in_tenant(db, context.tenant_id, product_data.category_id)
+    gst_item = ensure_gst_item(db, context.tenant_id, product_data.gst_item_id, product_data.category_id)
 
     # Check if barcode already exists (if provided)
     if product_data.barcode:
@@ -481,6 +519,7 @@ async def create_product(
         created_by=context.user_id
     )
     apply_naming(product)
+    apply_gst_item(product, gst_item, fill_tax="tax_percent" not in product_data.model_fields_set)
 
     db.add(product)
     db.flush()
@@ -554,12 +593,25 @@ async def update_product(
                      update_data.get("net_unit", product.net_unit))
     if "category_id" in update_data:
         ensure_category_in_tenant(db, context.tenant_id, update_data["category_id"])
+    if "gst_item_id" in update_data and update_data["gst_item_id"] is None:
+        if product.gst_item_id:
+            raise HTTPException(status_code=400, detail="GST item cannot be removed")
+        update_data.pop("gst_item_id")
+    gst_item_id = update_data.get("gst_item_id", product.gst_item_id)
+    category_id = update_data.get("category_id", product.category_id)
+    gst_item_changed = gst_item_id != product.gst_item_id
+    if gst_item_changed or category_id != product.category_id:
+        gst_item = ensure_gst_item(db, context.tenant_id, gst_item_id, category_id)
+    else:
+        gst_item = product.gst_item
 
     old_value = product_snapshot(product)
     was_loose = bool(product.is_loose)
     previous_type = product.product_type
     for field, value in update_data.items():
         setattr(product, field, value)
+    apply_gst_item(product, gst_item, fill_hsn=gst_item_changed and "hsn_code" not in update_data,
+                   fill_tax=gst_item_changed and "tax_percent" not in update_data)
     apply_type_codes(db, product, previous_type)
     if product_data.locations is not None:
         apply_product_locations(db, product, product_data.locations)

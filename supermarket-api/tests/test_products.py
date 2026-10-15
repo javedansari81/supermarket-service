@@ -206,6 +206,42 @@ def test_create_product_category_from_other_tenant(client, category, admin_b_hea
     assert res.json()["detail"] == "Invalid category"
 
 
+def test_product_gst_item(client, db, seed, category, admin_headers):
+    from app.models import GstItem, CategoryGstItem
+    rice = GstItem(item_name="Rice", hsn_code="1006", gst_percent_loose=0, gst_percent_packed=5)
+    soap = GstItem(item_name="Toilet soap", hsn_code="3401", gst_percent_loose=5, gst_percent_packed=5)
+    db.add_all([rice, soap])
+    db.flush()
+    db.add(CategoryGstItem(tenant_id=seed["tenant_a"].id, category_id=category.id, gst_item_id=rice.id))
+    db.commit()
+
+    # HSN and GST % come from the item; loose uses the loose rate
+    body = payload(category_id=category.id, gst_item_id=rice.id)
+    body.pop("tax_percent")
+    res = client.post(URL, json=body, headers=admin_headers).json()
+    assert (res["gst_item_id"], res["hsn_code"], float(res["tax_percent"]), res["gst_overridden"]) \
+        == (rice.id, "1006", 5, False)
+    loose = client.post(URL, json=payload(product_name="Rice", product_type="loose", unit_type="kg",
+                                          category_id=category.id, gst_item_id=rice.id, tax_percent=0),
+                        headers=admin_headers).json()
+    assert float(loose["tax_percent"]) == 0 and loose["gst_overridden"] is False
+
+    # Item must be listed under the category
+    res = client.post(URL, json=payload(category_id=category.id, gst_item_id=soap.id), headers=admin_headers)
+    assert res.status_code == 400 and res.json()["detail"] == "GST item is not listed under this category"
+    assert client.post(URL, json=payload(gst_item_id=99999), headers=admin_headers).status_code == 400
+
+    # Changing HSN or GST % by hand marks the product overridden
+    pid = loose["id"]
+    upd = client.put(f"{URL}/{pid}", json={"tax_percent": 12}, headers=admin_headers).json()
+    assert upd["gst_overridden"] is True
+    upd = client.put(f"{URL}/{pid}", json={"tax_percent": 0, "hsn_code": "10063010"},
+                     headers=admin_headers).json()
+    assert upd["gst_overridden"] is False
+    res = client.put(f"{URL}/{pid}", json={"gst_item_id": None}, headers=admin_headers)
+    assert res.status_code == 400 and res.json()["detail"] == "GST item cannot be removed"
+
+
 def test_create_product_forbidden_for_cashier(client, seed, cashier_headers):
     assert client.post(URL, json=payload(), headers=cashier_headers).status_code == 403
 

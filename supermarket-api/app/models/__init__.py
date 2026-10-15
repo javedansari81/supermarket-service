@@ -6,6 +6,7 @@ from app.models.role import Role
 from app.models.user import User
 from app.models.tenant_setting import TenantSetting
 from app.models.category import Category
+from app.models.gst_item import GstItem, CategoryGstItem
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
 from app.models.supplier import Supplier
@@ -25,6 +26,8 @@ __all__ = [
     "User",
     "TenantSetting",
     "Category",
+    "GstItem",
+    "CategoryGstItem",
     "Product",
     "ProductBatch",
     "Supplier",
