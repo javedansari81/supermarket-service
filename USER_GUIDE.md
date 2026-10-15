@@ -124,7 +124,7 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 
 ### Browse and search
 
-- Table columns: Product No, Name, Barcode, Type, PLU, Category, MRP, Price, Stock, Expiry, Location, Status, Actions
+- Table columns: Name, Barcode, Type, PLU, Category, MRP, Price, Stock, Expiry, Location, Status, Actions
 - **Expiry** shows the date as DD/MM/YYYY: red when expired, orange within 7 days, outlined within 30 days; hover it to see the days left
 - **Location** shows the primary display location (or the first assigned one); hover it to see all locations
 - Search by name or related text; click refresh to reload
@@ -132,8 +132,9 @@ Master catalog used by POS, purchases, inventory, and barcodes.
 - **Type** filter (dropdown): All types, **Manufacturer**, **Own packed**, **Loose**
 - **Barcode** filter: All, or **Missing barcode** (e.g. manufacturer items imported without one)
 - **Expiry** filter: All, **Expired**, **Within 7 days** or **Within 30 days** (earliest expiry first)
-- Upload icon — **Import Products** from an Excel or CSV file (see below)
-- Download icon — exports the scale file: loose items (PLU, name, rate, unit) as CSV for loading into the weighing scale
+- Search box on the first row; the four filters sit in an even row below it
+- File-upload icon — **Import Products** from an Excel or CSV file (see below)
+- File-download icon — exports the scale file: loose items (PLU, name, rate, unit) as CSV for loading into the weighing scale
 - Paginate with 10 / 25 / 50 rows per page
 - Status chip: **active** (green) or inactive
 
@@ -168,9 +169,9 @@ The form also holds category, MRP, selling price, tax %, reorder level, unit typ
 
 ### Import products (bulk)
 
-1. Click the upload icon next to Refresh to open **Import Products**.
+1. Click the file-upload icon next to Refresh to open **Import Products**.
 2. Click **Download template** and fill the **Products** sheet, one product per row. Columns: **Item Name**, **Product Type** (Manufacturer, Own packed or Loose), Brand, Pack Size, Pack Unit, HSN Code, GST %, MRP, Selling Price and Expiry Date (all types). Only Item Name and Product Type are required. The **Instructions** sheet explains each column and has examples.
-3. Click **Choose file** and pick the Excel (.xlsx) or CSV file. Old .xls files must be saved as .xlsx first.
+3. Drag the Excel (.xlsx) or CSV file onto the dashed box, or click the box to choose it. Click the × next to the file name to remove it. Old .xls files must be saved as .xlsx first.
 4. Optionally click **Check file** to see the result without saving anything, then click **Import**.
 
 - Other columns in the file (e.g. Barcode, Category) are ignored. Set barcode, category, GST item and locations later by editing each product; purchase price and stock come from **Purchases**.

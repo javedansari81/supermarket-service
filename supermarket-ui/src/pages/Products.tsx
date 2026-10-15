@@ -7,11 +7,13 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, Divider, Autocomplete, Typography, Collapse, createFilterOptions,
-  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell,
+  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell, Tooltip,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Refresh, Visibility, Add, Download, Restore, Upload } from '@mui/icons-material';
+import {
+  Edit, Delete, Search, Refresh, Visibility, Add, Download, Restore, UploadFile, FileDownload, CloudUpload, InsertDriveFile, Close,
+} from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
@@ -154,6 +156,7 @@ const Products: React.FC = () => {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [dragOver, setDragOver] = useState(false);
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
@@ -313,6 +316,22 @@ const Products: React.FC = () => {
     setImportOpen(true);
   };
 
+  const pickImportFile = (file: File | null | undefined) => {
+    if (!file) return;
+    if (!/\.(xlsx|csv)$/i.test(file.name)) {
+      toast.error('Only Excel (.xlsx) or CSV files are supported');
+      return;
+    }
+    setImportFile(file);
+    setImportResult(null);
+  };
+
+  const handleImportDrop = (e: React.DragEvent<HTMLElement>) => {
+    e.preventDefault();
+    setDragOver(false);
+    if (!importBusy) pickImportFile(e.dataTransfer.files?.[0]);
+  };
+
   const runImport = async (dryRun: boolean) => {
     if (!importFile) return;
     const form = new FormData();
@@ -416,8 +435,8 @@ const Products: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
-    { field: 'product_no', headerName: 'Product No', width: 100 },
-    { field: 'product_name', headerName: 'Name', flex: 1, minWidth: 150 },
+    { field: 'product_name', headerName: 'Name', flex: 1, minWidth: 260,
+      renderCell: (params: GridRenderCellParams) => <span title={params.value}>{params.value}</span> },
     { field: 'barcode', headerName: 'Barcode', width: 140 },
     { field: 'product_type', headerName: 'Type', width: 125, renderCell: (params: GridRenderCellParams) => {
       const meta = TYPE_META[typeOf(params.row)];
@@ -460,54 +479,66 @@ const Products: React.FC = () => {
       <PageHeader title="Products" />
 
       <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
           <TextField size="small" placeholder="Search by name, code or barcode..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }}
-            sx={{ flex: { xs: '1 1 100%', sm: 1 }, minWidth: { sm: 240 } }} />
-          <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: { xs: '100%', sm: 220 }, flexShrink: 0 }}
-            onChange={(v) => { setLocationFilter(v); setPage(0); }}
-            options={[
-              { value: '', label: 'All locations' },
-              { value: 'unassigned', label: 'No location assigned' },
-              ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
-            ]} />
-          <FormControl size="small" sx={{ width: { xs: '100%', sm: 220 }, flexShrink: 0 }}>
-            <InputLabel shrink>Type</InputLabel>
-            <Select label="Type" value={typeFilter} displayEmpty notched
-              onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">All types</MenuItem>
-              {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
-                <MenuItem key={t} value={t}>{TYPE_META[t].short}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}>
-            <InputLabel shrink>Barcode</InputLabel>
-            <Select label="Barcode" value={barcodeFilter} displayEmpty notched
-              onChange={(e) => { setBarcodeFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">All</MenuItem>
-              <MenuItem value="missing">Missing barcode</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ width: { xs: '100%', sm: 180 }, flexShrink: 0 }}>
-            <InputLabel shrink>Expiry</InputLabel>
-            <Select label="Expiry" value={expiryFilter} displayEmpty notched
-              onChange={(e) => { setExpiryFilter(e.target.value); setPage(0); }}>
-              <MenuItem value="">All</MenuItem>
-              <MenuItem value="expired">Expired</MenuItem>
-              <MenuItem value="7">Within 7 days</MenuItem>
-              <MenuItem value="30">Within 30 days</MenuItem>
-            </Select>
-          </FormControl>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', ml: 'auto' }}>
-            <IconButton title="Refresh" onClick={fetchProducts}><Refresh /></IconButton>
-            <IconButton onClick={openImport} aria-label="Import products"
-              title="Import products from an Excel or CSV file"><Upload /></IconButton>
-            <IconButton onClick={handleScaleExport} aria-label="Export scale file"
-              title="Export scale file: loose items with PLU and rate, for loading into the weighing scale"><Download /></IconButton>
-          </Box>
+            sx={{ flex: 1 }} />
+          <Tooltip title="Refresh">
+            <IconButton onClick={fetchProducts} aria-label="Refresh"><Refresh /></IconButton>
+          </Tooltip>
+          <Tooltip title="Import products from an Excel or CSV file">
+            <IconButton color="primary" onClick={openImport} aria-label="Import products"><UploadFile /></IconButton>
+          </Tooltip>
+          <Tooltip title="Export scale file: loose items with PLU and rate, for loading into the weighing scale">
+            <IconButton color="primary" onClick={handleScaleExport} aria-label="Export scale file"><FileDownload /></IconButton>
+          </Tooltip>
         </Box>
+        <Grid container spacing={2}>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: '100%' }}
+              onChange={(v) => { setLocationFilter(v); setPage(0); }}
+              options={[
+                { value: '', label: 'All locations' },
+                { value: 'unassigned', label: 'No location assigned' },
+                ...activeLocations.map((l) => ({ value: String(l.id), label: `${l.location_code} (${l.floor})` })),
+              ]} />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <FormControl size="small" fullWidth>
+              <InputLabel shrink>Type</InputLabel>
+              <Select label="Type" value={typeFilter} displayEmpty notched
+                onChange={(e) => { setTypeFilter(e.target.value); setPage(0); }}>
+                <MenuItem value="">All types</MenuItem>
+                {(Object.keys(TYPE_META) as ProductType[]).map((t) => (
+                  <MenuItem key={t} value={t}>{TYPE_META[t].short}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <FormControl size="small" fullWidth>
+              <InputLabel shrink>Barcode</InputLabel>
+              <Select label="Barcode" value={barcodeFilter} displayEmpty notched
+                onChange={(e) => { setBarcodeFilter(e.target.value); setPage(0); }}>
+                <MenuItem value="">All</MenuItem>
+                <MenuItem value="missing">Missing barcode</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 6, md: 3 }}>
+            <FormControl size="small" fullWidth>
+              <InputLabel shrink>Expiry</InputLabel>
+              <Select label="Expiry" value={expiryFilter} displayEmpty notched
+                onChange={(e) => { setExpiryFilter(e.target.value); setPage(0); }}>
+                <MenuItem value="">All</MenuItem>
+                <MenuItem value="expired">Expired</MenuItem>
+                <MenuItem value="7">Within 7 days</MenuItem>
+                <MenuItem value="30">Within 30 days</MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
       </Card>
 
       <Card>
@@ -788,17 +819,42 @@ const Products: React.FC = () => {
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Fill the template, one product per row, and upload it as Excel (.xlsx) or CSV.
-            Products that already exist (same barcode, or same name and type when there is no barcode) are skipped.
-            Manufacturer items may be left without a barcode and updated later.
+            Products that already exist (same name and type) are skipped.
+            Manufacturer items are imported without a barcode; add it later by editing the product.
           </Typography>
-          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
-            <Button variant="outlined" startIcon={<Download />} onClick={handleTemplateDownload}>Download template</Button>
-            <Button variant="outlined" component="label" startIcon={<Upload />} disabled={importBusy}>
-              Choose file
-              <input hidden type="file" accept=".xlsx,.csv"
-                onChange={(e) => { setImportFile(e.target.files?.[0] ?? null); setImportResult(null); e.target.value = ''; }} />
-            </Button>
-            <Typography variant="body2">{importFile?.name ?? 'No file chosen'}</Typography>
+          <Button variant="outlined" startIcon={<Download />} onClick={handleTemplateDownload} sx={{ mb: 2 }}>
+            Download template
+          </Button>
+          <Box component="label"
+            onDragOver={(e) => { e.preventDefault(); if (!importBusy) setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleImportDrop}
+            sx={{
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, p: 3, mb: 2,
+              border: '2px dashed', borderRadius: 2, textAlign: 'center',
+              borderColor: dragOver ? 'primary.main' : 'divider',
+              bgcolor: dragOver ? 'action.hover' : 'transparent',
+              cursor: importBusy ? 'default' : 'pointer',
+              '&:hover': importBusy ? {} : { borderColor: 'primary.main' },
+            }}>
+            <input hidden type="file" accept=".xlsx,.csv" disabled={importBusy}
+              onChange={(e) => { pickImportFile(e.target.files?.[0]); e.target.value = ''; }} />
+            {importFile ? (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <InsertDriveFile color="primary" />
+                <Typography variant="body1">{importFile.name}</Typography>
+                <IconButton size="small" aria-label="Remove file" disabled={importBusy}
+                  onClick={(e) => { e.preventDefault(); setImportFile(null); setImportResult(null); }}>
+                  <Close fontSize="small" />
+                </IconButton>
+              </Box>
+            ) : (
+              <CloudUpload color={dragOver ? 'primary' : 'action'} sx={{ fontSize: 48 }} />
+            )}
+            <Typography variant="body2" color="text.secondary">
+              {importFile ? 'Drop another file or click to replace' : 'Drag and drop the file here, or click to choose'}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">Excel (.xlsx) or CSV</Typography>
           </Box>
           {importBusy && <LinearProgress sx={{ mb: 2 }} />}
           {importResult && (
