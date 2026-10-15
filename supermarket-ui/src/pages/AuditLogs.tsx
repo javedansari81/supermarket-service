@@ -3,11 +3,11 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Card, TextField, IconButton, InputAdornment,
+  Box, Card, IconButton,
   FormControl, InputLabel, Select, MenuItem, Chip, Tooltip,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Search, Refresh } from '@mui/icons-material';
+import { Refresh } from '@mui/icons-material';
 import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';

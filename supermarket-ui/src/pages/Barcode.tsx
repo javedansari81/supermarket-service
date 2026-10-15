@@ -6,7 +6,7 @@ import {
   Box, Typography, Card, CardContent, TextField, Button,
   Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Paper, IconButton,
-  Checkbox, Chip, Tabs, Tab, Divider,
+  Chip, Tabs, Tab, Divider,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Print, Delete, Add, LocalOffer, Inventory2 } from '@mui/icons-material';

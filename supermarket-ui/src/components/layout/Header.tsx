@@ -15,7 +15,6 @@ import {
   ListItemIcon,
 } from '@mui/material';
 import {
-  AccountCircle,
   Logout,
   Menu as MenuIcon,
   Person,
