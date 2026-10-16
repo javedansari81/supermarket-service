@@ -13,8 +13,8 @@ from app.schemas.customer import normalize_mobile
 class SaleItemCreate(BaseModel):
     """Schema for creating a sale item. batch_id is required for a packed item whose
     in-stock batches have different MRPs; otherwise stock is taken first expiry first.
-    The near-expiry discount applies unless skip_clearance; the higher of it and
-    discount_percent wins."""
+    The near-expiry discount applies unless skip_clearance; of it, a running offer and
+    discount_percent, the one saving the most wins."""
     product_id: int
     quantity: Decimal
     discount_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
@@ -43,6 +43,8 @@ class SaleItemResponse(BaseModel):
     discount_percent: Decimal
     discount_amount: Decimal
     discount_source: Optional[str] = None
+    offer_id: Optional[int] = None
+    offer_name: Optional[str] = None
     line_total: Decimal
 
     model_config = {"from_attributes": True}

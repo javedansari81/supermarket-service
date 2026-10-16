@@ -80,12 +80,3 @@ class ClearanceResolver:
         if not self.enabled:
             return Decimal("0")
         return tier_percent(self.tiers_for(product), self.days_left(batch.expiry_date))
-
-
-def line_discount(manual: Decimal, clearance: Decimal):
-    """(percent, source) for a sale line: the higher discount wins, no stacking"""
-    if clearance > manual:
-        return clearance, SOURCE_CLEARANCE
-    if manual > 0:
-        return manual, SOURCE_MANUAL
-    return Decimal("0"), None

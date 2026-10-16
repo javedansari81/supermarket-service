@@ -67,6 +67,10 @@ interface CartItem {
   // Near-expiry % (preview; the server decides at checkout) and whether the cashier removed it
   clearance_percent: number;
   skip_clearance: boolean;
+  // Running festival offer (preview); the cashier cannot remove it
+  offer_name?: string;
+  offer_type?: OfferType;
+  offer_value?: number;
   tax_amount: number;
   line_total: number;
   stock_quantity: number;
@@ -102,7 +106,12 @@ interface SearchProduct {
   scanned_label?: string;
   // Today's markdown of a loose item
   clearance_percent?: number;
+  offer_name?: string;
+  offer_type?: OfferType;
+  offer_value?: number;
 }
+
+type OfferType = 'percent' | 'amount';
 
 interface BillingBatch {
   id: number;
@@ -143,6 +152,9 @@ const normalize = (p: any): SearchProduct => ({
   batch_id: p.batch_id ?? undefined,
   scanned_quantity: p.scanned_quantity != null ? Number(p.scanned_quantity) : undefined,
   clearance_percent: p.clearance_percent != null ? Number(p.clearance_percent) : undefined,
+  offer_name: p.offer_name ?? undefined,
+  offer_type: p.offer_type ?? undefined,
+  offer_value: p.offer_value != null ? Number(p.offer_value) : undefined,
   batches: Array.isArray(p.batches) && !p.is_loose ? p.batches.map((b: any) => ({
     id: b.id,
     batch_no: b.batch_no,
@@ -164,8 +176,29 @@ const clearanceOf = (product: SearchProduct): number => {
   return batch?.clearance_percent ?? 0;
 };
 
-const effectiveDiscount = (item: CartItem) =>
-  item.skip_clearance ? item.discount_percent : Math.max(item.discount_percent, item.clearance_percent);
+type DiscountSource = 'manual' | 'clearance' | 'offer';
+
+// Rupees off a line: the manual %, near-expiry % or offer saving the most (the server decides at checkout)
+const lineDiscount = (item: CartItem): { amount: number; source?: DiscountSource } => {
+  const gross = round2(item.unit_price * item.quantity);
+  let best: { amount: number; source?: DiscountSource } = {
+    amount: round2(gross * item.discount_percent / 100),
+    source: item.discount_percent > 0 ? 'manual' : undefined,
+  };
+  if (!item.skip_clearance && item.clearance_percent > 0) {
+    const amount = round2(gross * item.clearance_percent / 100);
+    if (amount > best.amount || !best.source) best = { amount, source: 'clearance' };
+  }
+  if (item.offer_value) {
+    const amount = round2(Math.min(gross, item.offer_type === 'percent'
+      ? gross * item.offer_value / 100 : item.offer_value * item.quantity));
+    if (amount > best.amount) best = { amount, source: 'offer' };
+  }
+  return best;
+};
+
+const offerText = (item: { offer_name?: string; offer_type?: OfferType; offer_value?: number; unit_type: string; is_loose: boolean }) =>
+  `${item.offer_name} −${item.offer_type === 'percent' ? `${item.offer_value}%` : `₹${item.offer_value}${item.is_loose ? `/${item.unit_type}` : ''}`}`;
 
 const highlightMatch = (text: string, term: string) => {
   const words = term.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -414,8 +447,7 @@ const Billing: React.FC = () => {
 
   const calculateLine = (item: CartItem): CartItem => {
     const gross = round2(item.unit_price * item.quantity);
-    const discount = round2(gross * effectiveDiscount(item) / 100);
-    const net = gross - discount;
+    const net = gross - lineDiscount(item).amount;
     const tax = taxInclusive
       ? round2(net * item.tax_percent / (100 + item.tax_percent))
       : round2(net * item.tax_percent / 100);
@@ -451,6 +483,9 @@ const Billing: React.FC = () => {
         discount_percent: 0,
         clearance_percent: clearanceOf(product),
         skip_clearance: false,
+        offer_name: product.offer_name,
+        offer_type: product.offer_type,
+        offer_value: product.offer_value,
         tax_amount: 0,
         line_total: 0,
         stock_quantity: product.stock_quantity,
@@ -524,7 +559,7 @@ const Billing: React.FC = () => {
   const getMrpSavings = () => round2(cartItems.reduce((sum, item) =>
     sum + (item.mrp && item.mrp > item.unit_price ? (item.mrp - item.unit_price) * item.quantity : 0), 0));
   const getDiscountTotal = () => round2(cartItems.reduce((sum, item) =>
-    sum + round2(round2(item.unit_price * item.quantity) * effectiveDiscount(item) / 100), 0));
+    sum + lineDiscount(item).amount, 0));
 
   const resetBill = () => {
     setCartItems([]);
@@ -562,6 +597,9 @@ const Billing: React.FC = () => {
           discount_percent: item.discount_percent,
           clearance_percent: item.clearance_percent,
           skip_clearance: item.skip_clearance,
+          offer_name: item.offer_name,
+          offer_type: item.offer_type,
+          offer_value: item.offer_value,
           line_total: item.line_total,
         })),
         label: label.trim() || undefined,
@@ -608,6 +646,9 @@ const Billing: React.FC = () => {
         discount_percent: Number(i.discount_percent ?? 0),
         clearance_percent: Number(i.clearance_percent ?? 0),
         skip_clearance: !!i.skip_clearance,
+        offer_name: i.offer_name ?? undefined,
+        offer_type: i.offer_type ?? undefined,
+        offer_value: i.offer_value != null ? Number(i.offer_value) : undefined,
         tax_amount: 0,
         line_total: 0,
         stock_quantity: Infinity,
@@ -822,15 +863,19 @@ const Billing: React.FC = () => {
                       <Typography variant="caption" color="text.secondary">
                         {item.barcode}{item.batch_id && item.mrp ? ` · MRP ₹${item.mrp.toFixed(2)} batch` : ''}
                       </Typography>
-                      {item.clearance_percent > 0 && (
-                        <Box>
-                          {item.skip_clearance ? (
+                      {(item.clearance_percent > 0 || !!item.offer_value) && (
+                        <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {item.offer_value ? (
+                            <Chip size="small" color="secondary" label={offerText(item)}
+                              variant={lineDiscount(item).source === 'offer' ? 'filled' : 'outlined'} />
+                          ) : null}
+                          {item.clearance_percent > 0 && (item.skip_clearance ? (
                             <Chip size="small" variant="outlined" label={`Near-expiry −${item.clearance_percent}% removed · Restore`}
                               onClick={() => toggleClearance(index)} />
                           ) : (
                             <Chip size="small" color="warning" label={`Near expiry −${item.clearance_percent}%`}
                               onDelete={() => toggleClearance(index)} />
-                          )}
+                          ))}
                         </Box>
                       )}
                     </TableCell>

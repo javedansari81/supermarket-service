@@ -68,6 +68,9 @@ export const API_ENDPOINTS = {
   CLEARANCE_NEAR_EXPIRY: '/clearance/near-expiry',
   CLEARANCE_MARKDOWN: '/clearance/markdown',
 
+  // Festival / promotional offers
+  OFFERS: '/offers',
+
   // Customers
   CUSTOMERS: '/customers',
   CUSTOMER_LOOKUP: '/customers/lookup',

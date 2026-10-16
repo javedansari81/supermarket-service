@@ -31,6 +31,7 @@ import Users from './pages/Users';
 import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
 import NearExpiry from './pages/NearExpiry';
+import Offers from './pages/Offers';
 
 function App() {
   return (
@@ -58,6 +59,7 @@ function App() {
                 <Route path="purchases" element={<ProtectedRoute requireAdmin><Purchases /></ProtectedRoute>} />
                 <Route path="inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
                 <Route path="near-expiry" element={<ProtectedRoute requireAdmin><NearExpiry /></ProtectedRoute>} />
+                <Route path="offers" element={<ProtectedRoute requireAdmin><Offers /></ProtectedRoute>} />
                 <Route path="barcode" element={<ProtectedRoute requireSupervisor><Barcode /></ProtectedRoute>} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="customers" element={<Customers />} />

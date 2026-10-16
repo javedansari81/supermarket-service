@@ -24,6 +24,11 @@ class HeldBillItem(BaseModel):
     # Near-expiry % shown when held, and whether the cashier removed it
     clearance_percent: Decimal = Field(Decimal("0"), ge=0, le=100)
     skip_clearance: bool = False
+    # Offer shown when held
+    offer_id: Optional[int] = None
+    offer_name: Optional[str] = Field(None, max_length=100)
+    offer_type: Optional[str] = None
+    offer_value: Optional[Decimal] = None
     line_total: Decimal = Decimal("0")
 
 

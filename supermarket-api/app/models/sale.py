@@ -79,8 +79,10 @@ class SaleItem(Base):
     igst_amount = Column(Numeric(10, 2), default=0)
     discount_percent = Column(Numeric(5, 2), default=0)
     discount_amount = Column(Numeric(10, 2), default=0)
-    # 'manual' or 'clearance' (near-expiry / markdown); None without a discount
+    # 'manual', 'clearance' (near-expiry / markdown) or 'offer'; None without a discount
     discount_source = Column(String(20))
+    offer_id = Column(Integer, ForeignKey('offers.id', ondelete='SET NULL'))
+    offer_name = Column(String(100))
     line_total = Column(Numeric(12, 2), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     

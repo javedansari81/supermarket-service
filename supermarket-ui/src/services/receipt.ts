@@ -13,6 +13,7 @@ export interface ReceiptItem {
   unit_price: number;
   discount_amount: number;
   discount_source?: string | null;
+  offer_name?: string | null;
   taxable_value: number;
   tax_percent: number;
   tax_amount: number;
@@ -69,6 +70,8 @@ const money = (n: number) => Number(n || 0).toFixed(2);
 const qty = (i: ReceiptItem) =>
   Number.isInteger(i.quantity) ? `${i.quantity}` : `${Number(i.quantity.toFixed(3))}${i.unit_type ? ' ' + i.unit_type : ''}`;
 const row = (label: string, value: string, cls = '') => `<tr class="${cls}"><td>${label}</td><td class="r">${value}</td></tr>`;
+const discountLabel = (i: ReceiptItem) => i.discount_source === 'clearance' ? 'Near-expiry discount'
+  : i.discount_source === 'offer' ? esc(i.offer_name || 'Offer') : 'Discount';
 
 export const buildReceiptHtml = (d: InvoicePrintData): string => {
   const date = new Date(d.invoice_date).toLocaleString('en-IN', {
@@ -78,7 +81,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
     <tr><td colspan="4" class="b">${esc(i.product_name)}</td></tr>
     <tr class="sub"><td>${i.hsn_code ? 'HSN ' + esc(i.hsn_code) : ''} ${i.tax_percent}%</td>
       <td class="r">${esc(qty(i))}</td><td class="r">${money(i.unit_price)}</td><td class="r">${money(i.line_total)}</td></tr>
-    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${i.discount_source === 'clearance' ? 'Near-expiry discount' : 'Discount'}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
+    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${discountLabel(i)}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
   const hsnHead = d.is_interstate
     ? '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">IGST</th>'
     : '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">CGST</th><th class="r">SGST</th>';

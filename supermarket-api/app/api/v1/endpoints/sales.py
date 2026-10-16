@@ -10,7 +10,8 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches, uses_batches, distinct_mrps, allocate, get_product_batch
-from app.core.clearance import ClearanceResolver, line_discount
+from app.core.clearance import ClearanceResolver
+from app.core.offers import OfferResolver, resolve_line_discount
 from app.models.audit_log import AuditLog
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product
@@ -213,6 +214,7 @@ async def create_sale(
     
     # Process items
     clearance = ClearanceResolver(db, context.tenant_id)
+    offers = OfferResolver(db, context.tenant_id)
     sale_items = []
     for item_data in sale_data.items:
         product = db.query(Product).filter(
@@ -246,7 +248,6 @@ async def create_sale(
         for batch, quantity in pick_batches(db, product, item_data):
             clearance_percent = Decimal("0") if item_data.skip_clearance \
                 else clearance.percent(product, batch)
-            discount_percent, discount_source = line_discount(manual_percent, clearance_percent)
             if batch:
                 unit_price = batch.selling_price or batch.mrp or product.selling_price \
                     or product.mrp or Decimal("0")
@@ -258,7 +259,9 @@ async def create_sale(
             # Calculate amounts
             cents = Decimal("0.01")
             line_gross = (unit_price * quantity).quantize(cents)
-            discount_amount = (line_gross * discount_percent / 100).quantize(cents)
+            discount = resolve_line_discount(line_gross, quantity, unit_price, manual_percent,
+                                             clearance_percent, offers.best(product.id, unit_price))
+            discount_amount = discount.amount
             net_amount = line_gross - discount_amount
             if tax_inclusive:
                 tax_amount = (net_amount * tax_percent / (100 + tax_percent)).quantize(cents)
@@ -293,9 +296,11 @@ async def create_sale(
                 cgst_amount=cgst_amount,
                 sgst_amount=sgst_amount,
                 igst_amount=igst_amount,
-                discount_percent=discount_percent,
+                discount_percent=discount.percent,
                 discount_amount=discount_amount,
-                discount_source=discount_source,
+                discount_source=discount.source,
+                offer_id=discount.offer.offer_id if discount.offer else None,
+                offer_name=discount.offer.offer.name if discount.offer else None,
                 line_total=line_total
             )
             db.add(sale_item)

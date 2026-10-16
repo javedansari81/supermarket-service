@@ -154,4 +154,9 @@ class ProductSearchResponse(BaseModel):
     scanned_quantity: Optional[Decimal] = None
     # Daily markdown % of a loose item
     clearance_percent: Decimal = Decimal("0")
+    # Running offer saving the most at selling_price: 'percent' or 'amount' (Rs per unit)
+    offer_id: Optional[int] = None
+    offer_name: Optional[str] = None
+    offer_type: Optional[str] = None
+    offer_value: Optional[Decimal] = None
 

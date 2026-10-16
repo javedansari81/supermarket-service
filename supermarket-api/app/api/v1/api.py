@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     sale_returns,
     held_bills,
     clearance,
+    offers,
     customers,
     invoices,
     reports,
@@ -72,6 +73,9 @@ api_router.include_router(held_bills.router, prefix="/held-bills", tags=["Held B
 
 # Near-expiry (clearance) discounts
 api_router.include_router(clearance.router, prefix="/clearance", tags=["Clearance"])
+
+# Festival / promotional offers
+api_router.include_router(offers.router, prefix="/offers", tags=["Offers"])
 
 # Customers
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])

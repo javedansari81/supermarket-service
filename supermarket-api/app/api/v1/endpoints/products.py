@@ -17,6 +17,7 @@ from app.core.batches import (
     display_product_name, base_product_name, capitalize_words, next_plu_code, STORE_BRAND
 )
 from app.core.clearance import ClearanceResolver
+from app.core.offers import OfferResolver
 from app.models.audit_log import AuditLog
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
@@ -400,6 +401,7 @@ async def search_product(
         response = ProductBatchResponse.model_validate(b)
         response.clearance_percent = clearance.percent(product, b)
         batch_responses.append(response)
+    offer = OfferResolver(db, context.tenant_id).best(product.id, Decimal(selling_price or 0))
 
     return ProductSearchResponse(
         id=product.id,
@@ -419,7 +421,11 @@ async def search_product(
         batch_id=scanned_batch.id if scanned_batch else None,
         batches=batch_responses,
         scanned_quantity=scale_quantity(scanned_weight, product.unit_type) if scanned_weight else None,
-        clearance_percent=Decimal("0") if uses_batches(product) else clearance.percent(product)
+        clearance_percent=Decimal("0") if uses_batches(product) else clearance.percent(product),
+        offer_id=offer.offer_id if offer else None,
+        offer_name=offer.offer.name if offer else None,
+        offer_type=offer.discount_type if offer else None,
+        offer_value=offer.discount_value if offer else None,
     )
 
 
