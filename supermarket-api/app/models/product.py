@@ -1,7 +1,8 @@
 """
 Product model for inventory items
 """
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, Date, Boolean
+from datetime import datetime
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, Date, Boolean, DateTime
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin, StatusMixin
@@ -40,6 +41,9 @@ class Product(Base, TimestampMixin, StatusMixin):
     stock_quantity = Column(Numeric(12, 3), default=0)
     reorder_level = Column(Numeric(12, 3), default=0)
     expiry_date = Column(Date)
+    # Daily markdown for loose items, valid until markdown_until (UTC)
+    markdown_percent = Column(Numeric(5, 2))
+    markdown_until = Column(DateTime)
     description = Column(Text)
     created_by = Column(Integer, ForeignKey('users.id'))
     updated_by = Column(Integer, ForeignKey('users.id'))
@@ -67,6 +71,13 @@ class Product(Base, TimestampMixin, StatusMixin):
         {'extend_existing': True}
     )
     
+    @property
+    def active_markdown_percent(self):
+        """Markdown % while it is valid; None once it has lapsed"""
+        if self.markdown_percent and self.markdown_until and self.markdown_until > datetime.utcnow():
+            return self.markdown_percent
+        return None
+
     def __repr__(self):
         return f"<Product(id={self.id}, no={self.product_no}, name={self.product_name})>"
 

@@ -10,6 +10,7 @@ from sqlalchemy import func
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches, uses_batches, distinct_mrps, allocate, get_product_batch
+from app.core.clearance import ClearanceResolver, line_discount
 from app.models.audit_log import AuditLog
 from app.models.sale import Sale, SaleItem
 from app.models.product import Product
@@ -211,6 +212,7 @@ async def create_sale(
     db.flush()
     
     # Process items
+    clearance = ClearanceResolver(db, context.tenant_id)
     sale_items = []
     for item_data in sale_data.items:
         product = db.query(Product).filter(
@@ -238,10 +240,13 @@ async def create_sale(
             )
 
         tax_percent = product.tax_percent or Decimal("0")
-        discount_percent = item_data.discount_percent or Decimal("0")
+        manual_percent = item_data.discount_percent or Decimal("0")
 
         # One sale line per batch the quantity is taken from
         for batch, quantity in pick_batches(db, product, item_data):
+            clearance_percent = Decimal("0") if item_data.skip_clearance \
+                else clearance.percent(product, batch)
+            discount_percent, discount_source = line_discount(manual_percent, clearance_percent)
             if batch:
                 unit_price = batch.selling_price or batch.mrp or product.selling_price \
                     or product.mrp or Decimal("0")
@@ -290,6 +295,7 @@ async def create_sale(
                 igst_amount=igst_amount,
                 discount_percent=discount_percent,
                 discount_amount=discount_amount,
+                discount_source=discount_source,
                 line_total=line_total
             )
             db.add(sale_item)

@@ -118,6 +118,8 @@ class ProductBatchResponse(BaseModel):
     quantity_received: Decimal
     quantity_left: Decimal
     purchase_id: Optional[int] = None
+    # Near-expiry discount % that billing applies to this batch (product search only)
+    clearance_percent: Optional[Decimal] = None
 
     model_config = {"from_attributes": True}
 
@@ -150,4 +152,6 @@ class ProductSearchResponse(BaseModel):
     batches: List[ProductBatchResponse] = []
     # Weight read from a scale label, in the product's unit
     scanned_quantity: Optional[Decimal] = None
+    # Daily markdown % of a loose item
+    clearance_percent: Decimal = Decimal("0")
 

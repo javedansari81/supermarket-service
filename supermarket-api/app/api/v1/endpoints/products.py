@@ -13,9 +13,10 @@ from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import (
     generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch,
-    scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
+    in_stock_batches, scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
     display_product_name, base_product_name, capitalize_words, next_plu_code, STORE_BRAND
 )
+from app.core.clearance import ClearanceResolver
 from app.models.audit_log import AuditLog
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
@@ -393,6 +394,13 @@ async def search_product(
         selling_price = product.selling_price or product.mrp
         mrp = product.mrp
 
+    clearance = ClearanceResolver(db, context.tenant_id)
+    batch_responses = []
+    for b in batches:
+        response = ProductBatchResponse.model_validate(b)
+        response.clearance_percent = clearance.percent(product, b)
+        batch_responses.append(response)
+
     return ProductSearchResponse(
         id=product.id,
         product_no=product.product_no,
@@ -409,8 +417,9 @@ async def search_product(
         hsn_code=product.hsn_code,
         locations=[ProductLocationResponse.model_validate(link) for link in product.locations],
         batch_id=scanned_batch.id if scanned_batch else None,
-        batches=[ProductBatchResponse.model_validate(b) for b in batches],
-        scanned_quantity=scale_quantity(scanned_weight, product.unit_type) if scanned_weight else None
+        batches=batch_responses,
+        scanned_quantity=scale_quantity(scanned_weight, product.unit_type) if scanned_weight else None,
+        clearance_percent=Decimal("0") if uses_batches(product) else clearance.percent(product)
     )
 
 
@@ -753,6 +762,7 @@ async def update_product(
     old_value = product_snapshot(product)
     was_loose = bool(product.is_loose)
     previous_type = product.product_type
+    previous_expiry = product.expiry_date
     for field, value in update_data.items():
         setattr(product, field, value)
     apply_gst_item(product, gst_item, fill_hsn=gst_item_changed and "hsn_code" not in update_data,
@@ -765,6 +775,15 @@ async def update_product(
     db.flush()
     if was_loose != product.is_loose:
         sync_batches(db, product)
+    if product.expiry_date != previous_expiry and uses_batches(product):
+        # Opening / adjustment stock follows the product's expiry; purchase batches keep their own
+        for batch in in_stock_batches(db, product):
+            if batch.purchase_id is None and batch.expiry_date != product.expiry_date:
+                batch_old = snapshot(batch)
+                batch.expiry_date = product.expiry_date
+                db.flush()
+                record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                             "product_batch", batch.id, old_value=batch_old, new_value=snapshot(batch))
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "product", product.id, old_value=old_value, new_value=product_snapshot(product))
     db.commit()

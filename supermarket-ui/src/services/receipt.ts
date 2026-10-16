@@ -12,6 +12,7 @@ export interface ReceiptItem {
   quantity: number;
   unit_price: number;
   discount_amount: number;
+  discount_source?: string | null;
   taxable_value: number;
   tax_percent: number;
   tax_amount: number;
@@ -77,7 +78,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
     <tr><td colspan="4" class="b">${esc(i.product_name)}</td></tr>
     <tr class="sub"><td>${i.hsn_code ? 'HSN ' + esc(i.hsn_code) : ''} ${i.tax_percent}%</td>
       <td class="r">${esc(qty(i))}</td><td class="r">${money(i.unit_price)}</td><td class="r">${money(i.line_total)}</td></tr>
-    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">Discount</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
+    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${i.discount_source === 'clearance' ? 'Near-expiry discount' : 'Discount'}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
   const hsnHead = d.is_interstate
     ? '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">IGST</th>'
     : '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">CGST</th><th class="r">SGST</th>';

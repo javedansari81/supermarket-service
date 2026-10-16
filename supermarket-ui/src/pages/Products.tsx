@@ -725,7 +725,7 @@ const Products: React.FC = () => {
             </Grid>
             <Grid size={{ xs: 12, md: 4 }}>
               <TextField fullWidth label="Expiry Date" type="date" value={formData.expiry_date}
-                InputLabelProps={{ shrink: true }} helperText="Updated by each purchase that has an expiry"
+                InputLabelProps={{ shrink: true }} helperText="Also sets opening stock; purchase batches keep their own (edit in Inventory)"
                 onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })} />
             </Grid>
             {editProduct && (

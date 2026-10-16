@@ -9,7 +9,7 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Search, Refresh, Edit } from '@mui/icons-material';
+import { Search, Refresh, Edit, EventNote } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
@@ -37,6 +37,8 @@ const Inventory: React.FC = () => {
   const [adjustReason, setAdjustReason] = useState('');
   const [batches, setBatches] = useState<ProductBatch[]>([]);
   const [batchId, setBatchId] = useState('');
+  const [batchesOpen, setBatchesOpen] = useState(false);
+  const [expiryEdits, setExpiryEdits] = useState<Record<number, string>>({});
 
   const fetchStock = useCallback(async () => {
     setLoading(true);
@@ -95,6 +97,32 @@ const Inventory: React.FC = () => {
     } catch (error) { console.error('Failed to fetch batches'); }
   };
 
+  const loadBatches = async (item: StockItem) => {
+    try {
+      const response = await api.get<ProductBatch[]>(`${API_ENDPOINTS.PRODUCTS}/${item.id}/batches`);
+      setBatches(response.data);
+      setExpiryEdits(Object.fromEntries(response.data.map(b => [b.id, b.expiry_date || ''])));
+    } catch (error) { toast.error('Failed to fetch batches'); }
+  };
+
+  const openBatchesDialog = (item: StockItem) => {
+    setSelectedItem(item); setBatches([]); setBatchesOpen(true);
+    loadBatches(item);
+  };
+
+  const saveExpiry = async (b: ProductBatch) => {
+    if (!selectedItem) return;
+    try {
+      await api.put(`${API_ENDPOINTS.PRODUCTS}/${selectedItem.id}/batches/${b.id}`,
+        { expiry_date: expiryEdits[b.id] || null });
+      toast.success('Expiry updated');
+      loadBatches(selectedItem);
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Failed to update expiry');
+    }
+  };
+
   const batchLabel = (b: ProductBatch) => [
     b.batch_no || `Batch #${b.id}`,
     b.mrp != null ? `MRP ₹${Number(b.mrp).toFixed(2)}` : null,
@@ -122,8 +150,11 @@ const Inventory: React.FC = () => {
       const status = getStockStatus(params.row.stock_quantity, params.row.reorder_level);
       return <Chip label={status.label} size="small" color={status.color} />;
     }},
-    { field: 'actions', headerName: 'Adjust', width: 80, sortable: false, renderCell: (params: GridRenderCellParams) => (
-      <IconButton size="small" onClick={() => openAdjustDialog(params.row)}><Edit fontSize="small" /></IconButton>
+    { field: 'actions', headerName: 'Actions', width: 100, sortable: false, renderCell: (params: GridRenderCellParams) => (
+      <>
+        <IconButton size="small" title="Adjust stock" onClick={() => openAdjustDialog(params.row)}><Edit fontSize="small" /></IconButton>
+        <IconButton size="small" title="Batches & expiry" onClick={() => openBatchesDialog(params.row)}><EventNote fontSize="small" /></IconButton>
+      </>
     )},
   ];
 
@@ -197,6 +228,28 @@ const Inventory: React.FC = () => {
           <Button onClick={() => setAdjustOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={handleAdjust}>Adjust Stock</Button>
         </DialogActions>
+      </Dialog>
+      <Dialog open={batchesOpen} onClose={() => setBatchesOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Batches: {selectedItem?.product_name}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Each purchase line is kept as a batch. Near-expiry discounts use the batch expiry.
+          </Typography>
+          {batches.map(b => (
+            <Box key={b.id} sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 1.5 }}>
+              <Typography variant="body2" sx={{ flex: 1 }}>
+                {[b.batch_no || `Batch #${b.id}`, b.purchase_id ? `Purchase #${b.purchase_id}` : 'Opening / adjustment',
+                  b.mrp != null ? `MRP ₹${Number(b.mrp).toFixed(2)}` : null, `Left ${Number(b.quantity_left)}`]
+                  .filter(Boolean).join(' · ')}
+              </Typography>
+              <TextField size="small" type="date" label="Expiry" InputLabelProps={{ shrink: true }}
+                value={expiryEdits[b.id] ?? ''} onChange={(e) => setExpiryEdits({ ...expiryEdits, [b.id]: e.target.value })} />
+              <Button size="small" disabled={(expiryEdits[b.id] ?? '') === (b.expiry_date || '')} onClick={() => saveExpiry(b)}>Save</Button>
+            </Box>
+          ))}
+          {batches.length === 0 && <Typography color="text.secondary">No batches in stock</Typography>}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setBatchesOpen(false)}>Close</Button></DialogActions>
       </Dialog>
     </Box>
   );

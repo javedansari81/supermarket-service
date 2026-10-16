@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "default_tax_percent": {"value": "0", "category": "billing", "description": "Default tax percentage"},
     "invoice_prefix": {"value": "INV", "category": "billing", "description": "Invoice number prefix"},
     "invoice_footer": {"value": "Thank you for shopping!", "category": "billing", "description": "Invoice footer text"},
+    "clearance_enabled": {"value": "false", "category": "billing", "description": "Apply near-expiry discount tiers"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }

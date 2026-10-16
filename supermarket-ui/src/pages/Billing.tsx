@@ -64,6 +64,9 @@ interface CartItem {
   is_loose: boolean;
   tax_percent: number;
   discount_percent: number;
+  // Near-expiry % (preview; the server decides at checkout) and whether the cashier removed it
+  clearance_percent: number;
+  skip_clearance: boolean;
   tax_amount: number;
   line_total: number;
   stock_quantity: number;
@@ -97,6 +100,8 @@ interface SearchProduct {
   // Weight read from a weighing-scale label (21 + PLU + weight), in the product's unit
   scanned_quantity?: number;
   scanned_label?: string;
+  // Today's markdown of a loose item
+  clearance_percent?: number;
 }
 
 interface BillingBatch {
@@ -106,6 +111,7 @@ interface BillingBatch {
   selling_price: number;
   expiry_date?: string;
   quantity_left: number;
+  clearance_percent: number;
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -136,6 +142,7 @@ const normalize = (p: any): SearchProduct => ({
   is_loose: !!p.is_loose,
   batch_id: p.batch_id ?? undefined,
   scanned_quantity: p.scanned_quantity != null ? Number(p.scanned_quantity) : undefined,
+  clearance_percent: p.clearance_percent != null ? Number(p.clearance_percent) : undefined,
   batches: Array.isArray(p.batches) && !p.is_loose ? p.batches.map((b: any) => ({
     id: b.id,
     batch_no: b.batch_no,
@@ -143,10 +150,22 @@ const normalize = (p: any): SearchProduct => ({
     selling_price: Number(b.selling_price ?? b.mrp ?? p.selling_price ?? 0),
     expiry_date: b.expiry_date,
     quantity_left: Number(b.quantity_left ?? 0),
+    clearance_percent: Number(b.clearance_percent ?? 0),
   })) : undefined,
 });
 
 const distinctMrpCount = (batches: BillingBatch[]) => new Set(batches.map(b => b.mrp ?? null)).size;
+
+// Near-expiry % of the batch being sold; without a chosen batch, stock is taken first expiry first
+const clearanceOf = (product: SearchProduct): number => {
+  if (product.is_loose) return product.clearance_percent ?? 0;
+  const batches = product.batches || [];
+  const batch = product.batch_id ? batches.find(b => b.id === product.batch_id) : batches[0];
+  return batch?.clearance_percent ?? 0;
+};
+
+const effectiveDiscount = (item: CartItem) =>
+  item.skip_clearance ? item.discount_percent : Math.max(item.discount_percent, item.clearance_percent);
 
 const highlightMatch = (text: string, term: string) => {
   const words = term.trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
@@ -335,7 +354,8 @@ const Billing: React.FC = () => {
     setMatchedTerm('');
     setHighlight(-1);
     setSearchInput('');
-    if (!product.is_loose && !product.batches && product.product_no) {
+    const needsLookup = product.is_loose ? product.clearance_percent === undefined : !product.batches;
+    if (needsLookup && product.product_no && !product.scanned_quantity) {
       try {
         const response = await api.get(API_ENDPOINTS.PRODUCT_SEARCH, { params: { product_no: product.product_no } });
         product = normalize(response.data);
@@ -394,7 +414,7 @@ const Billing: React.FC = () => {
 
   const calculateLine = (item: CartItem): CartItem => {
     const gross = round2(item.unit_price * item.quantity);
-    const discount = round2(gross * item.discount_percent / 100);
+    const discount = round2(gross * effectiveDiscount(item) / 100);
     const net = gross - discount;
     const tax = taxInclusive
       ? round2(net * item.tax_percent / (100 + item.tax_percent))
@@ -429,6 +449,8 @@ const Billing: React.FC = () => {
         is_loose: product.is_loose,
         tax_percent: product.tax_percent,
         discount_percent: 0,
+        clearance_percent: clearanceOf(product),
+        skip_clearance: false,
         tax_amount: 0,
         line_total: 0,
         stock_quantity: product.stock_quantity,
@@ -490,11 +512,19 @@ const Billing: React.FC = () => {
     setCartItems(cartItems.filter((_, i) => i !== index));
   };
 
+  const toggleClearance = (index: number) => {
+    const updated = [...cartItems];
+    updated[index] = calculateLine({ ...updated[index], skip_clearance: !updated[index].skip_clearance });
+    setCartItems(updated);
+  };
+
   const getGrandTotal = () => round2(cartItems.reduce((sum, item) => sum + item.line_total, 0));
   const getTotalTax = () => round2(cartItems.reduce((sum, item) => sum + item.tax_amount, 0));
   const getSubtotal = () => round2(getGrandTotal() - getTotalTax());
   const getMrpSavings = () => round2(cartItems.reduce((sum, item) =>
     sum + (item.mrp && item.mrp > item.unit_price ? (item.mrp - item.unit_price) * item.quantity : 0), 0));
+  const getDiscountTotal = () => round2(cartItems.reduce((sum, item) =>
+    sum + round2(round2(item.unit_price * item.quantity) * effectiveDiscount(item) / 100), 0));
 
   const resetBill = () => {
     setCartItems([]);
@@ -530,6 +560,8 @@ const Billing: React.FC = () => {
           is_loose: item.is_loose,
           tax_percent: item.tax_percent,
           discount_percent: item.discount_percent,
+          clearance_percent: item.clearance_percent,
+          skip_clearance: item.skip_clearance,
           line_total: item.line_total,
         })),
         label: label.trim() || undefined,
@@ -574,6 +606,8 @@ const Billing: React.FC = () => {
         is_loose: !!i.is_loose,
         tax_percent: Number(i.tax_percent ?? 0),
         discount_percent: Number(i.discount_percent ?? 0),
+        clearance_percent: Number(i.clearance_percent ?? 0),
+        skip_clearance: !!i.skip_clearance,
         tax_amount: 0,
         line_total: 0,
         stock_quantity: Infinity,
@@ -633,6 +667,7 @@ const Billing: React.FC = () => {
           batch_id: item.batch_id,
           quantity: item.quantity,
           discount_percent: item.discount_percent,
+          skip_clearance: item.skip_clearance || undefined,
         })),
         payment_mode: paymentMode,
         customer_name: customerName.trim() || undefined,
@@ -787,6 +822,17 @@ const Billing: React.FC = () => {
                       <Typography variant="caption" color="text.secondary">
                         {item.barcode}{item.batch_id && item.mrp ? ` · MRP ₹${item.mrp.toFixed(2)} batch` : ''}
                       </Typography>
+                      {item.clearance_percent > 0 && (
+                        <Box>
+                          {item.skip_clearance ? (
+                            <Chip size="small" variant="outlined" label={`Near-expiry −${item.clearance_percent}% removed · Restore`}
+                              onClick={() => toggleClearance(index)} />
+                          ) : (
+                            <Chip size="small" color="warning" label={`Near expiry −${item.clearance_percent}%`}
+                              onDelete={() => toggleClearance(index)} />
+                          )}
+                        </Box>
+                      )}
                     </TableCell>
                     <TableCell align="center">
                       ₹{item.unit_price.toFixed(2)}{item.is_loose ? `/${item.unit_type}` : ''}
@@ -844,6 +890,12 @@ const Billing: React.FC = () => {
                 <Typography>GST{taxInclusive ? ' (included)' : ''}:</Typography>
                 <Typography>₹{getTotalTax().toFixed(2)}</Typography>
               </Box>
+              {getDiscountTotal() > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="success.main">Discount:</Typography>
+                  <Typography color="success.main">−₹{getDiscountTotal().toFixed(2)}</Typography>
+                </Box>
+              )}
               {getMrpSavings() > 0 && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography color="success.main">You save (vs MRP):</Typography>
@@ -986,6 +1038,7 @@ const Billing: React.FC = () => {
                     `Stock: ${b.quantity_left}`,
                     b.expiry_date ? `Expiry: ${new Date(b.expiry_date).toLocaleDateString('en-IN')}` : '',
                     b.batch_no ? `Batch: ${b.batch_no}` : '',
+                    b.clearance_percent > 0 ? `Near expiry −${b.clearance_percent}%` : '',
                   ].filter(Boolean).join(' · ')}
                 />
               </ListItemButton>

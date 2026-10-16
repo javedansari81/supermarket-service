@@ -62,6 +62,12 @@ export const API_ENDPOINTS = {
   SALE_RETURNS: '/sale-returns',
   HELD_BILLS: '/held-bills',
 
+  // Near-expiry (clearance) discounts
+  CLEARANCE_RULES: '/clearance/rules',
+  CLEARANCE_SETTINGS: '/clearance/settings',
+  CLEARANCE_NEAR_EXPIRY: '/clearance/near-expiry',
+  CLEARANCE_MARKDOWN: '/clearance/markdown',
+
   // Customers
   CUSTOMERS: '/customers',
   CUSTOMER_LOOKUP: '/customers/lookup',

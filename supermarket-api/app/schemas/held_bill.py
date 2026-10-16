@@ -21,6 +21,9 @@ class HeldBillItem(BaseModel):
     is_loose: bool = False
     tax_percent: Decimal = Decimal("0")
     discount_percent: Decimal = Field(Decimal("0"), ge=0, le=100)
+    # Near-expiry % shown when held, and whether the cashier removed it
+    clearance_percent: Decimal = Field(Decimal("0"), ge=0, le=100)
+    skip_clearance: bool = False
     line_total: Decimal = Decimal("0")
 
 

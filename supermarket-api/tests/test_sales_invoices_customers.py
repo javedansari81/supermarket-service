@@ -478,3 +478,91 @@ def test_scan_batch_barcode_identifies_batch(client, db, product, admin_headers,
     assert res.status_code == 200
     assert res.json()["batch_id"] == new_id
     assert float(res.json()["mrp"]) == 65 and float(res.json()["selling_price"]) == 62
+
+
+# ---------- Near-expiry (clearance) discounts ----------
+
+CLEAR = "/api/v1/clearance"
+
+
+def expiring_in(days):
+    from datetime import timedelta
+    from app.core.clearance import today_ist
+    return (today_ist() + timedelta(days=days)).isoformat()
+
+
+def sell_line(client, headers, **line):
+    return client.post(SALES, json={"items": [line]}, headers=headers)
+
+
+def test_clearance_tiers_apply_to_near_expiry_batch(client, product, category, admin_headers,
+                                                    cashier_headers):
+    early = buy_batch(client, product, admin_headers, qty=20, mrp=60, selling_price=55,
+                      expiry_date=expiring_in(5))
+    line = {"product_id": product.id, "quantity": 2}
+    # Off until switched on
+    item = sell_line(client, cashier_headers, **line).json()["items"][0]
+    assert item["batch_id"] == early and float(item["discount_amount"]) == 0
+    assert item["discount_source"] is None
+
+    assert client.put(f"{CLEAR}/settings", json={"enabled": True}, headers=cashier_headers).status_code == 403
+    assert client.put(f"{CLEAR}/settings", json={"enabled": True}, headers=admin_headers).status_code == 200
+    res = client.get("/api/v1/products/search", params={"barcode": product.barcode}, headers=cashier_headers)
+    assert {b["id"]: float(b["clearance_percent"]) for b in res.json()["batches"]}[early] == 30
+
+    # Default tiers: 5 days left -> 30%
+    sale = sell_line(client, cashier_headers, **line).json()
+    assert float(sale["items"][0]["discount_percent"]) == 30
+    assert sale["items"][0]["discount_source"] == "clearance"
+    assert float(sale["total_amount"]) == 77
+
+    # Cashier removes it; a higher manual discount wins
+    item = sell_line(client, cashier_headers, **line, skip_clearance=True).json()["items"][0]
+    assert float(item["discount_amount"]) == 0
+    item = sell_line(client, cashier_headers, **line, discount_percent=40).json()["items"][0]
+    assert float(item["discount_percent"]) == 40 and item["discount_source"] == "manual"
+
+    # Category rule overrides the default; product rule overrides the category
+    tiers = {"tiers": [{"days_left": 10, "percent": 15}]}
+    assert client.put(f"{CLEAR}/rules/category/{category.id}", json=tiers, headers=admin_headers).status_code == 200
+    item = sell_line(client, cashier_headers, **line).json()["items"][0]
+    assert float(item["discount_percent"]) == 15
+    url = f"{CLEAR}/rules/product/{product.id}"
+    assert client.put(url, json={"tiers": []}, headers=admin_headers).status_code == 200
+    item = sell_line(client, cashier_headers, **line).json()["items"][0]
+    assert item["discount_source"] is None
+
+    rules = client.get(f"{CLEAR}/rules", headers=admin_headers).json()
+    assert rules["enabled"] and len(rules["default"]["tiers"]) == 3
+    assert rules["categories"][0]["category_name"] == "Grocery"
+    assert client.delete(url, headers=admin_headers).status_code == 204
+    assert client.delete(url, headers=admin_headers).status_code == 404
+
+    bad = {"tiers": [{"days_left": 5, "percent": 10}, {"days_left": 5, "percent": 20}]}
+    assert client.put(f"{CLEAR}/rules/default", json=bad, headers=admin_headers).status_code == 422
+    near = client.get(f"{CLEAR}/near-expiry", params={"days": 7}, headers=admin_headers).json()
+    assert [(b["batch_id"], b["days_left"], float(b["clearance_percent"])) for b in near["batches"]] \
+        == [(early, 5, 15)]
+
+
+def test_loose_markdown_applies_until_removed(client, db, seed, product, admin_headers, cashier_headers):
+    from app.models import Product
+    tomato = Product(tenant_id=seed["tenant_a"].id, product_no="P0002", product_name="Tomato Loose",
+                     product_type="loose", is_loose=True, unit_type="kg", mrp=40, selling_price=40,
+                     tax_percent=0, stock_quantity=50)
+    db.add(tomato)
+    db.commit()
+    url = f"{CLEAR}/markdown/{tomato.id}"
+    assert client.put(url, json={"percent": 25}, headers=cashier_headers).status_code == 403
+    assert client.put(f"{CLEAR}/markdown/{product.id}", json={"percent": 25},
+                      headers=admin_headers).status_code == 400
+    res = client.put(url, json={"percent": 25}, headers=admin_headers)
+    assert res.status_code == 200 and float(res.json()["markdown_percent"]) == 25
+
+    sale = sell_line(client, cashier_headers, product_id=tomato.id, quantity=1.5).json()
+    assert sale["items"][0]["discount_source"] == "clearance"
+    assert float(sale["total_amount"]) == 45
+
+    assert client.put(url, json={"percent": 0}, headers=admin_headers).status_code == 200
+    sale = sell_line(client, cashier_headers, product_id=tomato.id, quantity=1.5).json()
+    assert float(sale["total_amount"]) == 60

@@ -213,6 +213,7 @@ async def get_invoice_print_data(
             "unit_price": float(item.unit_price),
             "discount_percent": float(item.discount_percent or 0),
             "discount_amount": float(item.discount_amount or 0),
+            "discount_source": item.discount_source,
             "taxable_value": float(taxable),
             "tax_percent": float(item.tax_percent or 0),
             "tax_amount": float(item.tax_amount or 0),

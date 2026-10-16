@@ -328,3 +328,13 @@ def test_update_batch(client, product, admin_headers, cashier_headers, admin_b_h
     assert client.put(url, json={"batch_no": "X"}, headers=admin_b_headers).status_code == 404
     other = f"/api/v1/products/{product.id}/batches/99999"
     assert client.put(other, json={"batch_no": "X"}, headers=admin_headers).status_code == 400
+
+
+def test_product_expiry_updates_opening_batch_only(client, product, admin_headers):
+    buy(client, product, admin_headers, mrp=65, selling_price=62)
+    res = client.put(f"/api/v1/products/{product.id}", json={"expiry_date": "2026-11-30"},
+                     headers=admin_headers)
+    assert res.status_code == 200
+    expiry = {float(b["mrp"]): b["expiry_date"] for b in batches_of(client, product, admin_headers)}
+    assert expiry[60] == "2026-11-30"
+    assert expiry[65] is None

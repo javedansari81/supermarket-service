@@ -35,6 +35,7 @@ import {
   History,
   Contacts,
   Place,
+  EventBusy,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -66,6 +67,7 @@ const navItems: NavItem[] = [
   { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true },
   { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true },
   { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },
+  { title: 'Near Expiry', path: '/near-expiry', icon: <EventBusy />, adminOnly: true },
   { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true },
   { title: 'Invoices', path: '/invoices', icon: <Receipt /> },
   { title: 'Customers', path: '/customers', icon: <Contacts /> },
