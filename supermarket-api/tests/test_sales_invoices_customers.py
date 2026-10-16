@@ -83,6 +83,95 @@ def test_list_and_get_sales(client, product, cashier_headers, admin_b_headers):
     assert client.get(SALES, params={"page_size": 500}, headers=cashier_headers).status_code == 422
 
 
+# ---------- Held bills ----------
+
+HELD = "/api/v1/held-bills"
+
+
+def hold(client, product, headers, qty=2, **extra):
+    item = {"product_id": product.id, "product_name": product.product_name, "quantity": qty,
+            "unit_price": 55, "tax_percent": 5, "line_total": 55 * qty}
+    return client.post(HELD, json={"items": [item], **extra}, headers=headers)
+
+
+def test_hold_and_recall_bill_keeps_stock(client, product, cashier_headers):
+    res = hold(client, product, cashier_headers, label="Blue shirt", customer_phone="+91 98765 43210")
+    assert res.status_code == 201
+    body = res.json()
+    assert body["item_count"] == 1
+    assert float(body["total_amount"]) == 110
+    assert body["customer_phone"] == MOBILE
+    assert body["cashier_name"] == "Cashier_A"
+    assert stock_of(client, product, cashier_headers) == 100
+
+    recalled = client.get(f"{HELD}/{body['id']}", headers=cashier_headers).json()
+    assert recalled["label"] == "Blue shirt"
+    assert float(recalled["items"][0]["quantity"]) == 2
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 1
+
+
+def test_hold_bill_rejects_bad_input(client, product, cashier_headers):
+    assert client.post(HELD, json={"items": []}, headers=cashier_headers).status_code == 422
+    assert hold(client, product, cashier_headers, qty=0).status_code == 422
+    assert hold(client, product, cashier_headers, customer_phone="12345").status_code == 422
+    assert hold(client, product, {}).status_code == 401
+
+
+def test_update_held_bill(client, product, cashier_headers):
+    held_id = hold(client, product, cashier_headers).json()["id"]
+    item = {"product_id": product.id, "product_name": product.product_name, "quantity": 3,
+            "unit_price": 55, "line_total": 165}
+    res = client.put(f"{HELD}/{held_id}", json={"items": [item]}, headers=cashier_headers)
+    assert res.status_code == 200
+    assert float(res.json()["total_amount"]) == 165
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 1
+
+
+def test_held_bill_visibility(client, product, cashier_headers, supervisor_headers,
+                              admin_headers, admin_b_headers):
+    held_id = hold(client, product, supervisor_headers).json()["id"]
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 0
+    assert client.get(f"{HELD}/{held_id}", headers=cashier_headers).status_code == 404
+    assert client.delete(f"{HELD}/{held_id}", headers=cashier_headers).status_code == 404
+    assert client.get(HELD, headers=admin_headers).json()["total"] == 1
+    assert client.get(HELD, headers=admin_b_headers).json()["total"] == 0
+    assert client.get(f"{HELD}/{held_id}", headers=admin_b_headers).status_code == 404
+
+
+def test_held_bill_limit_per_cashier(client, product, cashier_headers, supervisor_headers):
+    for _ in range(10):
+        assert hold(client, product, cashier_headers).status_code == 201
+    assert hold(client, product, cashier_headers).status_code == 400
+    assert hold(client, product, supervisor_headers).status_code == 201
+
+
+def test_discard_held_bill_is_audited(client, product, cashier_headers, admin_headers):
+    held_id = hold(client, product, cashier_headers).json()["id"]
+    assert client.delete(f"{HELD}/{held_id}", headers=cashier_headers).status_code == 204
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 0
+    logs = client.get("/api/v1/audit", params={"entity_type": "held_bill"}, headers=admin_headers).json()["items"]
+    assert any(log["action"] == "delete" and log["entity_id"] == held_id
+               and log["summary"].startswith("Discarded held bill") for log in logs)
+
+
+def test_sale_from_held_bill_removes_it(client, product, cashier_headers):
+    held_id = hold(client, product, cashier_headers).json()["id"]
+    res = sell(client, product, cashier_headers, held_bill_id=held_id)
+    assert res.status_code == 201
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 0
+    assert stock_of(client, product, cashier_headers) == 98
+
+
+def test_failed_sale_keeps_held_bill(client, product, cashier_headers):
+    held_id = hold(client, product, cashier_headers).json()["id"]
+    assert sell(client, product, cashier_headers, qty=1000, held_bill_id=held_id).status_code == 400
+    assert client.get(HELD, headers=cashier_headers).json()["total"] == 1
+
+
+def test_sale_ignores_missing_held_bill(client, product, cashier_headers):
+    assert sell(client, product, cashier_headers, held_bill_id=99999).status_code == 201
+
+
 # ---------- Invoices ----------
 
 def test_invoice_list_get_and_print(client, product, cashier_headers, admin_b_headers):

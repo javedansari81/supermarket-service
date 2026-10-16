@@ -118,6 +118,22 @@ The right panel shows **Subtotal**, **Tax**, and **Grand Total**.
 
 Stock is reduced when the sale is saved. Find the bill later under **Invoices**.
 
+### Hold and recall a bill
+
+Use this when a customer steps away (for example to fetch an item) and you need to serve the next customer.
+
+1. With items in the cart, click **Hold Bill**. Optionally type a note to recognise the customer (e.g. `lady in blue saree`).
+2. The cart clears. The **Held (n)** button shows how many bills are waiting.
+3. To continue, click **Held (n)** and select the bill. Its items and customer details return to the cart and a **Recalled held bill** notice is shown. Clear or hold the current cart first if it has items.
+4. Check out as usual. The held bill is removed once the sale is completed. Clicking **Hold Bill** again saves the changed cart back to the same held bill.
+5. To drop a held bill without selling it, click its delete icon in the list and confirm. Discards are recorded in **Audit Logs**.
+
+Notes:
+
+- Holding a bill does not reduce stock. Prices and stock are checked again at checkout.
+- Each user can hold up to 10 bills at a time.
+- Cashiers see only their own held bills. Supervisors and admins see all held bills in the store.
+
 ---
 
 ## 5. Products (Admin)

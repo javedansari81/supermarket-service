@@ -53,6 +53,7 @@ class SaleCreate(BaseModel):
     customer_gstin: Optional[str] = None
     place_of_supply_code: Optional[str] = None
     remarks: Optional[str] = None
+    held_bill_id: Optional[int] = None
 
     @field_validator("customer_phone")
     @classmethod

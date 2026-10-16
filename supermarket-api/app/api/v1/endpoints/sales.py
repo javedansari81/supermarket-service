@@ -22,6 +22,8 @@ from app.api.deps import get_current_user, get_tenant_context, TenantContext
 from app.api.v1.endpoints.settings import build_store_settings
 from app.api.v1.endpoints.invoices import create_invoice_for_sale, format_place_of_supply
 from app.api.v1.endpoints.customers import upsert_customer_for_sale
+from app.api.v1.endpoints.held_bills import held_bill_query
+from app.models.held_bill import HeldBill
 
 router = APIRouter()
 
@@ -338,6 +340,12 @@ async def create_sale(
                             "items": [snapshot(i) for i in sale_items]})
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "invoice", invoice.id, new_value={**snapshot(invoice), "sale_no": sale.sale_no})
+
+    # A recalled held bill is done once it is sold
+    if sale_data.held_bill_id:
+        held = held_bill_query(db, context).filter(HeldBill.id == sale_data.held_bill_id).first()
+        if held:
+            db.delete(held)
     db.commit()
     db.refresh(sale)
 

@@ -113,6 +113,13 @@ def describe_audit(log: AuditLog, user_names: dict) -> Tuple[Optional[str], Opti
             parts.append(f"Reason: {values['reason']}")
         return values.get("return_no"), " · ".join(parts)
 
+    if entity_type == "held_bill":
+        parts = [f"Discarded held bill ({format_money(values.get('total_amount'))})",
+                 f"{values.get('item_count') or 0} item(s)"]
+        if values.get("customer_name"):
+            parts.append(f"Customer: {values['customer_name']}")
+        return values.get("label"), " · ".join(parts)
+
     if entity_type == "purchase":
         reference = values.get("purchase_no")
         if action == AuditLog.ACTION_CREATE:
@@ -247,6 +254,7 @@ async def get_entity_types(current_user = Depends(get_current_admin_user)):
             {"value": "purchase", "label": "Purchase"},
             {"value": "sale", "label": "Sale"},
             {"value": "sale_return", "label": "Sale Return"},
+            {"value": "held_bill", "label": "Held Bill"},
             {"value": "invoice", "label": "Invoice"},
             {"value": "user", "label": "User"},
             {"value": "setting", "label": "Setting"}

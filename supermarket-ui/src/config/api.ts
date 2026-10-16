@@ -60,6 +60,7 @@ export const API_ENDPOINTS = {
   // Sales
   SALES: '/sales',
   SALE_RETURNS: '/sale-returns',
+  HELD_BILLS: '/held-bills',
 
   // Customers
   CUSTOMERS: '/customers',

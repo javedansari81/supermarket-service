@@ -40,7 +40,7 @@ import {
   Popper,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
-import { Delete, Add, Remove, Print, Search } from '@mui/icons-material';
+import { Delete, Add, Remove, Print, Search, PauseCircleOutline, ReceiptLong } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
@@ -67,6 +67,18 @@ interface CartItem {
   tax_amount: number;
   line_total: number;
   stock_quantity: number;
+}
+
+interface HeldBill {
+  id: number;
+  label?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  items: any[];
+  item_count: number;
+  total_amount: number;
+  cashier_name?: string;
+  created_at: string;
 }
 
 interface SearchProduct {
@@ -172,9 +184,23 @@ const Billing: React.FC = () => {
   const [batchPick, setBatchPick] = useState<SearchProduct | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const scannedLabels = useRef<Set<string>>(new Set());
+  const [heldBillId, setHeldBillId] = useState<number | null>(null);
+  const [heldBills, setHeldBills] = useState<HeldBill[]>([]);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const [holding, setHolding] = useState(false);
+
+  const loadHeldBills = () =>
+    api.get(API_ENDPOINTS.HELD_BILLS)
+      .then((res) => setHeldBills(res.data.items))
+      .catch(() => undefined);
+
+  useEffect(() => {
+    if (cartItems.length === 0) setHeldBillId(null);
+  }, [cartItems.length]);
 
   useEffect(() => {
     searchRef.current?.focus();
+    loadHeldBills();
     api.get(API_ENDPOINTS.SETTINGS_BILLING)
       .then((res) => setTaxInclusive(res.data.tax_inclusive_pricing !== false))
       .catch(() => undefined);
@@ -470,6 +496,114 @@ const Billing: React.FC = () => {
   const getMrpSavings = () => round2(cartItems.reduce((sum, item) =>
     sum + (item.mrp && item.mrp > item.unit_price ? (item.mrp - item.unit_price) * item.quantity : 0), 0));
 
+  const resetBill = () => {
+    setCartItems([]);
+    setHeldBillId(null);
+    scannedLabels.current.clear();
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerGstin('');
+    setDeliverToCustomerState(false);
+    searchRef.current?.focus();
+  };
+
+  const holdBill = async () => {
+    if (cartItems.length === 0) return;
+    if (!mobileValid) {
+      toast.error('Invalid mobile number (10 digits starting with 6-9)');
+      return;
+    }
+    const label = window.prompt('Note for this held bill (optional, e.g. "lady in blue saree")', '');
+    if (label === null) return;
+    setHolding(true);
+    try {
+      const data = {
+        items: cartItems.map(item => ({
+          product_id: item.product_id,
+          batch_id: item.batch_id,
+          product_name: item.product_name,
+          barcode: item.barcode || undefined,
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          mrp: item.mrp,
+          unit_type: item.unit_type,
+          is_loose: item.is_loose,
+          tax_percent: item.tax_percent,
+          discount_percent: item.discount_percent,
+          line_total: item.line_total,
+        })),
+        label: label.trim() || undefined,
+        customer_name: customerName.trim() || undefined,
+        customer_phone: customerPhone || undefined,
+      };
+      if (heldBillId) await api.put(`${API_ENDPOINTS.HELD_BILLS}/${heldBillId}`, data);
+      else await api.post(API_ENDPOINTS.HELD_BILLS, data);
+      toast.success('Bill held. Recall it from Held Bills.');
+      resetBill();
+      loadHeldBills();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Could not hold the bill');
+    } finally {
+      setHolding(false);
+    }
+  };
+
+  const openHeldBills = () => {
+    loadHeldBills();
+    setHeldOpen(true);
+  };
+
+  const recallHeldBill = async (id: number) => {
+    if (cartItems.length > 0 && id !== heldBillId) {
+      toast.error('Hold or clear the current bill first');
+      return;
+    }
+    try {
+      const res = await api.get(`${API_ENDPOINTS.HELD_BILLS}/${id}`);
+      const held: HeldBill = res.data;
+      // Stock is re-checked when the sale is completed
+      setCartItems(held.items.map((i: any) => calculateLine({
+        product_id: i.product_id,
+        batch_id: i.batch_id ?? undefined,
+        product_name: i.product_name,
+        barcode: i.barcode || '',
+        quantity: Number(i.quantity),
+        unit_price: Number(i.unit_price),
+        mrp: i.mrp != null ? Number(i.mrp) : undefined,
+        unit_type: i.unit_type || 'pcs',
+        is_loose: !!i.is_loose,
+        tax_percent: Number(i.tax_percent ?? 0),
+        discount_percent: Number(i.discount_percent ?? 0),
+        tax_amount: 0,
+        line_total: 0,
+        stock_quantity: Infinity,
+      })));
+      scannedLabels.current.clear();
+      setCustomerName(held.customer_name || '');
+      setCustomerPhone(held.customer_phone || '');
+      setCustomerGstin('');
+      setDeliverToCustomerState(false);
+      setHeldBillId(held.id);
+      setHeldOpen(false);
+      searchRef.current?.focus();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Could not recall the bill');
+      loadHeldBills();
+    }
+  };
+
+  const discardHeldBill = async (held: HeldBill) => {
+    if (!window.confirm(`Discard this held bill of ₹${Number(held.total_amount).toFixed(2)}? This cannot be undone.`)) return;
+    try {
+      await api.delete(`${API_ENDPOINTS.HELD_BILLS}/${held.id}`);
+      if (held.id === heldBillId) setHeldBillId(null);
+      toast.success('Held bill discarded');
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || 'Could not discard the bill');
+    }
+    loadHeldBills();
+  };
+
   const handleCheckout = async () => {
     if (cartItems.length === 0) {
       toast.error('Cart is empty');
@@ -505,20 +639,16 @@ const Billing: React.FC = () => {
         customer_phone: customerPhone || undefined,
         customer_gstin: customerGstin || undefined,
         place_of_supply_code: otherState && deliverToCustomerState ? customerStateCode : undefined,
+        held_bill_id: heldBillId || undefined,
       };
 
       const response = await api.post(API_ENDPOINTS.SALES, saleData);
       toast.success(`Sale completed! Invoice: ${response.data.invoice_no || response.data.sale_no}`);
 
-      // Reset cart
-      setCartItems([]);
-      scannedLabels.current.clear();
-      setCustomerName('');
-      setCustomerPhone('');
-      setCustomerGstin('');
-      setDeliverToCustomerState(false);
+      const wasHeld = !!heldBillId;
+      resetBill();
       setCheckoutOpen(false);
-      searchRef.current?.focus();
+      if (wasHeld) loadHeldBills();
 
       if (response.data.invoice_id) {
         printReceipt(response.data.invoice_id).catch(() => toast.error('Receipt printing failed. Reprint from Invoices.'));
@@ -725,9 +855,21 @@ const Billing: React.FC = () => {
                 <Typography variant="h6">Grand Total:</Typography>
                 <Typography variant="h6" color="primary">₹{getGrandTotal().toFixed(2)}</Typography>
               </Box>
+              {heldBillId && (
+                <Alert severity="info" sx={{ mb: 2 }}>Recalled held bill</Alert>
+              )}
               <Button fullWidth variant="contained" size="large" onClick={handleCheckout} disabled={cartItems.length === 0}>
                 Checkout
               </Button>
+              <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
+                <Button fullWidth variant="outlined" startIcon={<PauseCircleOutline />}
+                  onClick={holdBill} disabled={cartItems.length === 0 || holding}>
+                  Hold Bill
+                </Button>
+                <Button fullWidth variant="outlined" startIcon={<ReceiptLong />} onClick={openHeldBills}>
+                  Held ({heldBills.length})
+                </Button>
+              </Box>
             </CardContent>
           </Card>
         </Grid>
@@ -795,6 +937,38 @@ const Billing: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      <Dialog open={heldOpen} onClose={() => setHeldOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Held Bills</DialogTitle>
+        <DialogContent sx={{ px: 1 }}>
+          {heldBills.length === 0 ? (
+            <Typography sx={{ p: 2 }} color="text.secondary">No held bills</Typography>
+          ) : (
+            <List dense>
+              {heldBills.map((h, i) => (
+                <ListItemButton key={h.id} autoFocus={i === 0} selected={h.id === heldBillId} onClick={() => recallHeldBill(h.id)}>
+                  <ListItemText
+                    primary={`${h.label || h.customer_name || `Bill #${h.id}`} · ₹${Number(h.total_amount).toFixed(2)}`}
+                    secondary={[
+                      `${h.item_count} item${h.item_count === 1 ? '' : 's'}`,
+                      new Date(h.created_at + 'Z').toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+                      h.customer_phone || '',
+                      h.cashier_name ? `by ${h.cashier_name}` : '',
+                    ].filter(Boolean).join(' · ')}
+                  />
+                  <IconButton edge="end" color="error" aria-label="Discard held bill"
+                    onClick={(e) => { e.stopPropagation(); discardHeldBill(h); }}>
+                    <Delete />
+                  </IconButton>
+                </ListItemButton>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setHeldOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={!!batchPick} onClose={() => { setBatchPick(null); searchRef.current?.focus(); }} maxWidth="xs" fullWidth>
         <DialogTitle>
           {batchPick?.product_name}
@@ -827,7 +1001,8 @@ const Billing: React.FC = () => {
         <DialogTitle>
           {weighProduct?.product_name}
           <Typography variant="body2" color="text.secondary">
-            ₹{weighProduct?.selling_price.toFixed(2)} per {weighProduct?.unit_type} · Stock: {weighProduct && formatQty(weighProduct.stock_quantity, weighProduct.unit_type, true)}
+            ₹{weighProduct?.selling_price.toFixed(2)} per {weighProduct?.unit_type}
+            {weighProduct && Number.isFinite(weighProduct.stock_quantity) && ` · Stock: ${formatQty(weighProduct.stock_quantity, weighProduct.unit_type, true)}`}
           </Typography>
         </DialogTitle>
         <DialogContent>

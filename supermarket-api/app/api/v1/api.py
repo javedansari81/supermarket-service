@@ -16,6 +16,7 @@ from app.api.v1.endpoints import (
     barcode,
     sales,
     sale_returns,
+    held_bills,
     customers,
     invoices,
     reports,
@@ -64,6 +65,9 @@ api_router.include_router(sales.router, prefix="/sales", tags=["Sales"])
 # Sale returns (credit notes) and void sale
 api_router.include_router(sale_returns.sales_router, prefix="/sales", tags=["Sale Returns"])
 api_router.include_router(sale_returns.router, prefix="/sale-returns", tags=["Sale Returns"])
+
+# Held (parked) bills
+api_router.include_router(held_bills.router, prefix="/held-bills", tags=["Held Bills"])
 
 # Customers
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])
