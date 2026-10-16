@@ -38,6 +38,7 @@ def apply_held_data(held: HeldBill, data: HeldBillCreate) -> None:
     held.label = data.label
     held.customer_name = data.customer_name
     held.customer_phone = data.customer_phone
+    held.coupon_code = data.coupon_code
     held.items = jsonable_encoder([item.model_dump() for item in data.items])
     held.item_count = len(data.items)
     held.total_amount = sum((item.line_total for item in data.items), Decimal("0"))

@@ -28,12 +28,12 @@ def test_create_sale_computes_totals_and_invoice(client, product, cashier_header
     assert stock_of(client, product, cashier_headers) == 98
 
 
-def test_create_sale_with_discount(client, product, cashier_headers):
+def test_create_sale_ignores_manual_discount(client, product, cashier_headers):
     body = {"items": [{"product_id": product.id, "quantity": 2, "discount_percent": 10}]}
     res = client.post(SALES, json=body, headers=cashier_headers)
     assert res.status_code == 201
-    assert float(res.json()["discount_amount"]) == 11
-    assert float(res.json()["total_amount"]) == 99
+    assert float(res.json()["discount_amount"]) == 0
+    assert float(res.json()["total_amount"]) == 110
 
 
 def test_create_sale_rejects_bad_input(client, product, cashier_headers):
@@ -45,8 +45,7 @@ def test_create_sale_rejects_bad_input(client, product, cashier_headers):
     assert sell(client, product, cashier_headers, customer_phone="12345").status_code == 422
     assert sell(client, product, cashier_headers, customer_gstin="BAD").status_code == 422
     assert sell(client, product, cashier_headers, place_of_supply_code="99").status_code == 422
-    body = {"items": [{"product_id": product.id, "quantity": 1, "discount_percent": 101}]}
-    assert client.post(SALES, json=body, headers=cashier_headers).status_code == 422
+    assert sell(client, product, cashier_headers, coupon_code="X" * 31).status_code == 422
 
 
 def test_create_sale_b2b_requires_name(client, product, cashier_headers):
@@ -516,11 +515,9 @@ def test_clearance_tiers_apply_to_near_expiry_batch(client, product, category, a
     assert sale["items"][0]["discount_source"] == "clearance"
     assert float(sale["total_amount"]) == 77
 
-    # Cashier removes it; a higher manual discount wins
+    # Cashier removes it
     item = sell_line(client, cashier_headers, **line, skip_clearance=True).json()["items"][0]
     assert float(item["discount_amount"]) == 0
-    item = sell_line(client, cashier_headers, **line, discount_percent=40).json()["items"][0]
-    assert float(item["discount_percent"]) == 40 and item["discount_source"] == "manual"
 
     # Category rule overrides the default; product rule overrides the category
     tiers = {"tiers": [{"days_left": 10, "percent": 15}]}
@@ -590,14 +587,11 @@ def test_offer_crud_and_best_offer_applies(client, product, admin_headers, cashi
     res = client.get("/api/v1/products/search", params={"barcode": product.barcode}, headers=cashier_headers)
     assert res.json()["offer_name"] == "Diwali Sale" and res.json()["offer_type"] == "percent"
 
-    # 2 x 55 = 110; 10% off; cashier can't remove it; a higher manual discount wins
+    # 2 x 55 = 110; 10% off; cashier can't remove it
     sale = sell_line(client, cashier_headers, product_id=product.id, quantity=2, skip_clearance=True).json()
     item = sale["items"][0]
     assert item["discount_source"] == "offer" and item["offer_name"] == "Diwali Sale"
     assert float(sale["total_amount"]) == 99
-    item = sell_line(client, cashier_headers, product_id=product.id, quantity=2,
-                     discount_percent=20).json()["items"][0]
-    assert item["discount_source"] == "manual" and float(item["discount_amount"]) == 22
 
     # Rs 20 off per unit saves more than 10%; below the purchase cost of 40 only warns
     flash = client.post(OFFERS, json=offer_body(product, "Flash", discount_type="amount",
@@ -649,3 +643,129 @@ def test_higher_of_offer_and_clearance_wins(client, product, admin_headers, cash
     assert item["discount_source"] == "offer" and float(item["discount_percent"]) == 40
     item = sell_line(client, cashier_headers, product_id=product.id, quantity=2).json()["items"][0]
     assert item["discount_source"] == "offer"
+
+
+# ---------- Coupons ----------
+
+COUPONS = "/api/v1/coupons"
+
+
+def coupon_body(code="SAVE20", start=0, end=5, **extra):
+    return {"code": code, "discount_type": "percent", "discount_value": 20,
+            "start_date": expiring_in(start), "end_date": expiring_in(end), **extra}
+
+
+def make_coupon(client, headers, **body):
+    res = client.post(COUPONS, json=coupon_body(**body), headers=headers)
+    assert res.status_code == 201
+    return res.json()
+
+
+def sell_coupon(client, product, headers, code, qty=2, **extra):
+    return sell(client, product, headers, qty=qty, coupon_code=code, **extra)
+
+
+def test_coupon_crud_and_validation(client, admin_headers, cashier_headers):
+    assert client.post(COUPONS, json=coupon_body(), headers=cashier_headers).status_code == 403
+    coupon = make_coupon(client, admin_headers, code=" save20 ")
+    assert coupon["code"] == "SAVE20" and coupon["status"] == "running" and coupon["times_used"] == 0
+    assert client.post(COUPONS, json=coupon_body("Save20"), headers=admin_headers).status_code == 400
+    bad = [coupon_body(discount_value=150), coupon_body(start=5, end=1), coupon_body("A B"),
+           coupon_body("AB"), coupon_body(discount_type="flat")]
+    for body in bad:
+        assert client.post(COUPONS, json=body, headers=admin_headers).status_code == 422
+    amount = make_coupon(client, admin_headers, code="FLAT50", discount_type="amount",
+                         discount_value=50, max_discount=10)
+    assert amount["max_discount"] is None
+
+    url = f"{COUPONS}/{coupon['id']}"
+    res = client.put(url, json=coupon_body(is_active=False), headers=admin_headers)
+    assert res.status_code == 200 and res.json()["status"] == "inactive"
+    assert client.put(url, json=coupon_body("FLAT50"), headers=admin_headers).status_code == 400
+    codes = [c["code"] for c in client.get(COUPONS, params={"status": "running"},
+                                           headers=admin_headers).json()["items"]]
+    assert codes == ["FLAT50"]
+    assert client.delete(url, headers=admin_headers).status_code == 204
+    assert client.get(url, headers=admin_headers).status_code == 404
+
+
+def test_coupon_higher_wins_and_cost_floor(client, product, admin_headers, cashier_headers):
+    # 2 x 55 = 110, purchase cost 40 a unit, so at most 30 off; a 10% offer gives 11
+    client.post(OFFERS, json=offer_body(product), headers=admin_headers)
+    make_coupon(client, admin_headers)
+    check = {"code": "save20", "items": [{"product_id": product.id, "quantity": 2}]}
+    res = client.post(f"{SALES}/coupon-check", json=check, headers=cashier_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert float(body["coupon_discount"]) == 22 and float(body["saving"]) == 11
+    assert float(body["items"][0]["coupon_amount"]) == 22 and body["notes"] == []
+    assert stock_of(client, product, cashier_headers) == 100
+
+    sale = sell_coupon(client, product, cashier_headers, "save20").json()
+    assert sale["coupon_code"] == "SAVE20" and float(sale["coupon_discount"]) == 22
+    assert sale["items"][0]["discount_source"] == "coupon" and float(sale["total_amount"]) == 88
+
+    # The offer saves more than 5%
+    make_coupon(client, admin_headers, code="SAVE5", discount_value=5)
+    sale = sell_coupon(client, product, cashier_headers, "SAVE5").json()
+    assert sale["items"][0]["discount_source"] == "offer" and float(sale["coupon_discount"]) == 0
+
+    # 50% would go below purchase cost
+    make_coupon(client, admin_headers, code="HALF", discount_value=50)
+    check["code"] = "HALF"
+    body = client.post(f"{SALES}/coupon-check", json=check, headers=cashier_headers).json()
+    assert float(body["coupon_discount"]) == 30 and "purchase cost" in body["notes"][0]
+    assert float(sell_coupon(client, product, cashier_headers, "HALF").json()["total_amount"]) == 80
+
+    # 20% up to Rs 15
+    make_coupon(client, admin_headers, code="UPTO15", max_discount=15)
+    sale = sell_coupon(client, product, cashier_headers, "UPTO15").json()
+    assert float(sale["coupon_discount"]) == 15 and float(sale["total_amount"]) == 95
+
+    # Rs off the bill, with a minimum bill (after the offer: 99 for 2, 198 for 4)
+    make_coupon(client, admin_headers, code="FLAT30", discount_type="amount", discount_value=30,
+                min_bill_amount=150)
+    res = sell_coupon(client, product, cashier_headers, "FLAT30")
+    assert res.status_code == 400 and "at least" in res.json()["detail"]
+    sale = sell_coupon(client, product, cashier_headers, "FLAT30", qty=4).json()
+    assert float(sale["coupon_discount"]) == 30 and float(sale["total_amount"]) == 190
+
+
+def test_coupon_limits_and_dates(client, product, admin_headers, cashier_headers):
+    assert sell_coupon(client, product, cashier_headers, "NOPE").status_code == 400
+    make_coupon(client, admin_headers, code="LATER", start=2, end=5)
+    assert "valid from" in sell_coupon(client, product, cashier_headers, "LATER").json()["detail"]
+    make_coupon(client, admin_headers, code="OFF", is_active=False)
+    assert sell_coupon(client, product, cashier_headers, "OFF").status_code == 400
+
+    once = make_coupon(client, admin_headers, code="ONCE", usage_limit=1)
+    sale = sell_coupon(client, product, cashier_headers, "ONCE").json()
+    assert sell_coupon(client, product, cashier_headers, "ONCE").status_code == 400
+    assert client.get(f"{COUPONS}/{once['id']}", headers=admin_headers).json()["times_used"] == 1
+    client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Mistake"}, headers=admin_headers)
+    assert sell_coupon(client, product, cashier_headers, "ONCE").status_code == 201
+
+    make_coupon(client, admin_headers, code="WELCOME", per_customer_limit=1)
+    res = sell_coupon(client, product, cashier_headers, "WELCOME")
+    assert res.status_code == 400 and "mobile" in res.json()["detail"]
+    assert sell_coupon(client, product, cashier_headers, "WELCOME",
+                       customer_phone=MOBILE).status_code == 201
+    assert sell_coupon(client, product, cashier_headers, "WELCOME",
+                       customer_phone=MOBILE).status_code == 400
+    assert sell_coupon(client, product, cashier_headers, "WELCOME",
+                       customer_phone="9123456780").status_code == 201
+
+
+def test_coupon_skips_items_without_cost_and_is_held(client, db, product, admin_headers,
+                                                     cashier_headers):
+    product.purchase_price = None
+    db.commit()
+    make_coupon(client, admin_headers)
+    sale = sell_coupon(client, product, cashier_headers, "SAVE20").json()
+    assert float(sale["coupon_discount"]) == 0 and float(sale["total_amount"]) == 110
+    check = {"code": "SAVE20", "items": [{"product_id": product.id, "quantity": 2}]}
+    notes = client.post(f"{SALES}/coupon-check", json=check, headers=cashier_headers).json()["notes"]
+    assert "without a purchase cost" in notes[0]
+
+    res = hold(client, product, cashier_headers, coupon_code=" save20 ")
+    assert res.status_code == 201 and res.json()["coupon_code"] == "SAVE20"

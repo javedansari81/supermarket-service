@@ -37,6 +37,7 @@ import {
   Place,
   EventBusy,
   LocalOffer,
+  ConfirmationNumber,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -70,6 +71,7 @@ const navItems: NavItem[] = [
   { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },
   { title: 'Near Expiry', path: '/near-expiry', icon: <EventBusy />, adminOnly: true },
   { title: 'Offers', path: '/offers', icon: <LocalOffer />, adminOnly: true },
+  { title: 'Coupons', path: '/coupons', icon: <ConfirmationNumber />, adminOnly: true },
   { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true },
   { title: 'Invoices', path: '/invoices', icon: <Receipt /> },
   { title: 'Customers', path: '/customers', icon: <Contacts /> },

@@ -32,6 +32,10 @@ class Sale(Base, TimestampMixin):
     cgst_amount = Column(Numeric(12, 2), default=0)
     sgst_amount = Column(Numeric(12, 2), default=0)
     igst_amount = Column(Numeric(12, 2), default=0)
+    # Coupon used on the bill; code kept as billed, coupon_discount is part of discount_amount
+    coupon_id = Column(Integer, ForeignKey('coupons.id', ondelete='SET NULL'), index=True)
+    coupon_code = Column(String(30))
+    coupon_discount = Column(Numeric(12, 2), default=0, nullable=False)
     remarks = Column(Text)
     status = Column(String(20), default='completed')
     created_by = Column(Integer, ForeignKey('users.id'))
@@ -79,7 +83,7 @@ class SaleItem(Base):
     igst_amount = Column(Numeric(10, 2), default=0)
     discount_percent = Column(Numeric(5, 2), default=0)
     discount_amount = Column(Numeric(10, 2), default=0)
-    # 'manual', 'clearance' (near-expiry / markdown) or 'offer'; None without a discount
+    # 'manual' (older bills), 'clearance' (near-expiry / markdown), 'offer' or 'coupon'; None without a discount
     discount_source = Column(String(20))
     offer_id = Column(Integer, ForeignKey('offers.id', ondelete='SET NULL'))
     offer_name = Column(String(100))

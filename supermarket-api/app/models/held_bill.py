@@ -18,6 +18,7 @@ class HeldBill(Base, TimestampMixin):
     label = Column(String(100))
     customer_name = Column(String(200))
     customer_phone = Column(String(20))
+    coupon_code = Column(String(30))
     items = Column(JSONB, nullable=False, default=list)
     item_count = Column(Integer, nullable=False, default=0)
     total_amount = Column(Numeric(12, 2), nullable=False, default=0)

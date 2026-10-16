@@ -101,6 +101,7 @@ class InvoicePrintData(BaseModel):
     discount_amount: float
     total_amount: float
     mrp_savings: float = 0
+    coupon_code: Optional[str] = None
     tax_inclusive: bool = True
     payment_mode: str
     footer_text: Optional[str] = None

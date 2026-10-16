@@ -58,6 +58,7 @@ export interface InvoicePrintData {
   discount_amount: number;
   total_amount: number;
   mrp_savings: number;
+  coupon_code?: string | null;
   tax_inclusive: boolean;
   payment_mode: string;
   footer_text?: string;
@@ -70,8 +71,9 @@ const money = (n: number) => Number(n || 0).toFixed(2);
 const qty = (i: ReceiptItem) =>
   Number.isInteger(i.quantity) ? `${i.quantity}` : `${Number(i.quantity.toFixed(3))}${i.unit_type ? ' ' + i.unit_type : ''}`;
 const row = (label: string, value: string, cls = '') => `<tr class="${cls}"><td>${label}</td><td class="r">${value}</td></tr>`;
-const discountLabel = (i: ReceiptItem) => i.discount_source === 'clearance' ? 'Near-expiry discount'
-  : i.discount_source === 'offer' ? esc(i.offer_name || 'Offer') : 'Discount';
+const discountLabel = (i: ReceiptItem, couponCode?: string | null) => i.discount_source === 'clearance' ? 'Near-expiry discount'
+  : i.discount_source === 'offer' ? esc(i.offer_name || 'Offer')
+  : i.discount_source === 'coupon' ? `Coupon ${esc(couponCode || '')}`.trim() : 'Discount';
 
 export const buildReceiptHtml = (d: InvoicePrintData): string => {
   const date = new Date(d.invoice_date).toLocaleString('en-IN', {
@@ -81,7 +83,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
     <tr><td colspan="4" class="b">${esc(i.product_name)}</td></tr>
     <tr class="sub"><td>${i.hsn_code ? 'HSN ' + esc(i.hsn_code) : ''} ${i.tax_percent}%</td>
       <td class="r">${esc(qty(i))}</td><td class="r">${money(i.unit_price)}</td><td class="r">${money(i.line_total)}</td></tr>
-    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${discountLabel(i)}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
+    ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${discountLabel(i, d.coupon_code)}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
   const hsnHead = d.is_interstate
     ? '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">IGST</th>'
     : '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">CGST</th><th class="r">SGST</th>';
@@ -125,6 +127,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
       ${row('Taxable Value', money(d.subtotal - d.discount_amount))}
       ${d.is_interstate ? row('IGST', money(d.igst_amount)) : row('CGST', money(d.cgst_amount)) + row('SGST', money(d.sgst_amount))}
       ${d.discount_amount > 0 ? row('Discount', money(d.discount_amount)) : ''}
+      ${d.coupon_code ? row('Coupon', esc(d.coupon_code)) : ''}
     </table><hr>
     <table>${row('TOTAL', '&#8377;' + money(d.total_amount), 'total')}${row('Paid by', esc(d.payment_mode.toUpperCase()))}</table>
     ${d.mrp_savings > 0 ? `<div class="c b">You saved &#8377;${money(d.mrp_savings)} on MRP</div>` : ''}

@@ -8,16 +8,16 @@ from pydantic import BaseModel, Field, field_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.settings import GSTIN_PATTERN, GST_STATE_CODES
 from app.schemas.customer import normalize_mobile
+from app.core.coupons import normalize_code
 
 
 class SaleItemCreate(BaseModel):
     """Schema for creating a sale item. batch_id is required for a packed item whose
     in-stock batches have different MRPs; otherwise stock is taken first expiry first.
     The near-expiry discount applies unless skip_clearance; of it, a running offer and
-    discount_percent, the one saving the most wins."""
+    the bill's coupon, the one saving the most wins."""
     product_id: int
     quantity: Decimal
-    discount_percent: Optional[Decimal] = Field(Decimal("0"), ge=0, le=100)
     batch_id: Optional[int] = None
     skip_clearance: bool = False
 
@@ -60,6 +60,12 @@ class SaleCreate(BaseModel):
     place_of_supply_code: Optional[str] = None
     remarks: Optional[str] = None
     held_bill_id: Optional[int] = None
+    coupon_code: Optional[str] = Field(None, max_length=30)
+
+    @field_validator("coupon_code")
+    @classmethod
+    def normalize_coupon_code(cls, v: Optional[str]) -> Optional[str]:
+        return normalize_code(v)
 
     @field_validator("customer_phone")
     @classmethod
@@ -109,6 +115,9 @@ class SaleResponse(TimestampSchema):
     cgst_amount: Optional[Decimal] = Decimal("0")
     sgst_amount: Optional[Decimal] = Decimal("0")
     igst_amount: Optional[Decimal] = Decimal("0")
+    coupon_id: Optional[int] = None
+    coupon_code: Optional[str] = None
+    coupon_discount: Optional[Decimal] = Decimal("0")
     remarks: Optional[str]
     status: str
     voided_at: Optional[datetime] = None

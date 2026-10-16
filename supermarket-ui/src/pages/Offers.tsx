@@ -184,7 +184,7 @@ const Offers: React.FC = () => {
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
             Running offers apply at billing automatically and the cashier cannot remove them. On a bill line the offer,
-            near-expiry discount and manual discount are compared; the one saving the customer most applies.
+            near-expiry discount and coupon are compared; the one saving the customer most applies.
             ₹ off on a loose item is per kg (or its selling unit).
           </Typography>
           <Table size="small">

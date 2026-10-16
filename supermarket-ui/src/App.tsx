@@ -32,6 +32,7 @@ import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
 import NearExpiry from './pages/NearExpiry';
 import Offers from './pages/Offers';
+import Coupons from './pages/Coupons';
 
 function App() {
   return (
@@ -60,6 +61,7 @@ function App() {
                 <Route path="inventory" element={<ProtectedRoute requireAdmin><Inventory /></ProtectedRoute>} />
                 <Route path="near-expiry" element={<ProtectedRoute requireAdmin><NearExpiry /></ProtectedRoute>} />
                 <Route path="offers" element={<ProtectedRoute requireAdmin><Offers /></ProtectedRoute>} />
+                <Route path="coupons" element={<ProtectedRoute requireAdmin><Coupons /></ProtectedRoute>} />
                 <Route path="barcode" element={<ProtectedRoute requireSupervisor><Barcode /></ProtectedRoute>} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="customers" element={<Customers />} />

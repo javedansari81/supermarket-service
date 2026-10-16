@@ -63,7 +63,6 @@ interface CartItem {
   unit_type: string;
   is_loose: boolean;
   tax_percent: number;
-  discount_percent: number;
   // Near-expiry % (preview; the server decides at checkout) and whether the cashier removed it
   clearance_percent: number;
   skip_clearance: boolean;
@@ -71,9 +70,19 @@ interface CartItem {
   offer_name?: string;
   offer_type?: OfferType;
   offer_value?: number;
+  // Rupees off from the bill's coupon (preview from the server); 0 where the line's own discount is higher
+  coupon_amount?: number;
   tax_amount: number;
   line_total: number;
   stock_quantity: number;
+}
+
+interface CouponPreview {
+  code: string;
+  description?: string | null;
+  coupon_discount: number;
+  saving: number;
+  notes: string[];
 }
 
 interface HeldBill {
@@ -81,6 +90,7 @@ interface HeldBill {
   label?: string;
   customer_name?: string;
   customer_phone?: string;
+  coupon_code?: string | null;
   items: any[];
   item_count: number;
   total_amount: number;
@@ -176,18 +186,15 @@ const clearanceOf = (product: SearchProduct): number => {
   return batch?.clearance_percent ?? 0;
 };
 
-type DiscountSource = 'manual' | 'clearance' | 'offer';
+type DiscountSource = 'clearance' | 'offer' | 'coupon';
 
-// Rupees off a line: the manual %, near-expiry % or offer saving the most (the server decides at checkout)
+// Rupees off a line: the near-expiry %, offer or coupon saving the most (the server decides at checkout)
 const lineDiscount = (item: CartItem): { amount: number; source?: DiscountSource } => {
+  if (item.coupon_amount && item.coupon_amount > 0) return { amount: item.coupon_amount, source: 'coupon' };
   const gross = round2(item.unit_price * item.quantity);
-  let best: { amount: number; source?: DiscountSource } = {
-    amount: round2(gross * item.discount_percent / 100),
-    source: item.discount_percent > 0 ? 'manual' : undefined,
-  };
+  let best: { amount: number; source?: DiscountSource } = { amount: 0 };
   if (!item.skip_clearance && item.clearance_percent > 0) {
-    const amount = round2(gross * item.clearance_percent / 100);
-    if (amount > best.amount || !best.source) best = { amount, source: 'clearance' };
+    best = { amount: round2(gross * item.clearance_percent / 100), source: 'clearance' };
   }
   if (item.offer_value) {
     const amount = round2(Math.min(gross, item.offer_type === 'percent'
@@ -240,6 +247,12 @@ const Billing: React.FC = () => {
   const [heldBills, setHeldBills] = useState<HeldBill[]>([]);
   const [heldOpen, setHeldOpen] = useState(false);
   const [holding, setHolding] = useState(false);
+  const [couponInput, setCouponInput] = useState('');
+  const [couponCode, setCouponCode] = useState('');
+  const [coupon, setCoupon] = useState<CouponPreview | null>(null);
+  const [couponError, setCouponError] = useState('');
+  const [couponChecking, setCouponChecking] = useState(false);
+  const couponSeq = useRef(0);
 
   const loadHeldBills = () =>
     api.get(API_ENDPOINTS.HELD_BILLS)
@@ -454,6 +467,65 @@ const Billing: React.FC = () => {
     return { ...item, tax_amount: tax, line_total: taxInclusive ? net : net + tax };
   };
 
+  const couponCartKey = cartItems.map(i => `${i.product_id}:${i.batch_id ?? ''}:${i.quantity}:${i.skip_clearance ? 1 : 0}`).join('|');
+  const couponPhone = MOBILE_REGEX.test(customerPhone) ? customerPhone : '';
+
+  // The coupon's share of each line is re-checked by the server whenever the cart or mobile changes
+  useEffect(() => {
+    const seq = ++couponSeq.current;
+    const clearAmounts = () => setCartItems(items => items.some(i => i.coupon_amount)
+      ? items.map(i => calculateLine({ ...i, coupon_amount: 0 })) : items);
+    if (!couponCode || cartItems.length === 0) {
+      setCoupon(null);
+      setCouponError('');
+      setCouponChecking(false);
+      clearAmounts();
+      return;
+    }
+    setCouponChecking(true);
+    const items = cartItems.map(i => ({
+      product_id: i.product_id, batch_id: i.batch_id, quantity: i.quantity, skip_clearance: i.skip_clearance || undefined,
+    }));
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.post(API_ENDPOINTS.COUPON_CHECK, {
+          code: couponCode, items, customer_phone: couponPhone || undefined,
+        });
+        if (seq !== couponSeq.current) return;
+        const amounts: Record<number, number> = {};
+        res.data.items.forEach((i: any) => { amounts[i.index] = Number(i.coupon_amount); });
+        setCartItems(current => current.map((i, idx) => calculateLine({ ...i, coupon_amount: amounts[idx] ?? 0 })));
+        setCoupon({
+          code: res.data.code, description: res.data.description,
+          coupon_discount: Number(res.data.coupon_discount), saving: Number(res.data.saving), notes: res.data.notes || [],
+        });
+        setCouponError('');
+      } catch (err: any) {
+        if (seq !== couponSeq.current) return;
+        const detail = err.response?.data?.detail;
+        setCoupon(null);
+        setCouponError(Array.isArray(detail)
+          ? detail.map((d: any) => String(d.msg || '').replace(/^Value error, /, '')).join('; ')
+          : detail || 'Could not check the coupon');
+        clearAmounts();
+      } finally {
+        if (seq === couponSeq.current) setCouponChecking(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [couponCode, couponCartKey, couponPhone]);
+
+  const applyCoupon = () => {
+    const code = couponInput.trim().toUpperCase();
+    if (code) setCouponCode(code);
+  };
+
+  const removeCoupon = () => {
+    setCouponCode('');
+    setCouponInput('');
+  };
+
   const addToCart = (product: SearchProduct, qty: number, replace = false): boolean => {
     const existingIndex = cartItems.findIndex(item => item.product_id === product.id && item.batch_id === product.batch_id);
     const currentQty = existingIndex >= 0 ? cartItems[existingIndex].quantity : 0;
@@ -480,7 +552,6 @@ const Billing: React.FC = () => {
         unit_type: product.unit_type,
         is_loose: product.is_loose,
         tax_percent: product.tax_percent,
-        discount_percent: 0,
         clearance_percent: clearanceOf(product),
         skip_clearance: false,
         offer_name: product.offer_name,
@@ -569,6 +640,7 @@ const Billing: React.FC = () => {
     setCustomerPhone('');
     setCustomerGstin('');
     setDeliverToCustomerState(false);
+    removeCoupon();
     searchRef.current?.focus();
   };
 
@@ -594,7 +666,6 @@ const Billing: React.FC = () => {
           unit_type: item.unit_type,
           is_loose: item.is_loose,
           tax_percent: item.tax_percent,
-          discount_percent: item.discount_percent,
           clearance_percent: item.clearance_percent,
           skip_clearance: item.skip_clearance,
           offer_name: item.offer_name,
@@ -605,6 +676,7 @@ const Billing: React.FC = () => {
         label: label.trim() || undefined,
         customer_name: customerName.trim() || undefined,
         customer_phone: customerPhone || undefined,
+        coupon_code: couponCode || undefined,
       };
       if (heldBillId) await api.put(`${API_ENDPOINTS.HELD_BILLS}/${heldBillId}`, data);
       else await api.post(API_ENDPOINTS.HELD_BILLS, data);
@@ -643,7 +715,6 @@ const Billing: React.FC = () => {
         unit_type: i.unit_type || 'pcs',
         is_loose: !!i.is_loose,
         tax_percent: Number(i.tax_percent ?? 0),
-        discount_percent: Number(i.discount_percent ?? 0),
         clearance_percent: Number(i.clearance_percent ?? 0),
         skip_clearance: !!i.skip_clearance,
         offer_name: i.offer_name ?? undefined,
@@ -658,6 +729,8 @@ const Billing: React.FC = () => {
       setCustomerPhone(held.customer_phone || '');
       setCustomerGstin('');
       setDeliverToCustomerState(false);
+      setCouponInput(held.coupon_code || '');
+      setCouponCode(held.coupon_code || '');
       setHeldBillId(held.id);
       setHeldOpen(false);
       searchRef.current?.focus();
@@ -700,6 +773,10 @@ const Billing: React.FC = () => {
       toast.error('Customer name is required for a GSTIN invoice');
       return;
     }
+    if (couponCode && (couponChecking || !coupon)) {
+      toast.error(couponError || 'The coupon is still being checked');
+      return;
+    }
     setLoading(true);
     try {
       const saleData = {
@@ -707,7 +784,6 @@ const Billing: React.FC = () => {
           product_id: item.product_id,
           batch_id: item.batch_id,
           quantity: item.quantity,
-          discount_percent: item.discount_percent,
           skip_clearance: item.skip_clearance || undefined,
         })),
         payment_mode: paymentMode,
@@ -716,6 +792,7 @@ const Billing: React.FC = () => {
         customer_gstin: customerGstin || undefined,
         place_of_supply_code: otherState && deliverToCustomerState ? customerStateCode : undefined,
         held_bill_id: heldBillId || undefined,
+        coupon_code: couponCode || undefined,
       };
 
       const response = await api.post(API_ENDPOINTS.SALES, saleData);
@@ -863,8 +940,11 @@ const Billing: React.FC = () => {
                       <Typography variant="caption" color="text.secondary">
                         {item.barcode}{item.batch_id && item.mrp ? ` · MRP ₹${item.mrp.toFixed(2)} batch` : ''}
                       </Typography>
-                      {(item.clearance_percent > 0 || !!item.offer_value) && (
+                      {(item.clearance_percent > 0 || !!item.offer_value || !!item.coupon_amount) && (
                         <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                          {item.coupon_amount ? (
+                            <Chip size="small" color="success" label={`Coupon ${couponCode} −₹${item.coupon_amount.toFixed(2)}`} />
+                          ) : null}
                           {item.offer_value ? (
                             <Chip size="small" color="secondary" label={offerText(item)}
                               variant={lineDiscount(item).source === 'offer' ? 'filled' : 'outlined'} />
@@ -939,6 +1019,12 @@ const Billing: React.FC = () => {
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                   <Typography color="success.main">Discount:</Typography>
                   <Typography color="success.main">−₹{getDiscountTotal().toFixed(2)}</Typography>
+                </Box>
+              )}
+              {coupon && coupon.coupon_discount > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="body2" color="success.main">incl. coupon {coupon.code}:</Typography>
+                  <Typography variant="body2" color="success.main">−₹{coupon.coupon_discount.toFixed(2)}</Typography>
                 </Box>
               )}
               {getMrpSavings() > 0 && (
@@ -1021,6 +1107,30 @@ const Billing: React.FC = () => {
                 label={`Goods delivered to ${stateNameFromCode(customerStateCode)} (charge IGST)`}
               />
             )}
+            <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+              <TextField
+                fullWidth size="small" label="Coupon Code (Optional)" value={couponInput} disabled={!!couponCode}
+                onChange={(e) => setCouponInput(e.target.value.toUpperCase().replace(/\s/g, ''))}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); } }}
+                inputProps={{ maxLength: 30 }}
+              />
+              {couponCode ? (
+                <Button onClick={removeCoupon}>Remove</Button>
+              ) : (
+                <Button variant="outlined" onClick={applyCoupon} disabled={!couponInput.trim()}>Apply</Button>
+              )}
+            </Box>
+            {couponCode && (couponChecking ? (
+              <Typography variant="caption" color="text.secondary">Checking coupon...</Typography>
+            ) : couponError ? (
+              <Alert severity="error" sx={{ mt: 1 }}>{couponError}</Alert>
+            ) : coupon && (
+              <Alert severity={coupon.saving > 0 ? 'success' : 'info'} sx={{ mt: 1 }}>
+                {coupon.code}{coupon.description ? ` (${coupon.description})` : ''}:{' '}
+                {coupon.saving > 0 ? `saves ₹${coupon.saving.toFixed(2)} more` : 'no extra saving on this bill'}
+                {coupon.notes.map((n) => <Typography key={n} variant="caption" display="block">{n}</Typography>)}
+              </Alert>
+            ))}
             <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
               <Typography variant="h5" align="center" color="primary">Total: ₹{getGrandTotal().toFixed(2)}</Typography>
             </Box>
@@ -1028,7 +1138,8 @@ const Billing: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCheckoutOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={completeSale} disabled={loading} startIcon={<Print />}>
+          <Button variant="contained" onClick={completeSale}
+            disabled={loading || (!!couponCode && (couponChecking || !coupon))} startIcon={<Print />}>
             {loading ? 'Processing...' : 'Complete & Print'}
           </Button>
         </DialogActions>

@@ -6,6 +6,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field, field_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.customer import normalize_mobile
+from app.core.coupons import normalize_code
 
 
 class HeldBillItem(BaseModel):
@@ -38,6 +39,13 @@ class HeldBillCreate(BaseModel):
     label: Optional[str] = Field(None, max_length=100)
     customer_name: Optional[str] = Field(None, max_length=200)
     customer_phone: Optional[str] = None
+    # Coupon entered when held; checked again at checkout
+    coupon_code: Optional[str] = Field(None, max_length=30)
+
+    @field_validator("coupon_code")
+    @classmethod
+    def normalize_coupon_code(cls, v: Optional[str]) -> Optional[str]:
+        return normalize_code(v)
 
     @field_validator("customer_phone")
     @classmethod
@@ -56,6 +64,7 @@ class HeldBillResponse(TimestampSchema):
     label: Optional[str] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
+    coupon_code: Optional[str] = None
     items: List[HeldBillItem] = []
     item_count: int
     total_amount: Decimal

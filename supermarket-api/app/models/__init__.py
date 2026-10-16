@@ -11,6 +11,7 @@ from app.models.product import Product
 from app.models.product_batch import ProductBatch
 from app.models.clearance_rule import ClearanceRule
 from app.models.offer import Offer, OfferItem
+from app.models.coupon import Coupon
 from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
@@ -36,6 +37,7 @@ __all__ = [
     "ClearanceRule",
     "Offer",
     "OfferItem",
+    "Coupon",
     "Supplier",
     "Purchase",
     "PurchaseItem",

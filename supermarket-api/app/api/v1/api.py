@@ -19,6 +19,7 @@ from app.api.v1.endpoints import (
     held_bills,
     clearance,
     offers,
+    coupons,
     customers,
     invoices,
     reports,
@@ -76,6 +77,9 @@ api_router.include_router(clearance.router, prefix="/clearance", tags=["Clearanc
 
 # Festival / promotional offers
 api_router.include_router(offers.router, prefix="/offers", tags=["Offers"])
+
+# Coupon codes
+api_router.include_router(coupons.router, prefix="/coupons", tags=["Coupons"])
 
 # Customers
 api_router.include_router(customers.router, prefix="/customers", tags=["Customers"])

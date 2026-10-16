@@ -1,13 +1,13 @@
 """
 Festival / promotional offers. A running offer gives a product % off or Rs off per unit
-(per kg for loose items). On a sale line the offer, the near-expiry discount and the
-cashier's manual discount are compared in rupees saved; the highest wins, no stacking.
+(per kg for loose items). On a sale line the offer and the near-expiry discount are
+compared in rupees saved; the highest wins, no stacking.
 """
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session, joinedload
-from app.core.clearance import today_ist, SOURCE_MANUAL, SOURCE_CLEARANCE
+from app.core.clearance import today_ist, SOURCE_CLEARANCE
 from app.models.offer import Offer, OfferItem
 
 SOURCE_OFFER = "offer"
@@ -60,14 +60,12 @@ class LineDiscount:
 
 
 def resolve_line_discount(line_gross: Decimal, quantity: Decimal, unit_price: Decimal,
-                          manual_percent: Decimal, clearance_percent: Decimal,
-                          offer: Optional[OfferItem]) -> LineDiscount:
-    """The discount saving the customer the most on a line; manual, then clearance, wins a tie"""
+                          clearance_percent: Decimal, offer: Optional[OfferItem]) -> LineDiscount:
+    """The discount saving the customer the most on a line; clearance wins a tie"""
     best = LineDiscount(Decimal("0"), Decimal("0"))
-    for percent, source in ((manual_percent, SOURCE_MANUAL), (clearance_percent, SOURCE_CLEARANCE)):
-        amount = (line_gross * percent / 100).quantize(CENTS)
-        if amount > best.amount or (percent > 0 and best.source is None):
-            best = LineDiscount(percent, amount, source)
+    if clearance_percent > 0:
+        best = LineDiscount(clearance_percent, (line_gross * clearance_percent / 100).quantize(CENTS),
+                            SOURCE_CLEARANCE)
     if offer:
         amount = offer_saving(offer, unit_price, quantity, line_gross)
         if amount > best.amount:

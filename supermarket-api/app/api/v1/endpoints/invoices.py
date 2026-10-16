@@ -281,6 +281,7 @@ async def get_invoice_print_data(
         discount_amount=float(invoice.discount_amount or 0),
         total_amount=float(invoice.total_amount or 0),
         mrp_savings=float(round(mrp_savings, 2)),
+        coupon_code=sale.coupon_code if sale else None,
         tax_inclusive=tax_inclusive,
         payment_mode=(sale.payment_mode if sale else None) or invoice.payment_mode or "cash",
         footer_text=footer_text,

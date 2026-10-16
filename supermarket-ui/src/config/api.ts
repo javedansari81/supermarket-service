@@ -71,6 +71,10 @@ export const API_ENDPOINTS = {
   // Festival / promotional offers
   OFFERS: '/offers',
 
+  // Coupon codes
+  COUPONS: '/coupons',
+  COUPON_CHECK: '/sales/coupon-check',
+
   // Customers
   CUSTOMERS: '/customers',
   CUSTOMER_LOOKUP: '/customers/lookup',
