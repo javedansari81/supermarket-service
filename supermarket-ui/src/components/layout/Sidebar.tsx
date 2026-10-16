@@ -118,6 +118,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           overflowX: 'hidden',
           transition: (theme) => theme.transitions.create('width'),
         },
+        '& .MuiDrawer-paper:hover .sidebar-toggle': { opacity: 1 },
       }}
     >
       <Toolbar
@@ -127,10 +128,22 @@ const Sidebar: React.FC<SidebarProps> = ({
         }}
       >
         {!collapsed && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-            <PointOfSale />
-            <Typography variant="h6" noWrap>
-              SuperMart
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, py: 1 }}>
+            <PointOfSale sx={{ flexShrink: 0 }} />
+            <Typography
+              variant="subtitle1"
+              title={user?.tenant_name}
+              sx={{
+                fontWeight: 600,
+                lineHeight: 1.2,
+                display: '-webkit-box',
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-word',
+              }}
+            >
+              {user?.tenant_name}
             </Typography>
           </Box>
         )}
@@ -139,25 +152,21 @@ const Sidebar: React.FC<SidebarProps> = ({
             onClick={handleToggle}
             size="small"
             aria-label={collapsed ? 'Expand menu' : 'Collapse menu'}
-            sx={{ color: 'inherit' }}
+            className="sidebar-toggle"
+            sx={{
+              color: 'inherit',
+              flexShrink: 0,
+              opacity: collapsed || mobile ? 1 : 0,
+              transition: (theme) => theme.transitions.create('opacity'),
+              '&:focus-visible': { opacity: 1 },
+              '@media (hover: none)': { opacity: 1 },
+            }}
           >
             {collapsed ? <MenuIcon /> : <ChevronLeft />}
           </IconButton>
         </Tooltip>
       </Toolbar>
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
-
-      {!collapsed && (
-        <>
-          <Box sx={{ px: 2, py: 1.5 }}>
-            <Typography variant="caption" noWrap component="div" sx={{ opacity: 0.7 }}>
-              {user?.tenant_name}
-            </Typography>
-          </Box>
-
-          <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
-        </>
-      )}
 
       <List sx={{ pt: 1 }}>
         {filteredNavItems.map((item) => (
