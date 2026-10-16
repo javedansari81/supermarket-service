@@ -1,14 +1,16 @@
 """
 Sale schemas
 """
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Annotated
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.schemas.base import TimestampSchema
 from app.schemas.settings import GSTIN_PATTERN, GST_STATE_CODES
 from app.schemas.customer import normalize_mobile
 from app.core.coupons import normalize_code
+
+PaymentMode = Literal["cash", "card", "upi"]
 
 
 class SaleItemCreate(BaseModel):
@@ -50,10 +52,35 @@ class SaleItemResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SalePaymentCreate(BaseModel):
+    """Amount paid by one mode; reference is an optional UPI transaction id or card last digits"""
+    mode: PaymentMode
+    amount: Decimal = Field(..., gt=0, max_digits=12, decimal_places=2)
+    reference: Optional[str] = Field(None, max_length=50)
+
+    @field_validator("reference")
+    @classmethod
+    def strip_reference(cls, v: Optional[str]) -> Optional[str]:
+        return (v or "").strip() or None
+
+
+class SalePaymentResponse(BaseModel):
+    """Schema for sale payment response"""
+    mode: str
+    amount: Decimal
+    reference: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
 class SaleCreate(BaseModel):
-    """Schema for creating a sale"""
+    """Schema for creating a sale. Without payments the whole bill is paid by payment_mode;
+    with payments their amounts must add up to the bill total. cash_tendered is the cash
+    handed over, at least the cash amount; the rest is given back as change."""
     items: List[SaleItemCreate]
-    payment_mode: Literal["cash", "card", "upi"] = "cash"
+    payment_mode: PaymentMode = "cash"
+    payments: Optional[List[SalePaymentCreate]] = None
+    cash_tendered: Optional[Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2)]] = None
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     customer_gstin: Optional[str] = None
@@ -61,6 +88,16 @@ class SaleCreate(BaseModel):
     remarks: Optional[str] = None
     held_bill_id: Optional[int] = None
     coupon_code: Optional[str] = Field(None, max_length=30)
+
+    @model_validator(mode="after")
+    def check_payments(self) -> "SaleCreate":
+        if self.payments is not None:
+            if not self.payments:
+                raise ValueError("Add at least one payment")
+            modes = [p.mode for p in self.payments]
+            if len(modes) != len(set(modes)):
+                raise ValueError("Each payment mode can appear only once")
+        return self
 
     @field_validator("coupon_code")
     @classmethod
@@ -106,6 +143,9 @@ class SaleResponse(TimestampSchema):
     total_amount: Decimal
     payment_mode: str
     payment_status: str
+    payments: List[SalePaymentResponse] = []
+    cash_tendered: Optional[Decimal] = None
+    change_given: Optional[Decimal] = None
     customer_name: Optional[str]
     customer_phone: Optional[str]
     customer_gstin: Optional[str] = None

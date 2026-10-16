@@ -150,3 +150,26 @@ test('recalling a held bill checks its coupon again', async () => {
   expect(await screen.findByText('Coupon TEST10 −₹10.00')).toBeInTheDocument();
   expect(grandTotal()).toBe('₹90.00');
 });
+
+test('split payment must match the total and cash received shows the change', async () => {
+  render(<Billing />);
+  await scanSugar();
+  userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+  userEvent.click(screen.getByLabelText(/Split payment/));
+  expect(completeButton()).toBeDisabled();
+
+  userEvent.type(screen.getByLabelText('Cash amount'), '40');
+  userEvent.type(screen.getByLabelText('UPI amount'), '50');
+  expect(screen.getByText('₹10.00 still to be paid')).toBeInTheDocument();
+  userEvent.clear(screen.getByLabelText('UPI amount'));
+  userEvent.type(screen.getByLabelText('UPI amount'), '60');
+  userEvent.type(screen.getByLabelText(/Cash Received/), '50');
+  expect(screen.getByText('Change: ₹10.00')).toBeInTheDocument();
+
+  userEvent.click(completeButton());
+  await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/sales', expect.objectContaining({
+    payments: [{ mode: 'cash', amount: 40, reference: undefined }, { mode: 'upi', amount: 60, reference: undefined }],
+    cash_tendered: 50,
+  })));
+});
+

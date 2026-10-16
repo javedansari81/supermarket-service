@@ -16,7 +16,8 @@ from app.models.tenant import Tenant
 from app.models.tenant_setting import TenantSetting
 from app.models.user import User
 from app.schemas.invoice import (
-    InvoiceCreate, InvoiceResponse, InvoiceListResponse, InvoicePrintData, HsnSummaryRow
+    InvoiceCreate, InvoiceResponse, InvoiceListResponse, InvoicePrintData, HsnSummaryRow,
+    PaymentLine
 )
 from app.schemas.settings import GST_STATE_CODES, state_code_for
 from app.api.v1.endpoints.settings import build_store_settings
@@ -284,6 +285,10 @@ async def get_invoice_print_data(
         coupon_code=sale.coupon_code if sale else None,
         tax_inclusive=tax_inclusive,
         payment_mode=(sale.payment_mode if sale else None) or invoice.payment_mode or "cash",
+        payments=[PaymentLine(mode=p.mode, amount=float(p.amount), reference=p.reference)
+                  for p in (sale.payments if sale else [])],
+        cash_tendered=float(sale.cash_tendered) if sale and sale.cash_tendered is not None else None,
+        change_given=float(sale.change_given) if sale and sale.change_given is not None else None,
         footer_text=footer_text,
         is_duplicate=is_duplicate
     )

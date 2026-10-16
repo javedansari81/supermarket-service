@@ -136,6 +136,13 @@ interface BillingBatch {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
+type PayMode = 'cash' | 'card' | 'upi';
+const PAY_MODES: { mode: PayMode; label: string }[] = [
+  { mode: 'cash', label: 'Cash' }, { mode: 'card', label: 'Card' }, { mode: 'upi', label: 'UPI' },
+];
+const EMPTY_BY_MODE: Record<PayMode, string> = { cash: '', card: '', upi: '' };
+const toAmount = (s: string) => round2(Number(s) || 0);
+
 const QUICK_WEIGHTS: Record<string, number[]> = {
   kg: [0.25, 0.5, 1, 2, 5],
   L: [0.25, 0.5, 1, 2, 5],
@@ -217,7 +224,11 @@ const highlightMatch = (text: string, term: string) => {
 const Billing: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [paymentMode, setPaymentMode] = useState('cash');
+  const [paymentMode, setPaymentMode] = useState<PayMode>('cash');
+  const [splitPayment, setSplitPayment] = useState(false);
+  const [splitAmounts, setSplitAmounts] = useState<Record<PayMode, string>>(EMPTY_BY_MODE);
+  const [paymentRefs, setPaymentRefs] = useState<Record<PayMode, string>>(EMPTY_BY_MODE);
+  const [cashTendered, setCashTendered] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerGstin, setCustomerGstin] = useState('');
@@ -632,6 +643,21 @@ const Billing: React.FC = () => {
   const getDiscountTotal = () => round2(cartItems.reduce((sum, item) =>
     sum + lineDiscount(item).amount, 0));
 
+  // Amount paid by each mode; without split the whole bill is paid by one mode
+  const getPaymentRows = () => splitPayment
+    ? PAY_MODES.map(({ mode }) => ({ mode, amount: toAmount(splitAmounts[mode]) })).filter((p) => p.amount > 0)
+    : [{ mode: paymentMode, amount: getGrandTotal() }];
+  const paymentRows = getPaymentRows();
+  const cashDue = round2(paymentRows.filter((p) => p.mode === 'cash').reduce((s, p) => s + p.amount, 0));
+  const splitRemaining = round2(getGrandTotal() - paymentRows.reduce((s, p) => s + p.amount, 0));
+  const tendered = cashDue > 0 ? toAmount(cashTendered) : 0;
+  const changeDue = tendered > 0 ? round2(tendered - cashDue) : null;
+  const paymentError = splitPayment && paymentRows.length === 0 ? 'Enter the amount paid by each mode'
+    : splitPayment && splitRemaining > 0 ? `₹${splitRemaining.toFixed(2)} still to be paid`
+    : splitPayment && splitRemaining < 0 ? `Payments are ₹${(-splitRemaining).toFixed(2)} more than the bill`
+    : changeDue !== null && changeDue < 0 ? `Cash received is less than the cash amount ₹${cashDue.toFixed(2)}`
+    : '';
+
   const resetBill = () => {
     setCartItems([]);
     setHeldBillId(null);
@@ -640,6 +666,10 @@ const Billing: React.FC = () => {
     setCustomerPhone('');
     setCustomerGstin('');
     setDeliverToCustomerState(false);
+    setSplitPayment(false);
+    setSplitAmounts(EMPTY_BY_MODE);
+    setPaymentRefs(EMPTY_BY_MODE);
+    setCashTendered('');
     removeCoupon();
     searchRef.current?.focus();
   };
@@ -777,6 +807,11 @@ const Billing: React.FC = () => {
       toast.error(couponError || 'The coupon is still being checked');
       return;
     }
+    if (paymentError) {
+      toast.error(paymentError);
+      return;
+    }
+    const withReference = paymentRows.some((p) => p.mode !== 'cash' && paymentRefs[p.mode].trim());
     setLoading(true);
     try {
       const saleData = {
@@ -787,6 +822,10 @@ const Billing: React.FC = () => {
           skip_clearance: item.skip_clearance || undefined,
         })),
         payment_mode: paymentMode,
+        payments: splitPayment || withReference
+          ? paymentRows.map((p) => ({ ...p, reference: paymentRefs[p.mode].trim() || undefined }))
+          : undefined,
+        cash_tendered: tendered > 0 ? tendered : undefined,
         customer_name: customerName.trim() || undefined,
         customer_phone: customerPhone || undefined,
         customer_gstin: customerGstin || undefined,
@@ -1062,14 +1101,63 @@ const Billing: React.FC = () => {
         <DialogTitle>Complete Sale</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
-            <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Payment Mode</InputLabel>
-              <Select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)} label="Payment Mode">
-                <MenuItem value="cash">Cash</MenuItem>
-                <MenuItem value="card">Card</MenuItem>
-                <MenuItem value="upi">UPI</MenuItem>
-              </Select>
-            </FormControl>
+            <FormControlLabel
+              control={<Checkbox checked={splitPayment} onChange={(e) => setSplitPayment(e.target.checked)} />}
+              label="Split payment (more than one mode)"
+            />
+            {splitPayment ? (
+              <Box sx={{ mt: 1, mb: 2 }}>
+                {PAY_MODES.map(({ mode, label }) => (
+                  <Box key={mode} sx={{ display: 'flex', gap: 1, mb: 1 }}>
+                    <TextField
+                      size="small" type="number" label={`${label} amount`} value={splitAmounts[mode]} sx={{ flex: 1 }}
+                      onChange={(e) => setSplitAmounts((a) => ({ ...a, [mode]: e.target.value }))}
+                      inputProps={{ min: 0, step: '0.01' }}
+                      InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                    />
+                    {mode === 'cash' ? <Box sx={{ flex: 1 }} /> : (
+                      <TextField
+                        size="small" label="Reference (optional)" value={paymentRefs[mode]} sx={{ flex: 1 }}
+                        onChange={(e) => setPaymentRefs((r) => ({ ...r, [mode]: e.target.value }))}
+                        inputProps={{ maxLength: 50 }}
+                      />
+                    )}
+                  </Box>
+                ))}
+                <Typography variant="body2" color={splitRemaining === 0 ? 'success.main' : 'error'}>
+                  {splitRemaining === 0 ? 'Payments match the bill total' : paymentError}
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'flex', gap: 1, mt: 1, mb: 2 }}>
+                <FormControl sx={{ flex: 1 }}>
+                  <InputLabel>Payment Mode</InputLabel>
+                  <Select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value as PayMode)} label="Payment Mode">
+                    {PAY_MODES.map(({ mode, label }) => <MenuItem key={mode} value={mode}>{label}</MenuItem>)}
+                  </Select>
+                </FormControl>
+                {paymentMode !== 'cash' && (
+                  <TextField
+                    label={paymentMode === 'upi' ? 'UPI transaction ID (optional)' : 'Card last 4 digits (optional)'}
+                    value={paymentRefs[paymentMode]} sx={{ flex: 1 }}
+                    onChange={(e) => setPaymentRefs((r) => ({ ...r, [paymentMode]: e.target.value }))}
+                    inputProps={{ maxLength: 50 }}
+                  />
+                )}
+              </Box>
+            )}
+            {cashDue > 0 && (
+              <TextField
+                fullWidth type="number" label="Cash Received (Optional)" value={cashTendered}
+                onChange={(e) => setCashTendered(e.target.value)}
+                error={changeDue !== null && changeDue < 0}
+                helperText={changeDue === null ? `Cash to collect: ₹${cashDue.toFixed(2)}`
+                  : changeDue < 0 ? paymentError : `Change to return: ₹${changeDue.toFixed(2)}`}
+                inputProps={{ min: 0, step: '0.01' }}
+                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                sx={{ mb: 2 }}
+              />
+            )}
             <TextField
               fullWidth autoFocus label="Customer Mobile (Optional)" value={customerPhone}
               onChange={(e) => handleMobileChange(e.target.value)}
@@ -1133,13 +1221,16 @@ const Billing: React.FC = () => {
             ))}
             <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
               <Typography variant="h5" align="center" color="primary">Total: ₹{getGrandTotal().toFixed(2)}</Typography>
+              {changeDue !== null && changeDue >= 0 && (
+                <Typography variant="h6" align="center">Change: ₹{changeDue.toFixed(2)}</Typography>
+              )}
             </Box>
           </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCheckoutOpen(false)}>Cancel</Button>
           <Button variant="contained" onClick={completeSale}
-            disabled={loading || (!!couponCode && (couponChecking || !coupon))} startIcon={<Print />}>
+            disabled={loading || !!paymentError || (!!couponCode && (couponChecking || !coupon))} startIcon={<Print />}>
             {loading ? 'Processing...' : 'Complete & Print'}
           </Button>
         </DialogActions>

@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, union_all
 from app.core.database import get_db
-from app.models.sale import Sale, SaleItem
+from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.product import Product
 from app.models.purchase import Purchase
@@ -146,11 +146,14 @@ async def get_dashboard(
         func.coalesce(func.sum(Sale.total_amount), 0)
     ).filter(*sales_filter(today_start, tomorrow_start, ("cancelled",))).one()
 
+    # A split bill counts once under each mode it was paid by
     payment_rows = db.query(
-        Sale.payment_mode,
-        func.count(Sale.id),
-        func.coalesce(func.sum(Sale.total_amount), 0)
-    ).filter(*sales_filter(today_start, tomorrow_start)).group_by(Sale.payment_mode).all()
+        SalePayment.mode,
+        func.count(func.distinct(Sale.id)),
+        func.coalesce(func.sum(SalePayment.amount), 0)
+    ).join(Sale, SalePayment.sale_id == Sale.id).filter(
+        *sales_filter(today_start, tomorrow_start)
+    ).group_by(SalePayment.mode).all()
 
     hour_col = func.extract("hour", ist_sale_date)
     hourly_rows = db.query(

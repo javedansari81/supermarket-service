@@ -56,6 +56,17 @@ def test_dashboard_admin_insights(client, db, product, admin_headers):
     assert res["admin"]["reorder_items"] == []
 
 
+def test_dashboard_payment_mix_splits_bills(client, product, admin_headers):
+    sell(client, product, admin_headers)
+    body = {"items": [{"product_id": product.id, "quantity": 2}],
+            "payments": [{"mode": "cash", "amount": 10}, {"mode": "upi", "amount": 100}]}
+    assert client.post("/api/v1/sales", json=body, headers=admin_headers).status_code == 201
+    res = client.get(f"{REP}/dashboard", headers=admin_headers).json()
+    mix = sorted(res["payment_mix"], key=lambda m: m["mode"])
+    assert mix == [{"mode": "cash", "transactions": 2, "amount": 120},
+                   {"mode": "upi", "transactions": 1, "amount": 100}]
+
+
 def test_dashboard_cashier_sees_own_sales_only(client, product, admin_headers, cashier_headers):
     sell(client, product, admin_headers)
     res = client.get(f"{REP}/dashboard", headers=cashier_headers).json()

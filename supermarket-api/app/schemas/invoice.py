@@ -72,6 +72,13 @@ class HsnSummaryRow(BaseModel):
     tax_amount: float
 
 
+class PaymentLine(BaseModel):
+    """Amount paid by one mode, as printed"""
+    mode: str
+    amount: float
+    reference: Optional[str] = None
+
+
 class InvoicePrintData(BaseModel):
     """Schema for invoice print data (for thermal printer)"""
     invoice_id: int
@@ -104,6 +111,9 @@ class InvoicePrintData(BaseModel):
     coupon_code: Optional[str] = None
     tax_inclusive: bool = True
     payment_mode: str
+    payments: List[PaymentLine] = []
+    cash_tendered: Optional[float] = None
+    change_given: Optional[float] = None
     footer_text: Optional[str] = None
     is_duplicate: bool = False
 

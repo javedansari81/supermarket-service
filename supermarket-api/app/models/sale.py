@@ -1,7 +1,8 @@
 """
-Sale and SaleItem models for billing
+Sale, SaleItem and SalePayment models for billing
 """
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, DateTime, Boolean
+from sqlalchemy import (Column, Integer, String, Text, ForeignKey, Numeric, DateTime, Boolean,
+                        UniqueConstraint)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -21,8 +22,12 @@ class Sale(Base, TimestampMixin):
     tax_amount = Column(Numeric(12, 2), default=0)
     discount_amount = Column(Numeric(12, 2), default=0)
     total_amount = Column(Numeric(12, 2), default=0)
+    # Single mode, or 'split' when paid by more than one mode (see payments)
     payment_mode = Column(String(50), default='cash')
     payment_status = Column(String(20), default='paid')
+    # Cash handed over and change returned; None when no cash was paid
+    cash_tendered = Column(Numeric(12, 2))
+    change_given = Column(Numeric(12, 2))
     customer_name = Column(String(200))
     customer_phone = Column(String(20))
     customer_gstin = Column(String(15))
@@ -46,6 +51,8 @@ class Sale(Base, TimestampMixin):
     # Relationships
     tenant = relationship("Tenant", back_populates="sales")
     items = relationship("SaleItem", back_populates="sale", cascade="all, delete-orphan")
+    payments = relationship("SalePayment", back_populates="sale", cascade="all, delete-orphan",
+                            order_by="SalePayment.id")
     invoice = relationship("Invoice", back_populates="sale", uselist=False)
     customer = relationship("Customer", back_populates="sales")
     returns = relationship("SaleReturn", back_populates="sale", order_by="SaleReturn.id")
@@ -96,4 +103,29 @@ class SaleItem(Base):
     
     def __repr__(self):
         return f"<SaleItem(id={self.id}, product={self.product_name}, qty={self.quantity})>"
+
+
+class SalePayment(Base):
+    """Amount paid by one mode on a sale; a sale's payments add up to its total"""
+
+    __tablename__ = "sale_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey('tenants.id', ondelete='CASCADE'), nullable=False, index=True)
+    sale_id = Column(Integer, ForeignKey('sales.id', ondelete='CASCADE'), nullable=False, index=True)
+    mode = Column(String(20), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    # Optional UPI transaction id or card last digits
+    reference = Column(String(50))
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    sale = relationship("Sale", back_populates="payments")
+
+    __table_args__ = (
+        UniqueConstraint('sale_id', 'mode', name='uq_sale_payments_sale_mode'),
+    )
+
+    def __repr__(self):
+        return f"<SalePayment(id={self.id}, sale={self.sale_id}, mode={self.mode}, amount={self.amount})>"
 

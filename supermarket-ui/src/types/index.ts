@@ -220,6 +220,12 @@ export interface SaleItem {
   line_total?: number;
 }
 
+export interface SalePayment {
+  mode: string;
+  amount: number;
+  reference?: string;
+}
+
 export interface Sale {
   id: number;
   sale_no: string;
@@ -228,7 +234,11 @@ export interface Sale {
   tax_amount: number;
   discount_amount: number;
   total_amount: number;
+  // A single mode, or 'split' when paid by more than one mode (see payments)
   payment_mode: string;
+  payments: SalePayment[];
+  cash_tendered?: number;
+  change_given?: number;
   customer_name?: string;
   customer_phone?: string;
   customer_gstin?: string;

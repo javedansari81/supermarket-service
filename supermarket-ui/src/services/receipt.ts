@@ -61,6 +61,9 @@ export interface InvoicePrintData {
   coupon_code?: string | null;
   tax_inclusive: boolean;
   payment_mode: string;
+  payments: { mode: string; amount: number; reference?: string | null }[];
+  cash_tendered?: number | null;
+  change_given?: number | null;
   footer_text?: string;
   is_duplicate: boolean;
 }
@@ -84,6 +87,13 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
     <tr class="sub"><td>${i.hsn_code ? 'HSN ' + esc(i.hsn_code) : ''} ${i.tax_percent}%</td>
       <td class="r">${esc(qty(i))}</td><td class="r">${money(i.unit_price)}</td><td class="r">${money(i.line_total)}</td></tr>
     ${i.discount_amount > 0 ? `<tr class="sub"><td colspan="3">${discountLabel(i, d.coupon_code)}</td><td class="r">-${money(i.discount_amount)}</td></tr>` : ''}`).join('');
+  const payments = d.payments.length > 1
+    ? row('Paid by', 'SPLIT') + d.payments.map((p) =>
+      row(`&nbsp;&nbsp;${esc(p.mode.toUpperCase())}${p.reference ? ' ' + esc(p.reference) : ''}`, money(p.amount))).join('')
+    : row('Paid by', esc((d.payments[0]?.mode || d.payment_mode).toUpperCase())
+      + (d.payments[0]?.reference ? ' ' + esc(d.payments[0].reference) : ''));
+  const cash = d.cash_tendered != null
+    ? row('Cash received', money(d.cash_tendered)) + row('Change', money(d.change_given || 0)) : '';
   const hsnHead = d.is_interstate
     ? '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">IGST</th>'
     : '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">CGST</th><th class="r">SGST</th>';
@@ -129,7 +139,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
       ${d.discount_amount > 0 ? row('Discount', money(d.discount_amount)) : ''}
       ${d.coupon_code ? row('Coupon', esc(d.coupon_code)) : ''}
     </table><hr>
-    <table>${row('TOTAL', '&#8377;' + money(d.total_amount), 'total')}${row('Paid by', esc(d.payment_mode.toUpperCase()))}</table>
+    <table>${row('TOTAL', '&#8377;' + money(d.total_amount), 'total')}${payments}${cash}</table>
     ${d.mrp_savings > 0 ? `<div class="c b">You saved &#8377;${money(d.mrp_savings)} on MRP</div>` : ''}
     <hr><div class="small b">GST Summary</div>
     <table class="small"><tr>${hsnHead}</tr>${hsnRows}</table>

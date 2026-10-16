@@ -6,7 +6,7 @@ from typing import List, Optional
 from datetime import datetime, date
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
@@ -16,7 +16,7 @@ from app.core.offers import OfferResolver, LineDiscount, resolve_line_discount, 
 from app.core.coupons import (SOURCE_COUPON, CouponLine, find_coupon, check_coupon,
                               allocate_coupon)
 from app.models.audit_log import AuditLog
-from app.models.sale import Sale, SaleItem
+from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
 from app.models.stock_movement import StockMovement
@@ -173,6 +173,35 @@ def apply_coupon(db: Session, tenant_id: int, code: str, customer_phone: Optiona
     return coupon, result
 
 
+def resolve_payments(sale_data: SaleCreate, total: Decimal):
+    """Payment rows (mode, amount, reference), the sale's payment_mode, cash tendered and change"""
+    total = Decimal(total).quantize(Decimal("0.01"))
+    if sale_data.payments is not None:
+        rows = [(p.mode, p.amount, p.reference) for p in sale_data.payments]
+        paid = sum((amount for _, amount, _ in rows), Decimal("0"))
+        if paid != total:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Payments add up to ₹{paid:.2f} but the bill total is ₹{total:.2f}"
+            )
+    else:
+        rows = [(sale_data.payment_mode, total, None)] if total > 0 else []
+
+    payment_mode = rows[0][0] if len(rows) == 1 else ("split" if rows else sale_data.payment_mode)
+    cash = sum((amount for mode, amount, _ in rows if mode == "cash"), Decimal("0"))
+    tendered = sale_data.cash_tendered
+    if tendered is None:
+        return rows, payment_mode, None, None
+    if cash <= 0:
+        raise HTTPException(status_code=400, detail="Cash tendered needs a cash payment")
+    if tendered < cash:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cash tendered ₹{tendered:.2f} is less than the cash amount ₹{cash:.2f}"
+        )
+    return rows, payment_mode, tendered, tendered - cash
+
+
 def to_sale_response(sale: Sale) -> SaleResponse:
     """Build sale response including the linked invoice"""
     response = SaleResponse.model_validate(sale)
@@ -226,7 +255,7 @@ async def list_sales(
     """
     List sales for current tenant
     """
-    query = db.query(Sale).options(joinedload(Sale.items)).filter(
+    query = db.query(Sale).options(joinedload(Sale.items), selectinload(Sale.payments)).filter(
         Sale.tenant_id == context.tenant_id
     )
 
@@ -426,6 +455,14 @@ async def create_sale(
     sale.cgst_amount = total_cgst
     sale.sgst_amount = total_sgst
     sale.igst_amount = total_igst
+
+    rows, sale.payment_mode, sale.cash_tendered, sale.change_given = resolve_payments(
+        sale_data, sale.total_amount
+    )
+    payments = [SalePayment(tenant_id=context.tenant_id, sale_id=sale.id, mode=mode,
+                            amount=amount, reference=reference)
+                for mode, amount, reference in rows]
+    db.add_all(payments)
     db.flush()
 
     # Create tax invoice
@@ -434,7 +471,8 @@ async def create_sale(
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "sale", sale.id,
                  new_value={**snapshot(sale), "invoice_no": invoice.invoice_no,
-                            "items": [snapshot(i) for i in sale_items]})
+                            "items": [snapshot(i) for i in sale_items],
+                            "payments": [snapshot(p) for p in payments]})
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "invoice", invoice.id, new_value={**snapshot(invoice), "sale_no": sale.sale_no})
 

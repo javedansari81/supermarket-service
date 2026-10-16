@@ -53,6 +53,52 @@ def test_create_sale_b2b_requires_name(client, product, cashier_headers):
     assert res.status_code == 400
 
 
+def test_sale_single_mode_records_one_payment(client, product, cashier_headers):
+    body = sell(client, product, cashier_headers, payment_mode="upi").json()
+    assert body["payment_mode"] == "upi"
+    assert [(p["mode"], float(p["amount"])) for p in body["payments"]] == [("upi", 110)]
+    assert body["cash_tendered"] is None and body["change_given"] is None
+
+
+def test_sale_cash_tendered_gives_change(client, product, cashier_headers):
+    body = sell(client, product, cashier_headers, cash_tendered=200).json()
+    assert body["payment_mode"] == "cash"
+    assert float(body["cash_tendered"]) == 200
+    assert float(body["change_given"]) == 90
+
+
+def test_sale_split_payment(client, product, cashier_headers):
+    payments = [{"mode": "cash", "amount": 60}, {"mode": "upi", "amount": 50, "reference": " T123 "}]
+    res = sell(client, product, cashier_headers, payments=payments, cash_tendered=100)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["payment_mode"] == "split"
+    assert [(p["mode"], float(p["amount"]), p["reference"]) for p in body["payments"]] == [
+        ("cash", 60, None), ("upi", 50, "T123")]
+    assert float(body["change_given"]) == 40
+
+    printed = client.get(f"{INV}/{body['invoice_id']}/print", headers=cashier_headers).json()
+    assert printed["payment_mode"] == "split"
+    assert [(p["mode"], p["amount"]) for p in printed["payments"]] == [("cash", 60), ("upi", 50)]
+    assert printed["cash_tendered"] == 100 and printed["change_given"] == 40
+
+
+def test_sale_rejects_bad_payments(client, product, cashier_headers):
+    def pay(**extra):
+        return sell(client, product, cashier_headers, **extra).status_code
+    assert pay(payments=[{"mode": "cash", "amount": 100}]) == 400
+    assert pay(payments=[{"mode": "cash", "amount": 60}, {"mode": "cash", "amount": 50}]) == 422
+    assert pay(payments=[]) == 422
+    assert pay(payments=[{"mode": "card", "amount": 0}]) == 422
+    assert pay(payments=[{"mode": "credit", "amount": 110}]) == 422
+    assert pay(cash_tendered=100) == 400
+    assert pay(payment_mode="card", cash_tendered=200) == 400
+    assert pay(payments=[{"mode": "cash", "amount": 60}, {"mode": "card", "amount": 50}],
+               cash_tendered=50) == 400
+    assert client.get(SALES, headers=cashier_headers).json()["total"] == 0
+    assert stock_of(client, product, cashier_headers) == 100
+
+
 def test_failed_sale_leaves_no_trace(client, product, cashier_headers):
     body = {"items": [{"product_id": product.id, "quantity": 1},
                       {"product_id": 99999, "quantity": 1}]}
