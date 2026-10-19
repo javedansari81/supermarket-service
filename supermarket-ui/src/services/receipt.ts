@@ -104,7 +104,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(d.invoice_no)}</title><style>
     @page { size: 80mm auto; margin: 0; }
     * { box-sizing: border-box; }
-    body { width: 72mm; margin: 0 auto; padding: 2mm 0; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
+    body { width: 80mm; margin: 0; padding: 2mm 2.5mm 2mm 3.5mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
     .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
     h1 { font-size: 15px; margin: 0; } h2 { font-size: 12px; margin: 4px 0; }
     table { width: 100%; border-collapse: collapse; } th { text-align: left; border-bottom: 1px dashed #000; font-size: 10px; }
