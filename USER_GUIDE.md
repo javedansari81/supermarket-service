@@ -32,7 +32,7 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 | Avatar menu | **Logout** — ends the session and returns to login. |
 | Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Location**, **Add Supplier**, **New Purchase**, **Add User**. |
 
-Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisors also see **Products**, **Locations** and **Barcode**. Admins see the full menu.
+Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisors also see **Products**, **Locations** and **Barcode**. Admins see the full menu. The menu is grouped into sections — **Sales**, **Catalog**, **Stock & Purchasing**, **Promotions**, **Insights** and **Administration** — and each role sees only the sections that contain pages it can open (shown as divider lines when the sidebar is collapsed).
 
 ---
 

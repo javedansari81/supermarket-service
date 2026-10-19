@@ -10,6 +10,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  ListSubheader,
   Toolbar,
   Divider,
   Box,
@@ -58,27 +59,35 @@ interface NavItem {
   icon: React.ReactNode;
   adminOnly?: boolean;
   supervisor?: boolean;
+  group?: string;
 }
+
+interface NavSection {
+  title?: string;
+  items: NavItem[];
+}
+
+const navGroups = ['Sales', 'Catalog', 'Stock & Purchasing', 'Promotions', 'Insights', 'Administration'];
 
 const navItems: NavItem[] = [
   { title: 'Dashboard', path: '/dashboard', icon: <Dashboard /> },
   { title: 'Billing / POS', path: '/billing', icon: <PointOfSale /> },
-  { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true, supervisor: true },
-  { title: 'Categories', path: '/categories', icon: <Category />, adminOnly: true },
-  { title: 'Locations', path: '/locations', icon: <Place />, adminOnly: true, supervisor: true },
-  { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true },
-  { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true },
-  { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true },
-  { title: 'Near Expiry', path: '/near-expiry', icon: <EventBusy />, adminOnly: true },
-  { title: 'Offers', path: '/offers', icon: <LocalOffer />, adminOnly: true },
-  { title: 'Coupons', path: '/coupons', icon: <ConfirmationNumber />, adminOnly: true },
-  { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true },
-  { title: 'Invoices', path: '/invoices', icon: <Receipt /> },
-  { title: 'Customers', path: '/customers', icon: <Contacts /> },
-  { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true },
-  { title: 'Users', path: '/users', icon: <People />, adminOnly: true },
-  { title: 'Audit Logs', path: '/audit', icon: <History />, adminOnly: true },
-  { title: 'Settings', path: '/settings', icon: <Settings />, adminOnly: true },
+  { title: 'Products', path: '/products', icon: <Sell />, adminOnly: true, supervisor: true, group: 'Catalog' },
+  { title: 'Categories', path: '/categories', icon: <Category />, adminOnly: true, group: 'Catalog' },
+  { title: 'Locations', path: '/locations', icon: <Place />, adminOnly: true, supervisor: true, group: 'Catalog' },
+  { title: 'Suppliers', path: '/suppliers', icon: <LocalShipping />, adminOnly: true, group: 'Stock & Purchasing' },
+  { title: 'Purchases', path: '/purchases', icon: <ShoppingCart />, adminOnly: true, group: 'Stock & Purchasing' },
+  { title: 'Inventory', path: '/inventory', icon: <Inventory />, adminOnly: true, group: 'Stock & Purchasing' },
+  { title: 'Near Expiry', path: '/near-expiry', icon: <EventBusy />, adminOnly: true, group: 'Promotions' },
+  { title: 'Offers', path: '/offers', icon: <LocalOffer />, adminOnly: true, group: 'Promotions' },
+  { title: 'Coupons', path: '/coupons', icon: <ConfirmationNumber />, adminOnly: true, group: 'Promotions' },
+  { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true, group: 'Catalog' },
+  { title: 'Invoices', path: '/invoices', icon: <Receipt />, group: 'Sales' },
+  { title: 'Customers', path: '/customers', icon: <Contacts />, group: 'Sales' },
+  { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true, group: 'Insights' },
+  { title: 'Users', path: '/users', icon: <People />, adminOnly: true, group: 'Administration' },
+  { title: 'Audit Logs', path: '/audit', icon: <History />, adminOnly: true, group: 'Administration' },
+  { title: 'Settings', path: '/settings', icon: <Settings />, adminOnly: true, group: 'Administration' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({
@@ -95,6 +104,14 @@ const Sidebar: React.FC<SidebarProps> = ({
   const filteredNavItems = navItems.filter(
     (item) => !item.adminOnly || isAdmin || (item.supervisor && isSupervisor)
   );
+
+  const sections: NavSection[] = [
+    { items: filteredNavItems.filter((item) => !item.group) },
+    ...navGroups.map((group) => ({
+      title: group,
+      items: filteredNavItems.filter((item) => item.group === group),
+    })),
+  ].filter((section) => section.items.length > 0);
 
   const collapsed = !mobile && collapsedProp;
   const width = collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
@@ -175,36 +192,60 @@ const Sidebar: React.FC<SidebarProps> = ({
       <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
 
       <List sx={{ pt: 1 }}>
-        {filteredNavItems.map((item) => (
-          <ListItem key={item.path} disablePadding sx={{ px: 1 }}>
-            <Tooltip title={collapsed ? item.title : ''} placement="right">
-              <ListItemButton
-                onClick={() => handleNavigate(item.path)}
-                selected={location.pathname === item.path}
-                aria-label={item.title}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  px: collapsed ? 1.5 : 2,
-                  '&.Mui-selected': {
-                    backgroundColor: 'rgba(255,255,255,0.15)',
-                    '&:hover': {
-                      backgroundColor: 'rgba(255,255,255,0.2)',
-                    },
-                  },
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                  },
-                }}
-              >
-                <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 40 }}>
-                  {item.icon}
-                </ListItemIcon>
-                {!collapsed && <ListItemText primary={item.title} />}
-              </ListItemButton>
-            </Tooltip>
-          </ListItem>
+        {sections.map((section) => (
+          <React.Fragment key={section.title ?? 'main'}>
+            {section.title &&
+              (collapsed ? (
+                <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)', mx: 1, my: 1 }} />
+              ) : (
+                <ListSubheader
+                  disableSticky
+                  sx={{
+                    backgroundColor: 'transparent',
+                    color: 'rgba(255,255,255,0.6)',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    letterSpacing: 0.5,
+                    lineHeight: '32px',
+                    textTransform: 'uppercase',
+                    mt: 1,
+                  }}
+                >
+                  {section.title}
+                </ListSubheader>
+              ))}
+            {section.items.map((item) => (
+              <ListItem key={item.path} disablePadding sx={{ px: 1 }}>
+                <Tooltip title={collapsed ? item.title : ''} placement="right">
+                  <ListItemButton
+                    onClick={() => handleNavigate(item.path)}
+                    selected={location.pathname === item.path}
+                    aria-label={item.title}
+                    sx={{
+                      borderRadius: 2,
+                      mb: 0.5,
+                      justifyContent: collapsed ? 'center' : 'flex-start',
+                      px: collapsed ? 1.5 : 2,
+                      '&.Mui-selected': {
+                        backgroundColor: 'rgba(255,255,255,0.15)',
+                        '&:hover': {
+                          backgroundColor: 'rgba(255,255,255,0.2)',
+                        },
+                      },
+                      '&:hover': {
+                        backgroundColor: 'rgba(255,255,255,0.1)',
+                      },
+                    }}
+                  >
+                    <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 40 }}>
+                      {item.icon}
+                    </ListItemIcon>
+                    {!collapsed && <ListItemText primary={item.title} />}
+                  </ListItemButton>
+                </Tooltip>
+              </ListItem>
+            ))}
+          </React.Fragment>
         ))}
       </List>
     </Drawer>
