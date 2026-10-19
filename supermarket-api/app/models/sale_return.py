@@ -25,6 +25,10 @@ class SaleReturn(Base):
     discount_amount = Column(Numeric(12, 2), default=0)
     total_amount = Column(Numeric(12, 2), default=0)
     refund_mode = Column(String(50), default='cash')
+    # Redeemed points credited back (Rs value is part of total_amount); earned points taken back
+    points_refunded = Column(Integer, default=0, nullable=False, server_default='0')
+    points_refund_amount = Column(Numeric(12, 2), default=0, nullable=False, server_default='0')
+    points_reversed = Column(Integer, default=0, nullable=False, server_default='0')
     reason = Column(Text)
     window_override = Column(Boolean, default=False, nullable=False)
     created_by = Column(Integer, ForeignKey('users.id'))

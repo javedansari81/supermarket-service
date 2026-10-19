@@ -94,6 +94,7 @@ export const API_ENDPOINTS = {
   SETTINGS: '/settings',
   SETTINGS_STORE: '/settings/store',
   SETTINGS_BILLING: '/settings/billing',
+  SETTINGS_LOYALTY: '/settings/loyalty',
   
   // Audit
   AUDIT_LOGS: '/audit',

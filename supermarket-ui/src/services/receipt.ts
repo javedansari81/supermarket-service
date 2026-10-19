@@ -64,6 +64,9 @@ export interface InvoicePrintData {
   payments: { mode: string; amount: number; reference?: string | null }[];
   cash_tendered?: number | null;
   change_given?: number | null;
+  points_earned?: number;
+  points_redeemed?: number;
+  points_balance?: number | null;
   footer_text?: string;
   is_duplicate: boolean;
 }
@@ -94,6 +97,9 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
       + (d.payments[0]?.reference ? ' ' + esc(d.payments[0].reference) : ''));
   const cash = d.cash_tendered != null
     ? row('Cash received', money(d.cash_tendered)) + row('Change', money(d.change_given || 0)) : '';
+  const points = (d.points_redeemed ? row('Points redeemed', `${d.points_redeemed}`) : '')
+    + (d.points_earned ? row('Points earned', `${d.points_earned}`) : '')
+    + (d.points_balance != null ? row('Points balance', `${d.points_balance}`) : '');
   const hsnHead = d.is_interstate
     ? '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">IGST</th>'
     : '<th>HSN</th><th class="r">GST%</th><th class="r">Taxable</th><th class="r">CGST</th><th class="r">SGST</th>';
@@ -140,6 +146,7 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
       ${d.coupon_code ? row('Coupon', esc(d.coupon_code)) : ''}
     </table><hr>
     <table>${row('TOTAL', '&#8377;' + money(d.total_amount), 'total')}${payments}${cash}</table>
+    ${points ? `<hr><table class="small">${points}</table>` : ''}
     ${d.mrp_savings > 0 ? `<div class="c b">You saved &#8377;${money(d.mrp_savings)} on MRP</div>` : ''}
     <hr><div class="small b">GST Summary</div>
     <table class="small"><tr>${hsnHead}</tr>${hsnRows}</table>

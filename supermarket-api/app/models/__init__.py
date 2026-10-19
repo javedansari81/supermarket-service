@@ -18,6 +18,7 @@ from app.models.stock_movement import StockMovement
 from app.models.customer import Customer
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
+from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.held_bill import HeldBill
 from app.models.invoice import Invoice
 from app.models.audit_log import AuditLog
@@ -48,6 +49,7 @@ __all__ = [
     "SalePayment",
     "SaleReturn",
     "SaleReturnItem",
+    "LoyaltyTransaction",
     "HeldBill",
     "Invoice",
     "AuditLog",

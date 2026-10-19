@@ -13,6 +13,7 @@ import PageHeader from '../components/layout/PageHeader';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { API_ENDPOINTS } from '../config/api';
 import { INDIAN_STATES, stateNameFromCode } from '../config/gst';
+import { LoyaltySettings } from '../types';
 import toast from 'react-hot-toast';
 
 interface StoreSettings {
@@ -37,6 +38,10 @@ const Settings: React.FC = () => {
     currency_symbol: '₹', tax_inclusive_pricing: true, default_tax_percent: 0,
     invoice_prefix: 'INV', invoice_footer: 'Thank you for shopping!'
   });
+  const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings>({
+    enabled: false, earn_points_per_100: 1, point_value: 1, min_redeem_points: 100,
+    max_redeem_percent: 50, expiry_days: 365
+  });
   const gstinError = !!storeSettings.gstin && !GSTIN_REGEX.test(storeSettings.gstin);
   const gstinStateMismatch = !gstinError && !!storeSettings.gstin && !!storeSettings.store_state
     && stateNameFromCode(storeSettings.gstin.slice(0, 2)) !== storeSettings.store_state;
@@ -50,12 +55,14 @@ const Settings: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const [store, billing] = await Promise.all([
+        const [store, billing, loyalty] = await Promise.all([
           api.get(API_ENDPOINTS.SETTINGS_STORE),
           api.get(API_ENDPOINTS.SETTINGS_BILLING),
+          api.get(API_ENDPOINTS.SETTINGS_LOYALTY),
         ]);
         if (store.data) setStoreSettings((prev) => ({ ...prev, ...store.data }));
         if (billing.data) setBillingSettings((prev) => ({ ...prev, ...billing.data }));
+        if (loyalty.data) setLoyaltySettings({ ...loyalty.data, point_value: Number(loyalty.data.point_value) });
       } catch (error) { console.error('Failed to load settings'); }
     };
     fetchSettings();
@@ -85,12 +92,29 @@ const Settings: React.FC = () => {
     finally { setLoading(false); }
   };
 
+  const saveLoyaltySettings = async () => {
+    setLoading(true);
+    try {
+      const response = await api.put(API_ENDPOINTS.SETTINGS_LOYALTY, loyaltySettings);
+      setLoyaltySettings({ ...response.data, point_value: Number(response.data.point_value) });
+      toast.success('Loyalty settings saved');
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(Array.isArray(detail) ? detail[0]?.msg : detail || 'Failed to save settings');
+    }
+    finally { setLoading(false); }
+  };
+
+  const setLoyaltyNumber = (key: keyof LoyaltySettings, value: string, decimal = false) =>
+    setLoyaltySettings({ ...loyaltySettings, [key]: (decimal ? parseFloat(value) : parseInt(value, 10)) || 0 });
+
   return (
     <Box>
       <PageHeader title="Settings" />
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
         <Tab label="Store Settings" />
         <Tab label="Billing Settings" />
+        <Tab label="Loyalty Points" />
       </Tabs>
       {tab === 0 && (
         <Card>
@@ -178,6 +202,55 @@ const Settings: React.FC = () => {
               </Grid>
               <Grid size={12}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveBillingSettings} disabled={loading}>
+                  Save Settings
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
+      {tab === 2 && (
+        <Card>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>Loyalty Points</Typography>
+            <Divider sx={{ mb: 3 }} />
+            <Grid container spacing={3}>
+              <Grid size={12}>
+                <FormControlLabel
+                  control={<Switch checked={loyaltySettings.enabled}
+                    onChange={(e) => setLoyaltySettings({ ...loyaltySettings, enabled: e.target.checked })} />}
+                  label="Customers earn and redeem points (identified by mobile number)" />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Points earned per ₹100" type="number"
+                  value={loyaltySettings.earn_points_per_100} disabled={!loyaltySettings.enabled}
+                  helperText="On the amount paid by cash, card or UPI"
+                  onChange={(e) => setLoyaltyNumber('earn_points_per_100', e.target.value)} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Value of 1 point (₹)" type="number"
+                  value={loyaltySettings.point_value} disabled={!loyaltySettings.enabled}
+                  inputProps={{ step: 0.01, min: 0.01 }}
+                  onChange={(e) => setLoyaltyNumber('point_value', e.target.value, true)} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Minimum points to redeem" type="number"
+                  value={loyaltySettings.min_redeem_points} disabled={!loyaltySettings.enabled}
+                  onChange={(e) => setLoyaltyNumber('min_redeem_points', e.target.value)} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Max % of bill payable by points" type="number"
+                  value={loyaltySettings.max_redeem_percent} disabled={!loyaltySettings.enabled}
+                  onChange={(e) => setLoyaltyNumber('max_redeem_percent', e.target.value)} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 4 }}>
+                <TextField fullWidth label="Expire after inactivity (days)" type="number"
+                  value={loyaltySettings.expiry_days} disabled={!loyaltySettings.enabled}
+                  helperText="0 = points never expire"
+                  onChange={(e) => setLoyaltyNumber('expiry_days', e.target.value)} />
+              </Grid>
+              <Grid size={12}>
+                <Button variant="contained" startIcon={<Save />} onClick={saveLoyaltySettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>

@@ -45,6 +45,7 @@ beforeEach(() => {
     if (url === '/held-bills/3') return { data: HELD };
     if (url === '/settings/billing') return { data: { tax_inclusive_pricing: true } };
     if (url === '/settings/store') return { data: { store_state_code: '27' } };
+    if (url === '/settings/loyalty') return { data: { enabled: false } };
     if (url === '/products/search') return { data: SUGAR };
     throw new Error(`Unexpected GET ${url}`);
   });
@@ -172,4 +173,48 @@ test('split payment must match the total and cash received shows the change', as
     cash_tendered: 50,
   })));
 });
+
+test('points pay part of a split bill within the loyalty limits', async () => {
+  const getDefault = mockApi.get.getMockImplementation()!;
+  mockApi.get.mockImplementation(async (url: string, config?: any) => {
+    if (url === '/settings/loyalty') {
+      return { data: { enabled: true, earn_points_per_100: 1, point_value: 1, min_redeem_points: 10, max_redeem_percent: 50, expiry_days: 0 } };
+    }
+    if (url === '/customers/lookup') {
+      return { data: { id: 7, mobile: config?.params?.mobile, customer_name: 'Asha', points_balance: 100, points_value: '100.00' } };
+    }
+    return getDefault(url, config);
+  });
+  render(<Billing />);
+  await scanSugar();
+  userEvent.click(screen.getByRole('button', { name: 'Checkout' }));
+  userEvent.click(screen.getByLabelText(/Split payment/));
+  expect(screen.queryByLabelText('Points amount')).not.toBeInTheDocument();
+
+  userEvent.type(screen.getByLabelText(/Customer Mobile/), '9876543210');
+  const points = await screen.findByLabelText('Points amount');
+  expect(screen.getByText('100 points · up to ₹50.00 on this bill')).toBeInTheDocument();
+
+  userEvent.type(points, '5');
+  expect(screen.getByText('At least 10 points must be redeemed')).toBeInTheDocument();
+  userEvent.clear(points);
+  userEvent.type(points, '60');
+  expect(screen.getByText('Points can pay at most ₹50.00 of this bill')).toBeInTheDocument();
+  userEvent.clear(points);
+  userEvent.type(points, '10.5');
+  expect(screen.getByText('Points amount must be a multiple of ₹1 (one point)')).toBeInTheDocument();
+  expect(completeButton()).toBeDisabled();
+
+  userEvent.click(screen.getByRole('button', { name: 'Use max' }));
+  expect(points).toHaveValue(50);
+  userEvent.type(screen.getByLabelText('Cash amount'), '50');
+  expect(screen.getByText('Payments match the bill total')).toBeInTheDocument();
+
+  userEvent.click(completeButton());
+  await waitFor(() => expect(mockApi.post).toHaveBeenCalledWith('/sales', expect.objectContaining({
+    customer_phone: '9876543210',
+    payments: [{ mode: 'cash', amount: 50, reference: undefined }, { mode: 'points', amount: 50, reference: undefined }],
+  })));
+});
+
 

@@ -815,3 +815,202 @@ def test_coupon_skips_items_without_cost_and_is_held(client, db, product, admin_
 
     res = hold(client, product, cashier_headers, coupon_code=" save20 ")
     assert res.status_code == 201 and res.json()["coupon_code"] == "SAVE20"
+
+
+# ---------- Loyalty points ----------
+
+LOYALTY = "/api/v1/settings/loyalty"
+
+
+def enable_loyalty(client, headers, **overrides):
+    body = {"enabled": True, "earn_points_per_100": 10, "point_value": 1, "min_redeem_points": 10,
+            "max_redeem_percent": 50, "expiry_days": 365, **overrides}
+    res = client.put(LOYALTY, json=body, headers=headers)
+    assert res.status_code == 200
+    return res.json()
+
+
+def new_customer(client, product, headers, mobile=MOBILE):
+    """Customer created by a sale made while loyalty is off (so no points earned)"""
+    sell(client, product, headers, qty=1, customer_phone=mobile)
+    return client.get(f"{CUST}/lookup", params={"mobile": mobile}, headers=headers).json()["id"]
+
+
+def adjust(client, cid, headers, points, remarks="Opening balance"):
+    return client.post(f"{CUST}/{cid}/loyalty/adjust", json={"points": points, "remarks": remarks},
+                       headers=headers)
+
+
+def balance_of(client, headers, mobile=MOBILE):
+    return client.get(f"{CUST}/lookup", params={"mobile": mobile}, headers=headers).json()["points_balance"]
+
+
+def pay_points(points, cash):
+    return [{"mode": "points", "amount": points}, {"mode": "cash", "amount": cash}]
+
+
+def test_loyalty_settings_admin_only(client, admin_headers, cashier_headers):
+    assert client.get(LOYALTY, headers=cashier_headers).json()["enabled"] is False
+    body = {"enabled": True}
+    assert client.put(LOYALTY, json=body, headers=cashier_headers).status_code == 403
+    saved = enable_loyalty(client, admin_headers)
+    assert saved["enabled"] is True and saved["earn_points_per_100"] == 10
+    assert client.get(LOYALTY, headers=cashier_headers).json()["min_redeem_points"] == 10
+    assert client.put(LOYALTY, json={"max_redeem_percent": 0}, headers=admin_headers).status_code == 422
+
+
+def test_loyalty_earn_on_checkout(client, product, admin_headers, cashier_headers):
+    new_customer(client, product, cashier_headers)
+    assert balance_of(client, cashier_headers) == 0
+    enable_loyalty(client, admin_headers)
+
+    body = sell(client, product, cashier_headers, qty=10, customer_phone=MOBILE).json()
+    assert body["points_earned"] == 55 and body["points_balance"] == 55
+    assert sell(client, product, cashier_headers).json()["points_earned"] == 0
+    assert balance_of(client, cashier_headers) == 55
+
+    cid = client.get(f"{CUST}/lookup", params={"mobile": MOBILE}, headers=cashier_headers).json()["id"]
+    history = client.get(f"{CUST}/{cid}/loyalty", headers=cashier_headers).json()
+    assert [(i["txn_type"], i["points"], i["balance_after"]) for i in history["items"]] == [
+        ("earn", 55, 55)]
+    assert history["items"][0]["sale_no"] == body["sale_no"] and history["points_expires_at"]
+
+
+def test_loyalty_redeem_on_checkout(client, product, admin_headers, cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers)
+    adjust(client, cid, admin_headers, 100)
+
+    res = sell(client, product, cashier_headers, customer_phone=MOBILE, payments=pay_points(50, 60))
+    assert res.status_code == 201
+    body = res.json()
+    assert body["points_redeemed"] == 50 and body["points_earned"] == 6
+    assert body["points_balance"] == 56
+    assert sorted((p["mode"], float(p["amount"])) for p in body["payments"]) == [
+        ("cash", 60), ("points", 50)]
+    history = client.get(f"{CUST}/{cid}/loyalty", headers=cashier_headers).json()["items"]
+    assert [(i["txn_type"], i["points"]) for i in history] == [("earn", 6), ("redeem", -50), ("adjust", 100)]
+
+
+def test_loyalty_redeem_rejections(client, product, admin_headers, cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    new_customer(client, product, cashier_headers, mobile="9123456780")
+    enable_loyalty(client, admin_headers)
+    adjust(client, cid, admin_headers, 100)
+
+    def detail(points, cash, **extra):
+        extra.setdefault("customer_phone", MOBILE)
+        res = sell(client, product, cashier_headers, payments=pay_points(points, cash), **extra)
+        assert res.status_code == 400
+        return res.json()["detail"]
+
+    assert "at most 50%" in detail(60, 50)
+    assert "At least 10 points" in detail(5, 105)
+    assert "multiple" in detail(10.5, 99.5)
+    assert "mobile" in detail(20, 90, customer_phone=None)
+    assert "only 0 points" in detail(20, 90, customer_phone="9123456780")
+    assert balance_of(client, cashier_headers) == 100
+
+    enable_loyalty(client, admin_headers, enabled=False)
+    assert "not enabled" in detail(20, 90)
+    assert balance_of(client, cashier_headers) == 100
+
+
+def test_loyalty_partial_and_full_return(client, product, admin_headers, cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers)
+    adjust(client, cid, admin_headers, 100)
+    sale = sell(client, product, cashier_headers, customer_phone=MOBILE,
+                payments=pay_points(50, 60)).json()
+    assert sale["points_balance"] == 56
+
+    first = return_items(client, sale, cashier_headers).json()
+    assert first["points_refunded"] == 25 and float(first["points_refund_amount"]) == 25
+    assert first["points_reversed"] == 3
+    assert balance_of(client, cashier_headers) == 78
+
+    second = return_items(client, sale, cashier_headers).json()
+    assert second["points_refunded"] == 25 and float(second["points_refund_amount"]) == 25
+    assert second["points_reversed"] == 3
+    assert balance_of(client, cashier_headers) == 100
+
+    history = client.get(f"{CUST}/{cid}/loyalty", headers=cashier_headers).json()["items"]
+    assert history[0]["txn_type"] == "earn_reversal" and history[0]["return_no"] == second["return_no"]
+
+
+def test_loyalty_points_only_return_refund_mode(client, product, admin_headers, cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers, max_redeem_percent=100)
+    adjust(client, cid, admin_headers, 200)
+    sale = sell(client, product, cashier_headers, customer_phone=MOBILE,
+                payments=[{"mode": "points", "amount": 110}]).json()
+    assert sale["points_redeemed"] == 110 and sale["points_earned"] == 0
+
+    res = return_items(client, sale, cashier_headers).json()
+    assert res["refund_mode"] == "points" and res["points_refunded"] == 55
+    assert balance_of(client, cashier_headers) == 145
+
+
+def test_loyalty_void_restores_points(client, product, admin_headers, cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers)
+    adjust(client, cid, admin_headers, 100)
+    sale = sell(client, product, cashier_headers, customer_phone=MOBILE,
+                payments=pay_points(50, 60)).json()
+    void = {"reason": "Mistake"}
+    assert client.post(f"{SALES}/{sale['id']}/void", json=void, headers=admin_headers).status_code == 200
+    assert balance_of(client, cashier_headers) == 100
+
+    earn_sale = sell(client, product, cashier_headers, qty=10, customer_phone=MOBILE).json()
+    assert earn_sale["points_balance"] == 155
+    adjust(client, cid, admin_headers, -150, remarks="Correction")
+    client.post(f"{SALES}/{earn_sale['id']}/void", json=void, headers=admin_headers)
+    assert balance_of(client, cashier_headers) == 0
+    history = client.get(f"{CUST}/{cid}/loyalty", headers=cashier_headers).json()["items"]
+    assert (history[0]["txn_type"], history[0]["points"]) == ("earn_reversal", -5)
+
+
+def test_loyalty_expiry(client, db, product, admin_headers, cashier_headers):
+    from datetime import datetime, timedelta
+    from app.models import Customer
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers)
+    adjust(client, cid, admin_headers, 100)
+    db.query(Customer).filter(Customer.id == cid).update(
+        {Customer.loyalty_last_activity: datetime.utcnow() - timedelta(days=400)})
+    db.commit()
+
+    assert balance_of(client, cashier_headers) == 0
+    res = sell(client, product, cashier_headers, customer_phone=MOBILE, payments=pay_points(20, 90))
+    assert res.status_code == 400 and "only 0 points" in res.json()["detail"]
+
+    enable_loyalty(client, admin_headers, expiry_days=0)
+    assert balance_of(client, cashier_headers) == 100
+    enable_loyalty(client, admin_headers)
+
+    body = sell(client, product, cashier_headers, customer_phone=MOBILE).json()
+    assert body["points_earned"] == 11 and body["points_balance"] == 11
+    history = client.get(f"{CUST}/{cid}/loyalty", headers=cashier_headers).json()["items"]
+    assert [(i["txn_type"], i["points"]) for i in history[:2]] == [("earn", 11), ("expire", -100)]
+
+
+def test_loyalty_adjust(client, product, admin_headers, cashier_headers, admin_b_headers):
+    cid = new_customer(client, product, cashier_headers)
+    assert adjust(client, cid, cashier_headers, 100).status_code == 403
+    assert adjust(client, cid, admin_b_headers, 100).status_code == 404
+    assert adjust(client, cid, admin_headers, 0).status_code == 422
+    assert adjust(client, cid, admin_headers, 10, remarks="  ").status_code == 422
+
+    res = adjust(client, cid, admin_headers, 100)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["points_balance"] == 100
+    assert (body["items"][0]["txn_type"], body["items"][0]["remarks"]) == ("adjust", "Opening balance")
+
+    res = adjust(client, cid, admin_headers, -150)
+    assert res.status_code == 400 and "only 100 points" in res.json()["detail"]
+    assert adjust(client, cid, admin_headers, -40).json()["points_balance"] == 60
+
+    logs = client.get("/api/v1/audit", params={"entity_type": "customer_points"},
+                      headers=admin_headers).json()["items"]
+    assert len(logs) == 2 and all(log["entity_id"] == cid and log["action"] == "update" for log in logs)

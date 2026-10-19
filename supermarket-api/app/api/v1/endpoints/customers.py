@@ -3,20 +3,30 @@ Customer endpoints (customer history by mobile number)
 """
 import re
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, or_
 from app.core.database import get_db
+from app.core.audit import record_audit
+from app.core.loyalty import (
+    get_loyalty_settings, lock_customer, expire_if_due, post_points,
+    effective_balance, expires_at, points_value,
+)
+from app.models.audit_log import AuditLog
 from app.models.customer import Customer
+from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.sale import Sale, SaleItem
 from app.models.sale_return import SaleReturn
 from app.models.invoice import Invoice
+from app.models.user import User
 from app.schemas.customer import (
     CustomerUpdate, CustomerResponse, CustomerListResponse,
     CustomerSaleRow, CustomerSalesResponse, normalize_mobile,
+    LoyaltyTransactionResponse, LoyaltyHistoryResponse, LoyaltyAdjustRequest,
 )
-from app.api.deps import get_tenant_context, TenantContext
+from app.schemas.settings import LoyaltySettings
+from app.api.deps import get_tenant_context, get_current_admin_user, TenantContext
 
 router = APIRouter()
 
@@ -78,13 +88,16 @@ def _customer_query(db: Session, tenant_id: int):
     return query, stats
 
 
-def _to_response(row) -> CustomerResponse:
+def _to_response(row, settings: LoyaltySettings) -> CustomerResponse:
     customer, visits, total_spent, first_visit, last_visit = row
     response = CustomerResponse.model_validate(customer)
     response.visits = visits
     response.total_spent = total_spent
     response.first_visit = first_visit
     response.last_visit = last_visit
+    response.points_balance = effective_balance(customer, settings)
+    response.points_value = points_value(response.points_balance, settings)
+    response.points_expires_at = expires_at(customer, settings) if response.points_balance else None
     return response
 
 
@@ -117,7 +130,8 @@ async def list_customers(
     total = query.count()
     rows = query.order_by(stats.c.last_visit.desc().nullslast(), Customer.id.desc()) \
         .offset((page - 1) * page_size).limit(page_size).all()
-    return CustomerListResponse(items=[_to_response(r) for r in rows], total=total,
+    settings = get_loyalty_settings(db, context.tenant_id)
+    return CustomerListResponse(items=[_to_response(r, settings) for r in rows], total=total,
                                 page=page, page_size=page_size)
 
 
@@ -138,7 +152,7 @@ async def lookup_customer(
     row = query.filter(Customer.mobile == normalized).first()
     if not row:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return _to_response(row)
+    return _to_response(row, get_loyalty_settings(db, context.tenant_id))
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
@@ -148,7 +162,79 @@ async def get_customer(
     context: TenantContext = Depends(get_tenant_context)
 ):
     """Get a customer with purchase summary"""
-    return _to_response(_get_customer_row(db, context.tenant_id, customer_id))
+    return _to_response(_get_customer_row(db, context.tenant_id, customer_id),
+                        get_loyalty_settings(db, context.tenant_id))
+
+
+def _loyalty_history(db: Session, tenant_id: int, customer: Customer, settings: LoyaltySettings,
+                     page: int, page_size: int) -> LoyaltyHistoryResponse:
+    query = db.query(LoyaltyTransaction, Sale.sale_no, SaleReturn.return_no, User.full_name) \
+        .outerjoin(Sale, Sale.id == LoyaltyTransaction.sale_id) \
+        .outerjoin(SaleReturn, SaleReturn.id == LoyaltyTransaction.return_id) \
+        .outerjoin(User, User.id == LoyaltyTransaction.created_by) \
+        .filter(LoyaltyTransaction.tenant_id == tenant_id,
+                LoyaltyTransaction.customer_id == customer.id)
+    total = query.count()
+    rows = query.order_by(LoyaltyTransaction.id.desc()) \
+        .offset((page - 1) * page_size).limit(page_size).all()
+    items = []
+    for txn, sale_no, return_no, user_name in rows:
+        item = LoyaltyTransactionResponse.model_validate(txn)
+        item.sale_no = sale_no
+        item.return_no = return_no
+        item.created_by_name = user_name
+        items.append(item)
+    balance = effective_balance(customer, settings)
+    return LoyaltyHistoryResponse(
+        points_balance=balance, points_value=points_value(balance, settings),
+        points_expires_at=expires_at(customer, settings) if balance else None,
+        items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/{customer_id}/loyalty", response_model=LoyaltyHistoryResponse)
+async def get_customer_loyalty(
+    customer_id: int,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(10, ge=1, le=100),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """A customer's points balance and points history, newest first"""
+    customer = db.query(Customer).filter(
+        Customer.id == customer_id, Customer.tenant_id == context.tenant_id
+    ).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return _loyalty_history(db, context.tenant_id, customer,
+                            get_loyalty_settings(db, context.tenant_id), page, page_size)
+
+
+@router.post("/{customer_id}/loyalty/adjust", response_model=LoyaltyHistoryResponse)
+async def adjust_customer_loyalty(
+    customer_id: int,
+    data: LoyaltyAdjustRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """Manually add or remove a customer's points (admin only, audited)"""
+    customer = lock_customer(db, context.tenant_id, customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    settings = get_loyalty_settings(db, context.tenant_id)
+    expire_if_due(db, customer, settings, context.user_id)
+    old_balance = customer.points_balance or 0
+    txn = post_points(db, customer, LoyaltyTransaction.TYPE_ADJUST, data.points, context.user_id,
+                      remarks=data.remarks, touch=data.points > 0)
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "customer_points", entity_id=customer.id,
+                 old_value={"points_balance": old_balance},
+                 new_value={"points_balance": customer.points_balance, "points": data.points,
+                            "remarks": data.remarks, "loyalty_transaction_id": txn.id})
+    db.commit()
+    return _loyalty_history(db, context.tenant_id, customer, settings, 1, 10)
 
 
 @router.get("/{customer_id}/sales", response_model=CustomerSalesResponse)
@@ -201,4 +287,5 @@ async def update_customer(
             continue
         setattr(customer, field, value)
     db.commit()
-    return _to_response(_get_customer_row(db, context.tenant_id, customer_id))
+    return _to_response(_get_customer_row(db, context.tenant_id, customer_id),
+                        get_loyalty_settings(db, context.tenant_id))

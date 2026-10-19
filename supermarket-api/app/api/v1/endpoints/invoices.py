@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.models.audit_log import AuditLog
 from app.models.invoice import Invoice
+from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.sale import Sale, SaleItem
 from app.models.tenant import Tenant
 from app.models.tenant_setting import TenantSetting
@@ -243,6 +244,16 @@ async def get_invoice_print_data(
         for (hsn, rate), g in sorted(hsn_groups.items())
     ]
 
+    points_balance = None
+    if sale and (sale.points_earned or sale.points_redeemed):
+        checkout_txn = db.query(LoyaltyTransaction).filter(
+            LoyaltyTransaction.sale_id == sale.id,
+            LoyaltyTransaction.return_id.is_(None),
+            LoyaltyTransaction.txn_type.in_([LoyaltyTransaction.TYPE_EARN,
+                                             LoyaltyTransaction.TYPE_REDEEM])
+        ).order_by(LoyaltyTransaction.id.desc()).first()
+        points_balance = checkout_txn.balance_after if checkout_txn else None
+
     is_duplicate = (invoice.printed_count or 0) > 0
     if mark_printed:
         invoice.printed_count = (invoice.printed_count or 0) + 1
@@ -289,6 +300,9 @@ async def get_invoice_print_data(
                   for p in (sale.payments if sale else [])],
         cash_tendered=float(sale.cash_tendered) if sale and sale.cash_tendered is not None else None,
         change_given=float(sale.change_given) if sale and sale.change_given is not None else None,
+        points_earned=(sale.points_earned or 0) if sale else 0,
+        points_redeemed=(sale.points_redeemed or 0) if sale else 0,
+        points_balance=points_balance,
         footer_text=footer_text,
         is_duplicate=is_duplicate
     )

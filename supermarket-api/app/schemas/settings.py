@@ -2,6 +2,7 @@
 Settings schemas
 """
 import re
+from decimal import Decimal
 from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 
@@ -109,4 +110,16 @@ class BillingSettings(BaseModel):
     default_tax_percent: float = Field(0, ge=0, le=100)
     invoice_prefix: Optional[str] = "INV"
     invoice_footer: Optional[str] = "Thank you for shopping!"
+
+
+class LoyaltySettings(BaseModel):
+    """Loyalty points: earn_points_per_100 points per Rs 100 paid (not by points), each point
+    worth point_value Rs when redeemed. expiry_days of no earn/redeem expires the balance
+    (0 = never)."""
+    enabled: bool = False
+    earn_points_per_100: int = Field(1, ge=0, le=100)
+    point_value: Decimal = Field(Decimal("1"), gt=0, le=100, max_digits=6, decimal_places=2)
+    min_redeem_points: int = Field(100, ge=1)
+    max_redeem_percent: int = Field(50, ge=1, le=100)
+    expiry_days: int = Field(365, ge=0, le=3650)
 

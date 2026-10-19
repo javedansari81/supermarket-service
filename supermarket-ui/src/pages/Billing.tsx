@@ -47,7 +47,7 @@ import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 import { printReceipt } from '../services/receipt';
 import { stateNameFromCode } from '../config/gst';
-import { Customer } from '../types';
+import { Customer, LoyaltySettings } from '../types';
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const MOBILE_REGEX = /^[6-9][0-9]{9}$/;
@@ -136,11 +136,12 @@ interface BillingBatch {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
-type PayMode = 'cash' | 'card' | 'upi';
+type PayMode = 'cash' | 'card' | 'upi' | 'points';
 const PAY_MODES: { mode: PayMode; label: string }[] = [
   { mode: 'cash', label: 'Cash' }, { mode: 'card', label: 'Card' }, { mode: 'upi', label: 'UPI' },
 ];
-const EMPTY_BY_MODE: Record<PayMode, string> = { cash: '', card: '', upi: '' };
+const POINTS_MODE: { mode: PayMode; label: string } = { mode: 'points', label: 'Points' };
+const EMPTY_BY_MODE: Record<PayMode, string> = { cash: '', card: '', upi: '', points: '' };
 const toAmount = (s: string) => round2(Number(s) || 0);
 
 const QUICK_WEIGHTS: Record<string, number[]> = {
@@ -264,6 +265,7 @@ const Billing: React.FC = () => {
   const [couponError, setCouponError] = useState('');
   const [couponChecking, setCouponChecking] = useState(false);
   const couponSeq = useRef(0);
+  const [loyalty, setLoyalty] = useState<LoyaltySettings | null>(null);
 
   const loadHeldBills = () =>
     api.get(API_ENDPOINTS.HELD_BILLS)
@@ -282,6 +284,9 @@ const Billing: React.FC = () => {
       .catch(() => undefined);
     api.get(API_ENDPOINTS.SETTINGS_STORE)
       .then((res) => setStoreStateCode(res.data.store_state_code || ''))
+      .catch(() => undefined);
+    api.get<LoyaltySettings>(API_ENDPOINTS.SETTINGS_LOYALTY)
+      .then((res) => setLoyalty(res.data))
       .catch(() => undefined);
   }, []);
 
@@ -643,20 +648,37 @@ const Billing: React.FC = () => {
   const getDiscountTotal = () => round2(cartItems.reduce((sum, item) =>
     sum + lineDiscount(item).amount, 0));
 
+  // Points can pay part of a split bill for a known customer with enough points
+  const pointValue = loyalty ? Number(loyalty.point_value) : 0;
+  const pointsBalance = knownCustomer?.points_balance || 0;
+  const pointsAvailable = !!loyalty?.enabled && pointValue > 0 && pointsBalance >= loyalty.min_redeem_points;
+  const splitModes = pointsAvailable ? [...PAY_MODES, POINTS_MODE] : PAY_MODES;
+  const pointsCap = loyalty ? round2(getGrandTotal() * Number(loyalty.max_redeem_percent) / 100) : 0;
+  const maxPointsAmount = pointsAvailable
+    ? round2(Math.min(Math.floor(pointsCap / pointValue + 1e-9), pointsBalance) * pointValue) : 0;
+
   // Amount paid by each mode; without split the whole bill is paid by one mode
   const getPaymentRows = () => splitPayment
-    ? PAY_MODES.map(({ mode }) => ({ mode, amount: toAmount(splitAmounts[mode]) })).filter((p) => p.amount > 0)
+    ? splitModes.map(({ mode }) => ({ mode, amount: toAmount(splitAmounts[mode]) })).filter((p) => p.amount > 0)
     : [{ mode: paymentMode, amount: getGrandTotal() }];
   const paymentRows = getPaymentRows();
   const cashDue = round2(paymentRows.filter((p) => p.mode === 'cash').reduce((s, p) => s + p.amount, 0));
+  const pointsPaid = round2(paymentRows.filter((p) => p.mode === 'points').reduce((s, p) => s + p.amount, 0));
+  const pointsUsed = pointValue > 0 ? pointsPaid / pointValue : 0;
   const splitRemaining = round2(getGrandTotal() - paymentRows.reduce((s, p) => s + p.amount, 0));
   const tendered = cashDue > 0 ? toAmount(cashTendered) : 0;
   const changeDue = tendered > 0 ? round2(tendered - cashDue) : null;
+  const pointsError = pointsPaid <= 0 || !loyalty ? ''
+    : Math.abs(pointsUsed - Math.round(pointsUsed)) > 1e-6 ? `Points amount must be a multiple of ₹${pointValue} (one point)`
+    : Math.round(pointsUsed) < loyalty.min_redeem_points ? `At least ${loyalty.min_redeem_points} points must be redeemed`
+    : pointsPaid > maxPointsAmount ? `Points can pay at most ₹${maxPointsAmount.toFixed(2)} of this bill`
+    : '';
   const paymentError = splitPayment && paymentRows.length === 0 ? 'Enter the amount paid by each mode'
-    : splitPayment && splitRemaining > 0 ? `₹${splitRemaining.toFixed(2)} still to be paid`
+    : pointsError
+    || (splitPayment && splitRemaining > 0 ? `₹${splitRemaining.toFixed(2)} still to be paid`
     : splitPayment && splitRemaining < 0 ? `Payments are ₹${(-splitRemaining).toFixed(2)} more than the bill`
     : changeDue !== null && changeDue < 0 ? `Cash received is less than the cash amount ₹${cashDue.toFixed(2)}`
-    : '';
+    : '');
 
   const resetBill = () => {
     setCartItems([]);
@@ -835,7 +857,10 @@ const Billing: React.FC = () => {
       };
 
       const response = await api.post(API_ENDPOINTS.SALES, saleData);
-      toast.success(`Sale completed! Invoice: ${response.data.invoice_no || response.data.sale_no}`);
+      const { points_earned: earned, points_redeemed: redeemed, points_balance: balance } = response.data;
+      const pointsNote = earned || redeemed
+        ? ` · Points${earned ? ` +${earned}` : ''}${redeemed ? ` −${redeemed}` : ''}, balance ${balance ?? 0}` : '';
+      toast.success(`Sale completed! Invoice: ${response.data.invoice_no || response.data.sale_no}${pointsNote}`);
 
       const wasHeld = !!heldBillId;
       resetBill();
@@ -1107,15 +1132,24 @@ const Billing: React.FC = () => {
             />
             {splitPayment ? (
               <Box sx={{ mt: 1, mb: 2 }}>
-                {PAY_MODES.map(({ mode, label }) => (
+                {splitModes.map(({ mode, label }) => (
                   <Box key={mode} sx={{ display: 'flex', gap: 1, mb: 1 }}>
                     <TextField
                       size="small" type="number" label={`${label} amount`} value={splitAmounts[mode]} sx={{ flex: 1 }}
                       onChange={(e) => setSplitAmounts((a) => ({ ...a, [mode]: e.target.value }))}
-                      inputProps={{ min: 0, step: '0.01' }}
+                      inputProps={{ min: 0, step: mode === 'points' ? pointValue : '0.01' }}
                       InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                      helperText={mode === 'points'
+                        ? `${pointsBalance} points · up to ₹${maxPointsAmount.toFixed(2)} on this bill` : undefined}
                     />
-                    {mode === 'cash' ? <Box sx={{ flex: 1 }} /> : (
+                    {mode === 'points' ? (
+                      <Button
+                        size="small" sx={{ flex: 1, alignSelf: 'flex-start', height: 40 }} disabled={maxPointsAmount <= 0}
+                        onClick={() => setSplitAmounts((a) => ({ ...a, points: maxPointsAmount.toFixed(2) }))}
+                      >
+                        Use max
+                      </Button>
+                    ) : mode === 'cash' ? <Box sx={{ flex: 1 }} /> : (
                       <TextField
                         size="small" label="Reference (optional)" value={paymentRefs[mode]} sx={{ flex: 1 }}
                         onChange={(e) => setPaymentRefs((r) => ({ ...r, [mode]: e.target.value }))}
@@ -1178,6 +1212,12 @@ const Billing: React.FC = () => {
                 Returning customer{knownCustomer.customer_name ? `: ${knownCustomer.customer_name}` : ''} ·{' '}
                 {knownCustomer.visits} visit{knownCustomer.visits === 1 ? '' : 's'} · ₹{Number(knownCustomer.total_spent).toFixed(2)} spent
                 {knownCustomer.last_visit ? ` · last on ${new Date(knownCustomer.last_visit + 'Z').toLocaleDateString('en-IN')}` : ''}
+                {loyalty?.enabled && (
+                  <>
+                    {' '}· {pointsBalance} points (₹{Number(knownCustomer.points_value || 0).toFixed(2)})
+                    {pointsAvailable && !splitPayment ? ' - tick Split payment to pay by points' : ''}
+                  </>
+                )}
               </Alert>
             )}
             <TextField fullWidth label="Customer Name (Optional)" value={customerName} onChange={(e) => setCustomerName(e.target.value)} sx={{ mb: 2 }} />

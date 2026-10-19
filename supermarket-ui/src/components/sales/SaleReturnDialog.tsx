@@ -76,7 +76,13 @@ const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) =>
             sale_item_id: i.sale_item_id, quantity: i.qty, restock: restock[i.sale_item_id] ?? true,
           })),
         });
-        toast.success(`Return ${res.data.return_no} saved. Refund ₹${money(res.data.total_amount)}`);
+        const pointsAmount = Number(res.data.points_refund_amount || 0);
+        const pointsNote = [
+          res.data.points_refunded ? `${res.data.points_refunded} points credited back` : '',
+          res.data.points_reversed ? `${res.data.points_reversed} earned points taken back` : '',
+        ].filter(Boolean).join(', ');
+        toast.success(`Return ${res.data.return_no} saved. Refund ₹${money(Number(res.data.total_amount) - pointsAmount)}`
+          + (pointsNote ? ` · ${pointsNote}` : ''));
       } else {
         await api.post(`${API_ENDPOINTS.SALES}/${info.sale_id}/void`, { reason });
         toast.success(`Sale ${info.sale_no} voided`);

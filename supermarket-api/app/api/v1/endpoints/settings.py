@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.audit import record_audit
+from app.core.loyalty import get_loyalty_settings, loyalty_settings_values
 from app.models.audit_log import AuditLog
 from app.models.tenant_setting import TenantSetting
 from app.models.tenant import Tenant
 from app.schemas.settings import (
     SettingCreate, SettingUpdate, SettingResponse, 
-    SettingsListResponse, StoreSettings, BillingSettings, state_code_for
+    SettingsListResponse, StoreSettings, BillingSettings, LoyaltySettings, state_code_for
 )
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
@@ -33,6 +34,12 @@ DEFAULT_SETTINGS = {
     "invoice_prefix": {"value": "INV", "category": "billing", "description": "Invoice number prefix"},
     "invoice_footer": {"value": "Thank you for shopping!", "category": "billing", "description": "Invoice footer text"},
     "clearance_enabled": {"value": "false", "category": "billing", "description": "Apply near-expiry discount tiers"},
+    "loyalty_enabled": {"value": "false", "category": "loyalty", "description": "Loyalty points enabled"},
+    "loyalty_earn_points_per_100": {"value": "1", "category": "loyalty", "description": "Points earned per Rs 100 paid"},
+    "loyalty_point_value": {"value": "1", "category": "loyalty", "description": "Rs value of one point"},
+    "loyalty_min_redeem_points": {"value": "100", "category": "loyalty", "description": "Minimum points per redemption"},
+    "loyalty_max_redeem_percent": {"value": "50", "category": "loyalty", "description": "Max % of a bill paid by points"},
+    "loyalty_expiry_days": {"value": "365", "category": "loyalty", "description": "Days without activity before points expire (0 = never)"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }
@@ -190,4 +197,35 @@ async def update_billing_settings(
                  "setting", old_value=old_value, new_value=new_value)
     db.commit()
     return billing_settings
+
+
+@router.get("/loyalty", response_model=LoyaltySettings)
+async def get_loyalty(
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Get loyalty points settings
+    """
+    return get_loyalty_settings(db, context.tenant_id)
+
+
+@router.put("/loyalty", response_model=LoyaltySettings)
+async def update_loyalty(
+    loyalty_settings: LoyaltySettings,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Update loyalty points settings (admin only)
+    """
+    old_value = loyalty_settings_values(get_loyalty_settings(db, context.tenant_id))
+    new_value = loyalty_settings_values(loyalty_settings)
+    upsert_settings(db, context.tenant_id, new_value)
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "setting", old_value=old_value, new_value=new_value)
+    db.commit()
+    return get_loyalty_settings(db, context.tenant_id)
 

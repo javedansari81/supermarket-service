@@ -13,6 +13,7 @@ from sqlalchemy import func, or_
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches
+from app.core.loyalty import reverse_for_sale, POINTS_MODE
 from app.models.audit_log import AuditLog
 from app.models.product_batch import ProductBatch
 from app.models.sale import Sale, SaleItem
@@ -427,6 +428,16 @@ async def create_return(
     sale_return.discount_amount = totals["discount_amount"]
     sale_return.total_amount = totals["line_total"]
 
+    returned_before = sum((v.get("line_total", zero) for v in already.values()), zero)
+    (sale_return.points_refunded, sale_return.points_refund_amount,
+     sale_return.points_reversed) = reverse_for_sale(
+        db, sale, returned_before + sale_return.total_amount, sale_return.total_amount,
+        context.user_id, return_id=sale_return.id,
+        remarks=f"Return {sale_return.return_no} against {sale.sale_no}")
+    if (not return_data.refund_mode and sale_return.points_refund_amount
+            and sale_return.points_refund_amount >= sale_return.total_amount):
+        sale_return.refund_mode = POINTS_MODE
+
     returned_now = {i.sale_item_id: i.quantity for i in return_items}
     if all(
         already.get(i.id, {}).get("quantity", zero) + returned_now.get(i.id, zero) >= i.quantity
@@ -479,6 +490,8 @@ async def void_sale(
     sale.voided_at = datetime.utcnow()
     sale.voided_by = context.user_id
     sale.void_reason = void_data.reason
+    reverse_for_sale(db, sale, sale.total_amount, sale.total_amount, context.user_id,
+                     remarks=f"Void of sale {sale.sale_no}")
     db.flush()
 
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,

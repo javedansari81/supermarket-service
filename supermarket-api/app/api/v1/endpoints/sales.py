@@ -15,7 +15,10 @@ from app.core.clearance import ClearanceResolver
 from app.core.offers import OfferResolver, LineDiscount, resolve_line_discount, CENTS
 from app.core.coupons import (SOURCE_COUPON, CouponLine, find_coupon, check_coupon,
                               allocate_coupon)
+from app.core.loyalty import (POINTS_MODE, get_loyalty_settings, lock_customer, expire_if_due,
+                              post_points, points_to_earn, points_to_redeem)
 from app.models.audit_log import AuditLog
+from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
@@ -465,6 +468,24 @@ async def create_sale(
     db.add_all(payments)
     db.flush()
 
+    # Loyalty: redeem the 'points' payment, earn on the rest of the bill
+    loyalty = get_loyalty_settings(db, context.tenant_id)
+    points_amount = sum((amount for mode, amount, _ in rows if mode == POINTS_MODE), Decimal("0"))
+    if customer and loyalty.enabled:
+        customer = lock_customer(db, context.tenant_id, customer.id)
+        expire_if_due(db, customer, loyalty, context.user_id)
+        if points_amount:
+            sale.points_redeemed = points_to_redeem(points_amount, sale.total_amount,
+                                                    customer, loyalty)
+            post_points(db, customer, LoyaltyTransaction.TYPE_REDEEM, -sale.points_redeemed,
+                        context.user_id, sale_id=sale.id, touch=True)
+        sale.points_earned = points_to_earn(sale.total_amount - points_amount, loyalty)
+        post_points(db, customer, LoyaltyTransaction.TYPE_EARN, sale.points_earned,
+                    context.user_id, sale_id=sale.id, touch=bool(sale.points_earned))
+        db.flush()
+    elif points_amount:
+        points_to_redeem(points_amount, sale.total_amount, customer, loyalty)
+
     # Create tax invoice
     invoice = create_invoice_for_sale(db, sale, context.tenant_id)
 
@@ -484,5 +505,8 @@ async def create_sale(
     db.commit()
     db.refresh(sale)
 
-    return to_sale_response(sale)
+    response = to_sale_response(sale)
+    if customer:
+        response.points_balance = customer.points_balance
+    return response
 

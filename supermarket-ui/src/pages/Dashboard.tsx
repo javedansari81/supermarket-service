@@ -56,6 +56,7 @@ const PAYMENT_COLORS: Record<string, string> = {
   upi: '#7b1fa2',
   card: '#1976d2',
   credit: '#ed6c02',
+  points: '#c2185b',
 };
 
 interface DeltaProps {

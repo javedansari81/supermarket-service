@@ -114,6 +114,10 @@ class InvoicePrintData(BaseModel):
     payments: List[PaymentLine] = []
     cash_tendered: Optional[float] = None
     change_given: Optional[float] = None
+    points_earned: int = 0
+    points_redeemed: int = 0
+    # Customer's points balance right after this bill
+    points_balance: Optional[int] = None
     footer_text: Optional[str] = None
     is_duplicate: bool = False
 

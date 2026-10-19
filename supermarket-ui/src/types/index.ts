@@ -191,7 +191,45 @@ export interface Customer {
   total_spent: number;
   first_visit?: string;
   last_visit?: string;
+  points_balance: number;
+  points_value: number;
+  points_expires_at?: string;
   created_at: string;
+}
+
+// Loyalty points types
+export interface LoyaltySettings {
+  enabled: boolean;
+  earn_points_per_100: number;
+  point_value: number;
+  min_redeem_points: number;
+  max_redeem_percent: number;
+  expiry_days: number;
+}
+
+export interface LoyaltyTransaction {
+  id: number;
+  txn_type: 'earn' | 'redeem' | 'reverse' | 'refund' | 'adjust' | 'expire' | string;
+  points: number;
+  balance_after: number;
+  sale_id?: number;
+  sale_no?: string;
+  return_id?: number;
+  return_no?: string;
+  remarks?: string;
+  created_by?: number;
+  created_by_name?: string;
+  created_at: string;
+}
+
+export interface LoyaltyHistory {
+  points_balance: number;
+  points_value: number;
+  points_expires_at?: string;
+  items: LoyaltyTransaction[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 export interface CustomerSale {
@@ -253,6 +291,9 @@ export interface Sale {
   voided_by?: number;
   void_reason?: string;
   items: SaleItem[];
+  points_earned?: number;
+  points_redeemed?: number;
+  points_balance?: number;
   invoice_id?: number;
   invoice_no?: string;
 }
@@ -283,6 +324,9 @@ export interface SaleReturn {
   discount_amount: number;
   total_amount: number;
   refund_mode: string;
+  points_refunded?: number;
+  points_refund_amount?: number;
+  points_reversed?: number;
   reason?: string;
   window_override: boolean;
   created_by_name?: string;

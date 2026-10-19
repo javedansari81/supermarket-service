@@ -79,6 +79,9 @@ class SaleReturnResponse(BaseModel):
     discount_amount: Decimal
     total_amount: Decimal
     refund_mode: str
+    points_refunded: int = 0
+    points_refund_amount: Decimal = Decimal("0")
+    points_reversed: int = 0
     reason: Optional[str] = None
     window_override: bool
     created_by: Optional[int] = None

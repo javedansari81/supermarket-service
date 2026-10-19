@@ -5,7 +5,7 @@ import re
 from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from app.schemas.settings import GSTIN_PATTERN
 
 MOBILE_PATTERN = re.compile(r"^[6-9][0-9]{9}$")
@@ -63,6 +63,10 @@ class CustomerResponse(BaseModel):
     total_spent: Decimal = Decimal("0")
     first_visit: Optional[datetime] = None
     last_visit: Optional[datetime] = None
+    # Loyalty points balance as of now (0 when the expiry period has passed)
+    points_balance: int = 0
+    points_value: Decimal = Decimal("0")
+    points_expires_at: Optional[datetime] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -95,3 +99,53 @@ class CustomerSalesResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class LoyaltyTransactionResponse(BaseModel):
+    """One change to a customer's loyalty points"""
+    id: int
+    txn_type: str
+    points: int
+    balance_after: int
+    sale_id: Optional[int] = None
+    sale_no: Optional[str] = None
+    return_id: Optional[int] = None
+    return_no: Optional[str] = None
+    remarks: Optional[str] = None
+    created_by: Optional[int] = None
+    created_by_name: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class LoyaltyHistoryResponse(BaseModel):
+    """Customer's points balance and paginated ledger, newest first"""
+    points_balance: int
+    points_value: Decimal
+    points_expires_at: Optional[datetime] = None
+    items: List[LoyaltyTransactionResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class LoyaltyAdjustRequest(BaseModel):
+    """Manual points adjustment by an admin (+ credit, - debit)"""
+    points: int = Field(ge=-1000000, le=1000000)
+    remarks: str
+
+    @field_validator("points")
+    @classmethod
+    def validate_points(cls, v: int) -> int:
+        if v == 0:
+            raise ValueError("Points must not be zero")
+        return v
+
+    @field_validator("remarks")
+    @classmethod
+    def validate_remarks(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("Remarks are required")
+        return v

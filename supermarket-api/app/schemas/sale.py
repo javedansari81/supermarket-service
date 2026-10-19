@@ -10,7 +10,7 @@ from app.schemas.settings import GSTIN_PATTERN, GST_STATE_CODES
 from app.schemas.customer import normalize_mobile
 from app.core.coupons import normalize_code
 
-PaymentMode = Literal["cash", "card", "upi"]
+PaymentMode = Literal["cash", "card", "upi", "points"]
 
 
 class SaleItemCreate(BaseModel):
@@ -158,6 +158,10 @@ class SaleResponse(TimestampSchema):
     coupon_id: Optional[int] = None
     coupon_code: Optional[str] = None
     coupon_discount: Optional[Decimal] = Decimal("0")
+    points_earned: int = 0
+    points_redeemed: int = 0
+    # Customer's points balance after the bill (set on checkout)
+    points_balance: Optional[int] = None
     remarks: Optional[str]
     status: str
     voided_at: Optional[datetime] = None
