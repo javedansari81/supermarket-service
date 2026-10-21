@@ -56,6 +56,8 @@ class SaleReturnItem(Base):
     unit_type = Column(String(20))
     quantity = Column(Numeric(12, 3), nullable=False)
     unit_price = Column(Numeric(10, 2), nullable=False)
+    # Copied from the sale line
+    unit_cost = Column(Numeric(10, 2))
     taxable_value = Column(Numeric(12, 2), default=0)
     tax_percent = Column(Numeric(5, 2), default=0)
     tax_amount = Column(Numeric(10, 2), default=0)

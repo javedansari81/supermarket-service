@@ -394,6 +394,7 @@ async def create_return(
             unit_type=sale_item.unit_type,
             quantity=qty,
             unit_price=sale_item.unit_price,
+            unit_cost=sale_item.unit_cost,
             taxable_value=taxable,
             tax_percent=sale_item.tax_percent or zero,
             tax_amount=tax,

@@ -1,10 +1,11 @@
 /**
  * Reports Page
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box, Typography, Card, CardContent, Tabs, Tab,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
+  TableSortLabel, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DatePicker } from '@mui/x-date-pickers';
@@ -29,8 +30,16 @@ interface CategorySalesResponse { categories: CategorySales[]; }
 interface CashierPerfResponse { cashiers: CashierPerf[]; }
 interface PaymentModesResponse { modes: PaymentModeRow[]; daily: PaymentModeDay[]; totals: PaymentModeTotals; }
 
+type ProfitGroup = 'product' | 'category' | 'day';
+interface ProfitFigures { quantity: number; revenue: number; cost: number; profit: number; margin_pct: number | null; uncosted_revenue: number; }
+interface ProfitRow extends ProfitFigures { product_id?: number; product_name?: string; category_id?: number | null; category_name?: string; date?: string; }
+interface ProfitResponse { group_by: ProfitGroup; rows: ProfitRow[]; totals: ProfitFigures; }
+type ProfitSortKey = 'name' | 'quantity' | 'revenue' | 'cost' | 'profit' | 'margin_pct' | 'uncosted_revenue';
+
 const MODE_LABELS: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', points: 'Points' };
 const modeLabel = (mode: string) => MODE_LABELS[mode] || mode;
+const PROFIT_NAME_LABELS: Record<ProfitGroup, string> = { product: 'Product', category: 'Category', day: 'Date' };
+const profitRowName = (r: ProfitRow) => r.product_name ?? r.category_name ?? r.date ?? '';
 
 const Reports: React.FC = () => {
   const [tab, setTab] = useState(0);
@@ -41,6 +50,9 @@ const Reports: React.FC = () => {
   const [categorySales, setCategorySales] = useState<CategorySales[]>([]);
   const [cashierPerf, setCashierPerf] = useState<CashierPerf[]>([]);
   const [paymentModes, setPaymentModes] = useState<PaymentModesResponse | null>(null);
+  const [profitGroup, setProfitGroup] = useState<ProfitGroup>('product');
+  const [profit, setProfit] = useState<ProfitResponse | null>(null);
+  const [profitSort, setProfitSort] = useState<{ key: ProfitSortKey; desc: boolean }>({ key: 'profit', desc: true });
 
   const fetchData = useCallback(async () => {
     const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD') };
@@ -61,6 +73,46 @@ const Reports: React.FC = () => {
   }, [fromDate, toDate]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const fetchProfit = useCallback(async () => {
+    const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD'), group_by: profitGroup };
+    try {
+      const res = await api.get<ProfitResponse>(API_ENDPOINTS.REPORTS_PROFIT, { params });
+      setProfit(res.data);
+    } catch (error) { toast.error('Failed to fetch profit report'); }
+  }, [fromDate, toDate, profitGroup]);
+
+  useEffect(() => { fetchProfit(); }, [fetchProfit]);
+
+  const profitRows = useMemo(() => {
+    const rows = [...(profit?.rows || [])];
+    const { key, desc } = profitSort;
+    rows.sort((a, b) => {
+      const cmp = key === 'name'
+        ? profitRowName(a).localeCompare(profitRowName(b))
+        : (a[key] ?? -Infinity) - (b[key] ?? -Infinity);
+      return desc ? -cmp : cmp;
+    });
+    return rows;
+  }, [profit, profitSort]);
+
+  const changeProfitGroup = (group: ProfitGroup) => {
+    setProfitGroup(group);
+    setProfitSort(group === 'day' ? { key: 'name', desc: false } : { key: 'profit', desc: true });
+  };
+
+  const profitHeader = (key: ProfitSortKey, label: string, align: 'left' | 'right' = 'right') => (
+    <TableCell align={align} sortDirection={profitSort.key === key ? (profitSort.desc ? 'desc' : 'asc') : false}>
+      <TableSortLabel active={profitSort.key === key} direction={profitSort.key === key && profitSort.desc ? 'desc' : 'asc'}
+        onClick={() => setProfitSort((s) => ({ key, desc: s.key === key ? !s.desc : key !== 'name' }))}>
+        {label}
+      </TableSortLabel>
+    </TableCell>
+  );
+
+  const showUncosted = !!profit?.totals.uncosted_revenue;
+  const showQuantity = profitGroup === 'product';
+  const marginText = (m: number | null) => (m == null ? '—' : `${m.toFixed(1)}%`);
 
   return (
     <Box>
@@ -99,7 +151,7 @@ const Reports: React.FC = () => {
         </Grid>
       )}
       <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
-        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" />
+        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" />
       </Tabs>
       {tab === 0 && (
         <TableContainer component={Paper}>
@@ -180,6 +232,69 @@ const Reports: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+        </Box>
+      )}
+      {tab === 4 && profit && (
+        <Box>
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            {[
+              { label: 'Revenue (without GST)', value: `₹${profit.totals.revenue.toFixed(2)}` },
+              { label: 'Cost', value: `₹${profit.totals.cost.toFixed(2)}` },
+              { label: 'Gross Profit', value: `₹${profit.totals.profit.toFixed(2)}`, negative: profit.totals.profit < 0 },
+              { label: 'Margin', value: marginText(profit.totals.margin_pct), negative: profit.totals.profit < 0 },
+            ].map((c) => (
+              <Grid key={c.label} size={{ xs: 6, md: 3 }}>
+                <Card><CardContent>
+                  <Typography color="text.secondary">{c.label}</Typography>
+                  <Typography variant="h5" color={c.negative ? 'error' : 'inherit'}>{c.value}</Typography>
+                </CardContent></Card>
+              </Grid>
+            ))}
+          </Grid>
+          <ToggleButtonGroup size="small" exclusive value={profitGroup} sx={{ mb: 1 }}
+            onChange={(_, v) => v && changeProfitGroup(v)}>
+            <ToggleButton value="product">By Product</ToggleButton>
+            <ToggleButton value="category">By Category</ToggleButton>
+            <ToggleButton value="day">By Day</ToggleButton>
+          </ToggleButtonGroup>
+          <TableContainer component={Paper} sx={{ mb: 1 }}>
+            <Table size="small">
+              <TableHead><TableRow>
+                {profitHeader('name', PROFIT_NAME_LABELS[profitGroup], 'left')}
+                {showQuantity && profitHeader('quantity', 'Qty Sold')}
+                {profitHeader('revenue', 'Revenue')}{profitHeader('cost', 'Cost')}
+                {profitHeader('profit', 'Profit')}{profitHeader('margin_pct', 'Margin')}
+                {showUncosted && profitHeader('uncosted_revenue', 'Revenue without Cost')}
+              </TableRow></TableHead>
+              <TableBody>
+                {profitRows.map((r) => (
+                  <TableRow key={r.product_id ?? r.date ?? `c${r.category_id}`}>
+                    <TableCell>{r.date ? dayjs(r.date).format('DD/MM/YYYY') : profitRowName(r)}</TableCell>
+                    {showQuantity && <TableCell align="right">{r.quantity}</TableCell>}
+                    <TableCell align="right">₹{r.revenue.toFixed(2)}</TableCell>
+                    <TableCell align="right">₹{r.cost.toFixed(2)}</TableCell>
+                    <TableCell align="right" sx={{ color: r.profit < 0 ? 'error.main' : undefined }}>₹{r.profit.toFixed(2)}</TableCell>
+                    <TableCell align="right" sx={{ color: r.profit < 0 ? 'error.main' : undefined }}>{marginText(r.margin_pct)}</TableCell>
+                    {showUncosted && <TableCell align="right">₹{r.uncosted_revenue.toFixed(2)}</TableCell>}
+                  </TableRow>
+                ))}
+                <TableRow sx={{ '& td': { fontWeight: 600 } }}>
+                  <TableCell>Total</TableCell>
+                  {showQuantity && <TableCell align="right">{profit.totals.quantity}</TableCell>}
+                  <TableCell align="right">₹{profit.totals.revenue.toFixed(2)}</TableCell>
+                  <TableCell align="right">₹{profit.totals.cost.toFixed(2)}</TableCell>
+                  <TableCell align="right">₹{profit.totals.profit.toFixed(2)}</TableCell>
+                  <TableCell align="right">{marginText(profit.totals.margin_pct)}</TableCell>
+                  {showUncosted && <TableCell align="right">₹{profit.totals.uncosted_revenue.toFixed(2)}</TableCell>}
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+            Days are India time. Revenue is after all discounts (offers, near-expiry, coupons) and without GST.
+            Cost is the purchase price saved on each bill line when it was billed. Returns are taken off on the return date.
+            {showUncosted && ' Revenue without Cost is from bills made before cost tracking started (or items with no purchase price); it is left out of profit and margin.'}
+          </Typography>
         </Box>
       )}
     </Box>

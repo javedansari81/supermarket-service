@@ -169,9 +169,56 @@ def test_payment_modes_uses_ist_day(client, db, product, admin_headers):
     assert res["totals"]["collected"] == 110 and res["daily"][0]["date"] == yesterday
 
 
+def test_profit_uses_cost_saved_at_billing(client, db, product, admin_headers, admin_b_headers):
+    from datetime import datetime
+    from app.api.v1.endpoints.reports import IST
+    sales = "/api/v1/sales"
+    sell(client, product, admin_headers)
+    sale = sell(client, product, admin_headers).json()
+    body = {"items": [{"sale_item_id": sale["items"][0]["id"], "quantity": 1, "restock": True}],
+            "reason": "Damaged pack"}
+    assert client.post(f"{sales}/{sale['id']}/returns", json=body, headers=admin_headers).status_code == 201
+    product.purchase_price = 50
+    for batch in product.batches:
+        batch.purchase_price = 50
+    db.commit()
+
+    # 3 net units at cost 40; revenue without 5% GST: 104.76 + 104.76 - 52.38
+    figures = {"quantity": 3, "revenue": 157.14, "cost": 120, "profit": 37.14,
+               "margin_pct": 23.6, "uncosted_revenue": 0}
+    res = client.get(f"{REP}/profit", params=WIDE, headers=admin_headers)
+    assert res.status_code == 200
+    assert res.json()["totals"] == figures
+    assert res.json()["rows"] == [{"product_id": product.id, "product_name": "Rice 1kg", **figures}]
+    by_category = client.get(f"{REP}/profit", params={**WIDE, "group_by": "category"},
+                             headers=admin_headers).json()
+    assert by_category["rows"] == [{"category_id": product.category_id, "category_name": "Grocery",
+                                    **figures}]
+    by_day = client.get(f"{REP}/profit", params={**WIDE, "group_by": "day"}, headers=admin_headers).json()
+    assert by_day["rows"] == [{"date": str(datetime.now(IST).date()), **figures}]
+    dash = client.get(f"{REP}/dashboard", headers=admin_headers).json()
+    assert dash["admin"]["gross_margin"] == 37.14
+
+    past = client.get(f"{REP}/profit", params=PAST, headers=admin_headers).json()
+    assert past["rows"] == [] and past["totals"]["revenue"] == 0 and past["totals"]["margin_pct"] is None
+    other = client.get(f"{REP}/profit", params=WIDE, headers=admin_b_headers).json()
+    assert other["rows"] == []
+
+
+def test_profit_reports_lines_without_cost_apart(client, db, product, admin_headers):
+    from app.models import SaleItem
+    first = sell(client, product, admin_headers).json()
+    sell(client, product, admin_headers)
+    db.get(SaleItem, first["items"][0]["id"]).unit_cost = None
+    db.commit()
+    totals = client.get(f"{REP}/profit", params=WIDE, headers=admin_headers).json()["totals"]
+    assert totals == {"quantity": 4, "revenue": 104.76, "cost": 80, "profit": 24.76,
+                      "margin_pct": 23.6, "uncosted_revenue": 104.76}
+
+
 def test_reports_validation_and_role(client, seed, admin_headers, cashier_headers):
     for path in ("sales-summary", "top-products", "category-sales", "cashier-performance",
-                 "payment-modes"):
+                 "payment-modes", "profit"):
         assert client.get(f"{REP}/{path}", headers=admin_headers).status_code == 422
         reversed_range = {"from_date": "2026-02-01", "to_date": "2026-01-01"}
         assert client.get(f"{REP}/{path}", params=reversed_range, headers=admin_headers).status_code == 400

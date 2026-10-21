@@ -210,7 +210,7 @@ async def get_dashboard(
         Product.stock_quantity <= Product.reorder_level,
         Product.stock_quantity > 0
     ).scalar()
-    
+
     # Out of stock count
     out_of_stock_count = db.query(
         func.count(Product.id)
@@ -219,7 +219,7 @@ async def get_dashboard(
         Product.status == "active",
         Product.stock_quantity <= 0
     ).scalar()
-    
+
     # Total products
     total_products = db.query(
         func.count(Product.id)
@@ -227,7 +227,7 @@ async def get_dashboard(
         Product.tenant_id == context.tenant_id,
         Product.status == "active"
     ).scalar()
-    
+
     # Total categories
     total_categories = db.query(
         func.count(Category.id)
@@ -235,26 +235,22 @@ async def get_dashboard(
         Category.tenant_id == context.tenant_id,
         Category.status == "active"
     ).scalar()
-    
+
     admin_data = None
     if context.is_admin:
         revenue_ex_tax, cost_of_goods = db.query(
             func.coalesce(func.sum(SaleItem.taxable_value), 0),
-            func.coalesce(func.sum(SaleItem.quantity * Product.purchase_price), 0)
-        ).join(Sale, SaleItem.sale_id == Sale.id).join(
-            Product, SaleItem.product_id == Product.id
-        ).filter(
+            func.coalesce(func.sum(SaleItem.quantity * SaleItem.unit_cost), 0)
+        ).join(Sale, SaleItem.sale_id == Sale.id).filter(
             *sales_filter(today_start, tomorrow_start),
-            Product.purchase_price.isnot(None)
+            SaleItem.unit_cost.isnot(None)
         ).one()
         returned_ex_tax, returned_cost = db.query(
             func.coalesce(func.sum(SaleReturnItem.taxable_value), 0),
-            func.coalesce(func.sum(SaleReturnItem.quantity * Product.purchase_price), 0)
-        ).join(SaleReturn, SaleReturnItem.return_id == SaleReturn.id).join(
-            Product, SaleReturnItem.product_id == Product.id
-        ).filter(
+            func.coalesce(func.sum(SaleReturnItem.quantity * SaleReturnItem.unit_cost), 0)
+        ).join(SaleReturn, SaleReturnItem.return_id == SaleReturn.id).filter(
             *returns_filter(today_start, tomorrow_start),
-            Product.purchase_price.isnot(None)
+            SaleReturnItem.unit_cost.isnot(None)
         ).one()
         revenue_ex_tax = float(revenue_ex_tax or 0) - float(returned_ex_tax or 0)
         gross_margin = revenue_ex_tax - (float(cost_of_goods or 0) - float(returned_cost or 0))
@@ -749,6 +745,107 @@ async def get_payment_modes(
             "refunded": float(refunded),
             "net": float(collected - refunded)
         },
+        "from_date": str(from_date),
+        "to_date": str(to_date)
+    }
+
+
+def profit_lines(db: Session, tenant_id: int, start: datetime, end: datetime):
+    """Sold lines (by sale date) minus returned lines (by return date) with IST day,
+    revenue without GST and cost; cost is NULL for lines billed without a saved cost"""
+    sold = db.query(
+        SaleItem.product_id.label("product_id"),
+        SaleItem.product_name.label("product_name"),
+        func.date(Sale.sale_date + IST_OFFSET).label("day"),
+        SaleItem.quantity.label("quantity"),
+        SaleItem.taxable_value.label("revenue"),
+        (SaleItem.quantity * SaleItem.unit_cost).label("cost")
+    ).join(Sale).filter(
+        Sale.tenant_id == tenant_id,
+        Sale.sale_date >= start,
+        Sale.sale_date < end,
+        Sale.status.in_(BILLED_STATUSES)
+    )
+    returned = db.query(
+        SaleReturnItem.product_id,
+        SaleReturnItem.product_name,
+        func.date(SaleReturn.return_date + IST_OFFSET),
+        -SaleReturnItem.quantity,
+        -SaleReturnItem.taxable_value,
+        -(SaleReturnItem.quantity * SaleReturnItem.unit_cost)
+    ).join(SaleReturn).filter(
+        SaleReturn.tenant_id == tenant_id,
+        SaleReturn.return_date >= start,
+        SaleReturn.return_date < end
+    )
+    return union_all(sold, returned).subquery()
+
+
+def profit_figures(quantity, revenue, cost, uncosted) -> dict:
+    """Profit and margin % on revenue that has a cost; uncosted revenue is reported apart"""
+    revenue, cost = float(revenue or 0), float(cost or 0)
+    profit = revenue - cost
+    return {
+        "quantity": float(quantity or 0),
+        "revenue": round(revenue, 2),
+        "cost": round(cost, 2),
+        "profit": round(profit, 2),
+        "margin_pct": round(profit / revenue * 100, 1) if revenue else None,
+        "uncosted_revenue": round(float(uncosted or 0), 2)
+    }
+
+
+@router.get("/profit")
+async def get_profit(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    group_by: str = Query("product", enum=["product", "category", "day"]),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Gross profit by product, category or IST day (admin only).
+    Revenue is after all discounts and without GST; returns are taken off on the return date.
+    Profit counts only lines with a cost saved at billing; the rest is uncosted_revenue.
+    """
+    validate_date_range(from_date, to_date)
+    lines = profit_lines(db, context.tenant_id, ist_day_start_utc(from_date),
+                         ist_day_start_utc(to_date + timedelta(days=1)))
+    has_cost = lines.c.cost.isnot(None)
+    figures = (
+        func.coalesce(func.sum(lines.c.quantity), 0),
+        func.coalesce(func.sum(case((has_cost, lines.c.revenue), else_=0)), 0),
+        func.coalesce(func.sum(lines.c.cost), 0),
+        func.coalesce(func.sum(case((has_cost, 0), else_=lines.c.revenue)), 0)
+    )
+
+    if group_by == "category":
+        category_name = func.coalesce(Category.category_name, "Uncategorized")
+        query = db.query(Category.id, category_name, *figures).select_from(lines).join(
+            Product, Product.id == lines.c.product_id
+        ).outerjoin(
+            Category, Category.id == Product.category_id
+        ).group_by(Category.id, Category.category_name)
+        rows = [{"category_id": cid, "category_name": name, **profit_figures(*rest)}
+                for cid, name, *rest in query.all()]
+    elif group_by == "day":
+        query = db.query(lines.c.day, *figures).group_by(lines.c.day).order_by(lines.c.day)
+        rows = [{"date": str(day), **profit_figures(*rest)} for day, *rest in query.all()]
+    else:
+        query = db.query(lines.c.product_id, func.max(lines.c.product_name), *figures).group_by(
+            lines.c.product_id
+        )
+        rows = [{"product_id": pid, "product_name": name, **profit_figures(*rest)}
+                for pid, name, *rest in query.all()]
+
+    if group_by != "day":
+        rows.sort(key=lambda r: r["profit"], reverse=True)
+
+    return {
+        "group_by": group_by,
+        "rows": rows,
+        "totals": profit_figures(*db.query(*figures).one()),
         "from_date": str(from_date),
         "to_date": str(to_date)
     }

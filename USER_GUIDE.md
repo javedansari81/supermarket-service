@@ -74,7 +74,7 @@ Home screen after login. Greeting uses your full name (or username). Admins see 
 
 **Admins also see**
 
-- **Gross Margin Today (est.)** — net sales minus cost, using each product's current purchase price
+- **Gross Margin Today (est.)** — net sales without GST minus cost, using the purchase price saved on each bill line
 - **Stock Value (at cost)** — plus active product and category counts
 - **Stock Alerts** — out-of-stock and low-stock counts
 - **Cashier Performance Today** — bills, sales and average bill per cashier
@@ -436,6 +436,7 @@ Analytics for a date range (default: start of month → today). Changing dates r
 | Category Sales | Category, items sold, total sales |
 | Cashier Performance | Cashier name, transactions, total sales |
 | Payment Modes | Mode, bills, collected, refunds, refunded, net; plus net by day |
+| Profit | Revenue, cost, gross profit and margin %, by product, category or day |
 
 **Payment Modes** is for matching takings with the cash drawer and bank statements:
 
@@ -443,6 +444,13 @@ Analytics for a date range (default: start of month → today). Changing dates r
 - A split bill counts under each mode it was paid by, for the amount paid by that mode. Voided sales are left out.
 - Refunds are counted on the return date, under the refund mode chosen at return. Points credited back count under **Points**.
 - The **Total (Cash + Card + UPI)** row leaves out loyalty points, since they are not money received.
+
+**Profit** shows gross profit (sales minus purchase cost):
+
+- Switch between **By Product**, **By Category** and **By Day**; click a column heading to sort (e.g. lowest margin first to find items sold at a loss).
+- Revenue is after all discounts (offers, near-expiry, coupons) and without GST. Loyalty points are a payment, not a discount, so they do not lower revenue.
+- Cost is the purchase price saved on each bill line when it was billed (the batch's cost, else the product's), so later price changes do not alter past profit. Returns take off both revenue and cost on the return date.
+- Days follow India time. Bills made before cost tracking started, and items with no purchase price, appear under **Revenue without Cost** and are left out of profit and margin.
 
 Use this for purchasing, staffing, and daily/monthly review.
 

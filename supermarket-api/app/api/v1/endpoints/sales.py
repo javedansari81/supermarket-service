@@ -413,6 +413,7 @@ async def create_sale(
             mrp=line.mrp,
             quantity=quantity,
             unit_price=line.unit_price,
+            unit_cost=line.unit_cost,
             taxable_value=line_total - tax_amount,
             tax_percent=tax_percent,
             tax_amount=tax_amount,
