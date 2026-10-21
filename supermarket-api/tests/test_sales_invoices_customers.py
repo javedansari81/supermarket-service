@@ -951,6 +951,25 @@ def test_loyalty_points_only_return_refund_mode(client, product, admin_headers, 
     assert balance_of(client, cashier_headers) == 145
 
 
+def test_payment_modes_report_counts_points_separately(client, product, admin_headers,
+                                                       cashier_headers):
+    cid = new_customer(client, product, cashier_headers)
+    enable_loyalty(client, admin_headers, max_redeem_percent=100)
+    adjust(client, cid, admin_headers, 200)
+    sale = sell(client, product, cashier_headers, customer_phone=MOBILE,
+                payments=[{"mode": "points", "amount": 110}]).json()
+    return_items(client, sale, cashier_headers)
+
+    params = {"from_date": "2000-01-01", "to_date": "2100-01-01"}
+    res = client.get("/api/v1/reports/payment-modes", params=params, headers=admin_headers).json()
+    modes = {m["mode"]: m for m in res["modes"]}
+    assert modes["points"] == {"mode": "points", "bills": 1, "collected": 110, "returns": 1,
+                               "refunded": 55, "net": 55}
+    assert modes["cash"]["collected"] == 55 and modes["cash"]["refunded"] == 0
+    assert res["totals"] == {"bills": 1, "collected": 55, "returns": 0, "refunded": 0, "net": 55}
+    assert res["daily"][0]["net_by_mode"]["points"] == 55 and res["daily"][0]["money_net"] == 55
+
+
 def test_loyalty_void_restores_points(client, product, admin_headers, cashier_headers):
     cid = new_customer(client, product, cashier_headers)
     enable_loyalty(client, admin_headers)

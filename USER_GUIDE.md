@@ -435,6 +435,14 @@ Analytics for a date range (default: start of month → today). Changing dates r
 | Top Products | Product, qty sold, revenue |
 | Category Sales | Category, items sold, total sales |
 | Cashier Performance | Cashier name, transactions, total sales |
+| Payment Modes | Mode, bills, collected, refunds, refunded, net; plus net by day |
+
+**Payment Modes** is for matching takings with the cash drawer and bank statements:
+
+- Days follow India time (midnight to midnight IST).
+- A split bill counts under each mode it was paid by, for the amount paid by that mode. Voided sales are left out.
+- Refunds are counted on the return date, under the refund mode chosen at return. Points credited back count under **Points**.
+- The **Total (Cash + Card + UPI)** row leaves out loyalty points, since they are not money received.
 
 Use this for purchasing, staffing, and daily/monthly review.
 

@@ -6,7 +6,7 @@ from datetime import datetime, date, time, timedelta, timezone
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func, and_, union_all
+from sqlalchemy import func, and_, case, union_all
 from app.core.database import get_db
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
@@ -25,6 +25,11 @@ IST = timezone(IST_OFFSET)
 
 # Sales that count as billed; voided sales are 'cancelled'. Returns are subtracted separately.
 BILLED_STATUSES = ("completed", "refunded")
+
+# Payment modes in report order; points are loyalty points, not money received
+PAYMENT_MODES = ("cash", "card", "upi", "points")
+MONEY_MODES = ("cash", "card", "upi")
+POINTS_MODE = "points"
 
 
 def ist_day_start_utc(day: date) -> datetime:
@@ -621,6 +626,129 @@ async def get_cashier_performance(
             }
             for c in cashier_data
         ],
+        "from_date": str(from_date),
+        "to_date": str(to_date)
+    }
+
+
+@router.get("/payment-modes")
+async def get_payment_modes(
+    from_date: date = Query(...),
+    to_date: date = Query(...),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Collected, refunded and net amount per payment mode by IST day (admin only).
+    A split bill counts once under each mode it was paid by. The points part of a return
+    counts under points and the rest under the return's refund mode.
+    Totals cover money modes (cash, card, UPI) only.
+    """
+    validate_date_range(from_date, to_date)
+    start = ist_day_start_utc(from_date)
+    end = ist_day_start_utc(to_date + timedelta(days=1))
+    zero = Decimal("0")
+
+    sale_day = func.date(Sale.sale_date + IST_OFFSET)
+    sale_filters = (
+        Sale.tenant_id == context.tenant_id,
+        Sale.sale_date >= start,
+        Sale.sale_date < end,
+        Sale.status.in_(BILLED_STATUSES)
+    )
+    collected_rows = db.query(
+        sale_day,
+        SalePayment.mode,
+        func.count(func.distinct(Sale.id)),
+        func.coalesce(func.sum(SalePayment.amount), 0)
+    ).join(Sale, SalePayment.sale_id == Sale.id).filter(
+        *sale_filters
+    ).group_by(sale_day, SalePayment.mode).all()
+    total_bills = db.query(func.count(func.distinct(Sale.id))).join(
+        SalePayment, SalePayment.sale_id == Sale.id
+    ).filter(*sale_filters, SalePayment.mode.in_(MONEY_MODES)).scalar() or 0
+
+    return_day = func.date(SaleReturn.return_date + IST_OFFSET)
+    return_rows = db.query(
+        return_day,
+        SaleReturn.refund_mode,
+        func.count(SaleReturn.id),
+        func.coalesce(func.sum(SaleReturn.total_amount), 0),
+        func.coalesce(func.sum(SaleReturn.points_refund_amount), 0),
+        func.coalesce(func.sum(case((SaleReturn.points_refund_amount > 0, 1), else_=0)), 0)
+    ).filter(
+        SaleReturn.tenant_id == context.tenant_id,
+        SaleReturn.return_date >= start,
+        SaleReturn.return_date < end
+    ).group_by(return_day, SaleReturn.refund_mode).all()
+
+    def empty_row():
+        return {"bills": 0, "collected": zero, "returns": 0, "refunded": zero}
+
+    modes = {m: empty_row() for m in MONEY_MODES}
+    daily = {}
+
+    def add_to_day(day, mode, amount):
+        day_row = daily.setdefault(str(day), {})
+        day_row[mode] = day_row.get(mode, zero) + amount
+
+    def collect(day, mode, count, amount):
+        row = modes.setdefault(mode, empty_row())
+        row["bills"] += int(count or 0)
+        row["collected"] += amount
+        add_to_day(day, mode, amount)
+
+    def refund(day, mode, count, amount):
+        row = modes.setdefault(mode, empty_row())
+        row["returns"] += int(count or 0)
+        row["refunded"] += amount
+        add_to_day(day, mode, -amount)
+
+    for day, mode, count, amount in collected_rows:
+        collect(day, mode or "other", count, Decimal(amount or 0))
+    for day, mode, count, total, points, points_count in return_rows:
+        total, points = Decimal(total or 0), Decimal(points or 0)
+        mode = mode or "other"
+        if mode == POINTS_MODE:
+            refund(day, POINTS_MODE, count, total)
+            continue
+        if points:
+            refund(day, POINTS_MODE, points_count, points)
+        refund(day, mode, count, total - points)
+
+    order = list(PAYMENT_MODES) + sorted(m for m in modes if m not in PAYMENT_MODES)
+    mode_rows = [
+        {
+            "mode": m,
+            "bills": modes[m]["bills"],
+            "collected": float(modes[m]["collected"]),
+            "returns": modes[m]["returns"],
+            "refunded": float(modes[m]["refunded"]),
+            "net": float(modes[m]["collected"] - modes[m]["refunded"])
+        }
+        for m in order if m in modes
+    ]
+    collected = sum((modes[m]["collected"] for m in MONEY_MODES), zero)
+    refunded = sum((modes[m]["refunded"] for m in MONEY_MODES), zero)
+
+    return {
+        "modes": mode_rows,
+        "daily": [
+            {
+                "date": d,
+                "net_by_mode": {m: float(v) for m, v in daily[d].items()},
+                "money_net": float(sum((v for m, v in daily[d].items() if m in MONEY_MODES), zero))
+            }
+            for d in sorted(daily)
+        ],
+        "totals": {
+            "bills": int(total_bills),
+            "collected": float(collected),
+            "returns": sum(modes[m]["returns"] for m in MONEY_MODES),
+            "refunded": float(refunded),
+            "net": float(collected - refunded)
+        },
         "from_date": str(from_date),
         "to_date": str(to_date)
     }

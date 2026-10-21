@@ -117,8 +117,61 @@ def test_cashier_performance_and_stock_report(client, product, admin_headers):
     assert client.get(f"{REP}/stock-report", headers=admin_headers).status_code == 200
 
 
+def test_payment_modes_net_of_refunds(client, product, admin_headers, admin_b_headers):
+    from datetime import datetime
+    from app.api.v1.endpoints.reports import IST
+    sales = "/api/v1/sales"
+    sell(client, product, admin_headers)
+    split = {"items": [{"product_id": product.id, "quantity": 2}],
+             "payments": [{"mode": "cash", "amount": 10}, {"mode": "upi", "amount": 100}]}
+    assert client.post(sales, json=split, headers=admin_headers).status_code == 201
+    card = client.post(sales, json={"items": [{"product_id": product.id, "quantity": 2}],
+                                    "payment_mode": "card"}, headers=admin_headers).json()
+    body = {"items": [{"sale_item_id": card["items"][0]["id"], "quantity": 1, "restock": True}],
+            "reason": "Damaged pack", "refund_mode": "upi"}
+    assert client.post(f"{sales}/{card['id']}/returns", json=body, headers=admin_headers).status_code == 201
+    voided = client.post(sales, json={"items": [{"product_id": product.id, "quantity": 2}],
+                                      "payment_mode": "upi"}, headers=admin_headers).json()
+    client.post(f"{sales}/{voided['id']}/void", json={"reason": "Mistake"}, headers=admin_headers)
+
+    res = client.get(f"{REP}/payment-modes", params=WIDE, headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["modes"] == [
+        {"mode": "cash", "bills": 2, "collected": 120, "returns": 0, "refunded": 0, "net": 120},
+        {"mode": "card", "bills": 1, "collected": 110, "returns": 0, "refunded": 0, "net": 110},
+        {"mode": "upi", "bills": 1, "collected": 100, "returns": 1, "refunded": 55, "net": 45},
+    ]
+    assert body["totals"] == {"bills": 3, "collected": 330, "returns": 1, "refunded": 55, "net": 275}
+    today = str(datetime.now(IST).date())
+    assert body["daily"] == [{"date": today, "net_by_mode": {"cash": 120, "card": 110, "upi": 45},
+                              "money_net": 275}]
+    past = client.get(f"{REP}/payment-modes", params=PAST, headers=admin_headers).json()
+    assert past["totals"]["collected"] == 0 and past["daily"] == []
+    other = client.get(f"{REP}/payment-modes", params=WIDE, headers=admin_b_headers).json()
+    assert other["totals"]["bills"] == 0
+
+
+def test_payment_modes_uses_ist_day(client, db, product, admin_headers):
+    from datetime import datetime, timedelta
+    from app.api.v1.endpoints.reports import IST, ist_day_start_utc
+    from app.models import Sale
+    today = datetime.now(IST).date()
+    late_yesterday = sell(client, product, admin_headers).json()["id"]
+    db.get(Sale, late_yesterday).sale_date = ist_day_start_utc(today) - timedelta(minutes=1)
+    db.commit()
+    yesterday = str(today - timedelta(days=1))
+    res = client.get(f"{REP}/payment-modes", params={"from_date": str(today), "to_date": str(today)},
+                     headers=admin_headers).json()
+    assert res["totals"]["bills"] == 0
+    res = client.get(f"{REP}/payment-modes", params={"from_date": yesterday, "to_date": yesterday},
+                     headers=admin_headers).json()
+    assert res["totals"]["collected"] == 110 and res["daily"][0]["date"] == yesterday
+
+
 def test_reports_validation_and_role(client, seed, admin_headers, cashier_headers):
-    for path in ("sales-summary", "top-products", "category-sales", "cashier-performance"):
+    for path in ("sales-summary", "top-products", "category-sales", "cashier-performance",
+                 "payment-modes"):
         assert client.get(f"{REP}/{path}", headers=admin_headers).status_code == 422
         reversed_range = {"from_date": "2026-02-01", "to_date": "2026-01-01"}
         assert client.get(f"{REP}/{path}", params=reversed_range, headers=admin_headers).status_code == 400

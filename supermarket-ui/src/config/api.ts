@@ -88,6 +88,7 @@ export const API_ENDPOINTS = {
   REPORTS_TOP_PRODUCTS: '/reports/top-products',
   REPORTS_CATEGORY_SALES: '/reports/category-sales',
   REPORTS_CASHIER_PERFORMANCE: '/reports/cashier-performance',
+  REPORTS_PAYMENT_MODES: '/reports/payment-modes',
   REPORTS_STOCK: '/reports/stock-report',
   
   // Settings
