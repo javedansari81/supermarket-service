@@ -19,7 +19,8 @@ class Tenant(Base, TimestampMixin, StatusMixin):
     contact_no = Column(String(20))
     email = Column(String(100))
     gst_no = Column(String(50))
-    
+    subdomain = Column(String(63), unique=True)
+
     # Relationships
     users = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
     settings = relationship("TenantSetting", back_populates="tenant", cascade="all, delete-orphan")

@@ -36,6 +36,7 @@ class TenantResponse(TenantBase, TimestampSchema):
     """Schema for tenant response"""
     id: int
     status: str
+    subdomain: Optional[str] = None
 
 
 class TenantListResponse(BaseModel):

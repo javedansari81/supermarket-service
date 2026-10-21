@@ -49,7 +49,8 @@ supermarket-management-system/
     ├── schema/            # Schema creation scripts
     ├── migrations/        # Migration scripts
     ├── seeds/             # Seed data scripts
-    └── indexes/           # Index creation scripts
+    ├── indexes/           # Index creation scripts
+    └── tenants/           # Per-store onboarding scripts (tenants/<TENANT_CODE>/, _template/)
 ```
 
 ## User Guide
@@ -103,7 +104,9 @@ python database-scripts/deploy.py migrate            # apply pending scripts
 ```
 
 Applied scripts are recorded in `mart.schema_migrations` and are never run twice.
-Scripts run in the order `schema` → `indexes` → `seeds` → `migrations`, sorted by file name.
+Scripts run in the order `schema` → `indexes` → `seeds` → `migrations` → `tenants/<TENANT_CODE>`, sorted by file name.
+To onboard a new store, copy `tenants/_template/` to `tenants/<TENANT_CODE>/` and replace the `__PLACEHOLDERS__`
+(folders starting with `_` are never deployed).
 Do not edit a script after it has been applied; add a new numbered file (e.g. `migrations/001_xxx.sql`) instead.
 Scripts must not contain `BEGIN`/`COMMIT`, as each script already runs in its own transaction.
 

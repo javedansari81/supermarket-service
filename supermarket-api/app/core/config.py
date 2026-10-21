@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
-    
+
+    # Store subdomains (e.g. "mfmart.co.in" -> store1.mfmart.co.in); empty disables the check
+    BASE_DOMAIN: str = ""
+
     # Barcode
     BARCODE_FORMAT: str = "code128"
     BARCODE_DPI: int = 300

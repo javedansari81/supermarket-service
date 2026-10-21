@@ -2,9 +2,11 @@
 API dependencies for authentication and authorization
 """
 from typing import Generator, Optional
-from fastapi import Depends, HTTPException, status
+from urllib.parse import urlparse
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.user import User
@@ -13,7 +15,37 @@ from app.models.tenant import Tenant
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 
+def _request_hostname(request: Request) -> str:
+    """Host name of the site the request came from (Origin when the UI calls the API cross-site)"""
+    origin = request.headers.get("origin")
+    hostname = urlparse(origin).hostname if origin else None
+    if not hostname:
+        raw = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+        hostname = raw.split(",")[0].strip().split(":")[0]
+    return hostname.lower()
+
+
+def get_store_tenant_id(request: Request, db: Session) -> Optional[int]:
+    """
+    Tenant ID of the store subdomain the request came from.
+    None when the request is not from a store subdomain (no restriction applies).
+    """
+    base_domain = settings.BASE_DOMAIN.strip().lower()
+    if not base_domain:
+        return None
+    suffix = "." + base_domain
+    hostname = _request_hostname(request)
+    if not hostname.endswith(suffix):
+        return None
+    subdomain = hostname[:-len(suffix)]
+    tenant = db.query(Tenant.id).filter(Tenant.subdomain == subdomain).first()
+    if tenant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Store not found")
+    return tenant.id
+
+
 def get_current_user(
+    request: Request,
     db: Session = Depends(get_db),
     token: str = Depends(oauth2_scheme)
 ) -> User:
@@ -48,6 +80,13 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant account is inactive"
+        )
+
+    store_tenant_id = get_store_tenant_id(request, db)
+    if store_tenant_id is not None and store_tenant_id != user.tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account does not belong to this store"
         )
 
     return user

@@ -1,7 +1,10 @@
 """Authentication endpoint and health check tests"""
 from datetime import timedelta
 
-from app.core.security import create_access_token
+import pytest
+
+from app.core.config import settings
+from app.core.security import create_access_token, get_password_hash
 from tests.conftest import PASSWORD, make_user
 
 
@@ -136,3 +139,72 @@ def test_refresh_rejects_expired_token(client, seed):
     token = create_access_token({"user_id": seed["admin"].id}, expires_delta=timedelta(minutes=-1))
     res = client.post("/api/v1/auth/refresh", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 401
+
+
+# ---------- Store subdomains ----------
+
+@pytest.fixture()
+def subdomains(db, seed, monkeypatch):
+    monkeypatch.setattr(settings, "BASE_DOMAIN", "mfmart.co.in")
+    seed["tenant_a"].subdomain = "storea"
+    seed["tenant_b"].subdomain = "storeb"
+    db.commit()
+    return seed
+
+
+STORE_A = {"Host": "storea.mfmart.co.in"}
+
+
+def test_login_on_own_subdomain(client, subdomains):
+    res = client.post("/api/v1/auth/login", data={"username": "admin_a", "password": PASSWORD},
+                      headers=STORE_A)
+    assert res.status_code == 200
+    assert res.json()["tenant_id"] == subdomains["tenant_a"].id
+
+
+def test_login_on_other_store_subdomain_rejected(client, subdomains):
+    res = client.post("/api/v1/auth/login", data={"username": "admin_b", "password": PASSWORD},
+                      headers=STORE_A)
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Incorrect username or password"
+
+
+def test_login_same_username_picks_subdomain_store(client, db, subdomains):
+    pw_hash = get_password_hash(PASSWORD)
+    make_user(db, subdomains["tenant_a"], subdomains["cashier_role"], "shared", pw_hash)
+    make_user(db, subdomains["tenant_b"], subdomains["cashier_role"], "shared", pw_hash)
+    db.commit()
+    res = client.post("/api/v1/auth/login", data={"username": "shared", "password": PASSWORD},
+                      headers={"Host": "storeb.mfmart.co.in"})
+    assert res.json()["tenant_id"] == subdomains["tenant_b"].id
+
+
+def test_other_store_token_rejected_on_subdomain(client, subdomains, admin_b_headers):
+    res = client.get("/api/v1/auth/me", headers={**admin_b_headers, **STORE_A})
+    assert res.status_code == 403
+    assert res.json()["detail"] == "This account does not belong to this store"
+
+
+def test_other_store_data_blocked_on_subdomain(client, subdomains, admin_b_headers):
+    res = client.get("/api/v1/products", headers={**admin_b_headers, **STORE_A})
+    assert res.status_code == 403
+
+
+def test_own_token_allowed_on_subdomain(client, subdomains, admin_headers):
+    assert client.get("/api/v1/auth/me", headers={**admin_headers, **STORE_A}).status_code == 200
+
+
+def test_origin_header_used_for_cross_site_ui(client, subdomains, admin_b_headers):
+    headers = {**admin_b_headers, "Origin": "https://storea.mfmart.co.in"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 403
+
+
+def test_unknown_subdomain_not_found(client, subdomains, admin_headers):
+    res = client.get("/api/v1/auth/me", headers={**admin_headers, "Host": "nostore.mfmart.co.in"})
+    assert res.status_code == 404
+    assert res.json()["detail"] == "Store not found"
+
+
+def test_non_store_host_has_no_restriction(client, subdomains, admin_b_headers):
+    headers = {**admin_b_headers, "Host": "warsi-family-mart-lbo9k.ondigitalocean.app"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200

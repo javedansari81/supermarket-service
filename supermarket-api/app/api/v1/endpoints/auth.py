@@ -13,7 +13,7 @@ from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.schemas.auth import Token, LoginRequest
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_store_tenant_id
 
 router = APIRouter()
 
@@ -53,7 +53,12 @@ async def login(
     OAuth2 compatible token login
     """
     # Usernames are unique per tenant, so match the account whose password verifies
-    candidates = db.query(User).filter(User.username == form_data.username).all()
+    # On a store subdomain only that store's accounts can log in
+    query = db.query(User).filter(User.username == form_data.username)
+    store_tenant_id = get_store_tenant_id(request, db)
+    if store_tenant_id is not None:
+        query = query.filter(User.tenant_id == store_tenant_id)
+    candidates = query.all()
     user = next(
         (u for u in candidates if verify_password(form_data.password, u.password_hash)),
         None

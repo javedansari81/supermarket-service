@@ -4,8 +4,10 @@ Database deployment runner.
 Applies SQL scripts from database-scripts/ in order and records each one in
 <DB_SCHEMA>.schema_migrations so the same script is never deployed twice.
 
-Order: schema -> indexes -> seeds -> migrations, files sorted by name within
-each folder. Each script runs in its own transaction, so scripts must not
+Order: schema -> indexes -> seeds -> migrations -> tenants/<TENANT_CODE>/,
+files sorted by name within each folder (tenant folders sorted by code;
+folders starting with "_", such as tenants/_template, are skipped).
+Each script runs in its own transaction, so scripts must not
 contain BEGIN/COMMIT. Applied scripts are immutable: if one is edited, the
 run fails; add a new numbered script instead.
 
@@ -30,6 +32,7 @@ from psycopg2 import sql
 
 SCRIPTS_DIR = Path(__file__).resolve().parent
 FOLDER_ORDER = ["schema", "indexes", "seeds", "migrations"]
+TENANTS_FOLDER = "tenants"
 DEFAULT_ENV_FILE = SCRIPTS_DIR.parent / "supermarket-api" / ".env"
 LOCK_KEY = 872301455
 
@@ -46,8 +49,13 @@ def load_config():
 
 def discover_scripts():
     """Return [(name, path, checksum)] in deployment order."""
+    folders = list(FOLDER_ORDER)
+    tenants_dir = SCRIPTS_DIR / TENANTS_FOLDER
+    if tenants_dir.is_dir():
+        folders += [f"{TENANTS_FOLDER}/{p.name}" for p in sorted(tenants_dir.iterdir())
+                    if p.is_dir() and not p.name.startswith("_")]
     scripts = []
-    for folder in FOLDER_ORDER:
+    for folder in folders:
         for path in sorted((SCRIPTS_DIR / folder).glob("*.sql")):
             content = path.read_bytes().replace(b"\r\n", b"\n")
             scripts.append((f"{folder}/{path.name}", path, hashlib.sha256(content).hexdigest()))
