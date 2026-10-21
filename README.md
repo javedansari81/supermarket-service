@@ -112,7 +112,7 @@ Scripts must not contain `BEGIN`/`COMMIT`, as each script already runs in its ow
 
 The GitHub Actions workflow `.github/workflows/database-deploy.yml` validates scripts on a fresh
 database for every change under `database-scripts/`. Production scripts are applied by a DigitalOcean
-App Platform pre-deploy job built from `database-scripts/Dockerfile` (source directory: repository root),
+App Platform pre-deploy job built from `database-scripts/Dockerfile` (source directory: `database-scripts`),
 which runs `deploy.py migrate` before each release; a failed script stops the release.
 Local `warsi_db` is deployed manually with `deploy.py migrate`.
 
