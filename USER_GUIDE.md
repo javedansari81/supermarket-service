@@ -453,6 +453,7 @@ Analytics for a date range (default: start of month → today). Changing dates r
 | Cashier Performance | Cashier name, transactions, total sales |
 | Payment Modes | Mode, bills, collected, refunds, refunded, net; plus net by day |
 | Profit | Revenue, cost, gross profit and margin %, by product, category or day |
+| GST Returns | GSTR-1 tables (including HSN summary) and GSTR-3B summary for filing |
 
 **Payment Modes** is for matching takings with the cash drawer and bank statements:
 
@@ -467,6 +468,15 @@ Analytics for a date range (default: start of month → today). Changing dates r
 - Revenue is after all discounts (offers, near-expiry, coupons) and without GST. Loyalty points are a payment, not a discount, so they do not lower revenue.
 - Cost is the purchase price saved on each bill line when it was billed (the batch's cost, else the product's), so later price changes do not alter past profit. Returns take off both revenue and cost on the return date.
 - Days follow India time. Bills made before cost tracking started, and items with no purchase price, appear under **Revenue without Cost** and are left out of profit and margin.
+
+**GST Returns** helps prepare the monthly (or quarterly) GST returns. Set the dates to the return period, e.g. 1st to last day of the month. Switch between **GSTR-1** and **GSTR-3B**:
+
+- **GSTR-1** lists B2B invoices (buyer with GSTIN, table 4A), B2C Large (inter-state bills above ₹1,00,000, table 5), B2C Small by place of supply and rate (table 7, after its returns), nil rated / exempt (0% items, table 8), credit notes to registered buyers (CDNR) and on B2C Large bills (CDNUR), the HSN summary split into B2B and B2C (table 12), and invoice / credit note number ranges (table 13).
+- **GSTR-3B** shows outward taxable and nil / exempt supplies after returns (3.1), inter-state sales to unregistered buyers (3.2), input tax credit from purchases (4), exempt / nil / no-GST purchases (5), and an estimate of tax paid from credit and in cash (6.1), with credit left to carry forward.
+- Bills count on their bill date, credit notes on their return date and purchases on their purchase date. Voided bills are left out of the tables and counted as cancelled in table 13.
+- Input tax credit comes only from **GST bill** purchase lines with GST % entered (see Purchases). The tax payment table is an estimate; the GST portal does the final set-off.
+- Warnings at the top flag a missing store GSTIN or bill lines without an HSN code. 0% items are shown together as nil rated / exempt; split them as your CA advises.
+- Check the figures with your CA before filing.
 
 Use this for purchasing, staffing, and daily/monthly review.
 

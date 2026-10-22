@@ -12,6 +12,7 @@ import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import GstReturns from '../components/reports/GstReturns';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 
@@ -151,7 +152,7 @@ const Reports: React.FC = () => {
         </Grid>
       )}
       <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
-        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" />
+        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" /><Tab label="GST Returns" />
       </Tabs>
       {tab === 0 && (
         <TableContainer component={Paper}>
@@ -297,6 +298,7 @@ const Reports: React.FC = () => {
           </Typography>
         </Box>
       )}
+      {tab === 5 && <GstReturns fromDate={fromDate?.format('YYYY-MM-DD')} toDate={toDate?.format('YYYY-MM-DD')} />}
     </Box>
   );
 };

@@ -216,9 +216,122 @@ def test_profit_reports_lines_without_cost_apart(client, db, product, admin_head
                       "margin_pct": 23.6, "uncosted_revenue": 104.76}
 
 
+GST = f"{REP}/gst"
+STORE_GSTIN = "27ABCDE1234F1Z5"
+BUYER_GSTIN = "29AAAPA1234A1Z5"
+
+
+def gst_store(client, db, product, admin_headers):
+    client.put(f"{SET}/store", json={"store_name": "Mart A", "gstin": STORE_GSTIN}, headers=admin_headers)
+    product.hsn_code = "1006"
+    db.commit()
+
+
+def return_one(client, sale, headers):
+    body = {"items": [{"sale_item_id": sale["items"][0]["id"], "quantity": 1, "restock": True}],
+            "reason": "Damaged pack"}
+    assert client.post(f"/api/v1/sales/{sale['id']}/returns", json=body, headers=headers).status_code == 201
+
+
+def test_gstr1_tables(client, db, product, admin_headers, admin_b_headers):
+    gst_store(client, db, product, admin_headers)
+    b2c = sell(client, product, admin_headers).json()
+    b2b_body = {"items": [{"product_id": product.id, "quantity": 2}], "customer_gstin": BUYER_GSTIN,
+                "customer_name": "Beta Stores", "place_of_supply_code": "29"}
+    b2b = client.post("/api/v1/sales", json=b2b_body, headers=admin_headers).json()
+    voided = sell(client, product, admin_headers).json()
+    client.post(f"/api/v1/sales/{voided['id']}/void", json={"reason": "Mistake"}, headers=admin_headers)
+    return_one(client, b2c, admin_headers)
+    return_one(client, b2b, admin_headers)
+
+    res = client.get(f"{GST}/gstr1", params=WIDE, headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    # 2 x 55 incl. 5% GST = 104.76 + 5.24; a return of 1 takes off 52.38 + 2.62
+    assert body["b2cs"] == [{"place_of_supply": "27-Maharashtra", "rate": 5, "taxable_value": 52.38,
+                             "igst": 0, "cgst": 1.31, "sgst": 1.31}]
+    assert len(body["b2b"]) == 1
+    invoice = body["b2b"][0]
+    assert invoice["gstin"] == BUYER_GSTIN and invoice["receiver_name"] == "Beta Stores"
+    assert invoice["place_of_supply"] == "29-Karnataka" and invoice["invoice_value"] == 110
+    assert invoice["rates"] == [{"rate": 5, "taxable_value": 104.76, "igst": 5.24, "cgst": 0, "sgst": 0}]
+    assert invoice["invoice_no"] == b2b["invoice_no"]
+    assert len(body["cdnr"]) == 1 and body["cdnr"][0]["note_value"] == 55
+    assert body["cdnr"][0]["rates"] == [{"rate": 5, "taxable_value": 52.38, "igst": 2.62, "cgst": 0, "sgst": 0}]
+    assert body["b2cl"] == [] and body["cdnur"] == []
+    assert body["hsn_b2c"] == [{"hsn_code": "1006", "uqc": "NOS", "rate": 5, "quantity": 1,
+                                "taxable_value": 52.38, "igst": 0, "cgst": 1.31, "sgst": 1.31,
+                                "total_value": 55}]
+    assert body["hsn_b2b"][0]["igst"] == 2.62 and body["hsn_b2b"][0]["quantity"] == 1
+    invoices, notes = body["documents"]
+    assert (invoices["total"], invoices["cancelled"], invoices["net_issued"]) == (3, 1, 2)
+    assert notes["total"] == 2 and notes["from_no"].startswith("CN")
+    assert body["totals"] == {"taxable_value": 104.76, "igst": 2.62, "cgst": 1.31, "sgst": 1.31,
+                              "total_tax": 5.24}
+    assert body["warnings"] == []
+    assert client.get(f"{GST}/gstr1", params=WIDE, headers=admin_b_headers).json()["b2cs"] == []
+
+
+def test_gstr1_large_b2c_and_nil_rated(client, db, product, admin_headers):
+    gst_store(client, db, product, admin_headers)
+    product.stock_quantity = 5000
+    db.commit()
+    large = {"items": [{"product_id": product.id, "quantity": 2000}], "place_of_supply_code": "29"}
+    assert client.post("/api/v1/sales", json=large, headers=admin_headers).status_code == 201
+    product.tax_percent = 0
+    product.hsn_code = None
+    db.commit()
+    sell(client, product, admin_headers)
+    body = client.get(f"{GST}/gstr1", params=WIDE, headers=admin_headers).json()
+    assert len(body["b2cl"]) == 1 and body["b2cl"][0]["invoice_value"] == 110000
+    assert body["b2cs"] == []
+    nil = {row["description"]: row["nil_rated_exempt"] for row in body["nil_exempt"]}
+    assert nil["Intra-state supplies to unregistered persons"] == 110
+    assert any("no HSN code" in w for w in body["warnings"])
+
+
+def test_gstr3b_summary_and_itc(client, db, product, supplier, admin_headers):
+    gst_store(client, db, product, admin_headers)
+    supplier.gst_no = "27AAAPA1234A1Z5"
+    db.commit()
+    sell(client, product, admin_headers)
+    inter = {"items": [{"product_id": product.id, "quantity": 2}], "place_of_supply_code": "29"}
+    client.post("/api/v1/sales", json=inter, headers=admin_headers)
+    purchase = {"supplier_id": supplier.id, "purchase_date": "2026-09-01",
+                "items": [{"product_id": product.id, "quantity": 10, "unit_cost": 105, "gst_percent": 5}]}
+    assert client.post("/api/v1/purchases", json=purchase, headers=admin_headers).status_code == 201
+    receipt = {**purchase, "bill_type": "no_gst",
+               "items": [{"product_id": product.id, "quantity": 2, "unit_cost": 40}]}
+    assert client.post("/api/v1/purchases", json=receipt, headers=admin_headers).status_code == 201
+
+    res = client.get(f"{GST}/gstr3b", params=WIDE, headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert body["outward_taxable"] == {"taxable_value": 209.52, "igst": 5.24, "cgst": 2.62, "sgst": 2.62}
+    assert body["interstate_unregistered"] == [{"place_of_supply": "29-Karnataka", "taxable_value": 104.76,
+                                                "igst": 5.24}]
+    assert body["itc_available"] == {"igst": 0, "cgst": 25, "sgst": 25}
+    assert body["inward_exempt"] == {"inter_state": 0, "intra_state": 80}
+    payment = {row["head"]: row for row in body["tax_payment"]}
+    assert all(row["cash"] == 0 for row in payment.values())
+    assert payment["igst"]["paid_by_cgst_credit"] == 5.24
+    assert body["itc_balance"] == {"igst": 0, "cgst": 17.14, "sgst": 22.38}
+
+
+def test_gst_set_off_order():
+    from decimal import Decimal as D
+    from app.api.v1.endpoints.gst_reports import estimate_set_off
+    rows, balance = estimate_set_off({"igst": D(0), "cgst": D(100), "sgst": D(100)},
+                                     {"igst": D(100), "cgst": D(100), "sgst": D(0)})
+    by_head = {row["head"]: row for row in rows}
+    assert by_head["sgst"]["paid_by_igst_credit"] == 100 and by_head["cgst"]["paid_by_cgst_credit"] == 100
+    assert by_head["cgst"]["cash"] == 0 and by_head["sgst"]["cash"] == 0
+    assert balance == {"igst": 0, "cgst": 0, "sgst": 0}
+
+
 def test_reports_validation_and_role(client, seed, admin_headers, cashier_headers):
     for path in ("sales-summary", "top-products", "category-sales", "cashier-performance",
-                 "payment-modes", "profit"):
+                 "payment-modes", "profit", "gst/gstr1", "gst/gstr3b"):
         assert client.get(f"{REP}/{path}", headers=admin_headers).status_code == 422
         reversed_range = {"from_date": "2026-02-01", "to_date": "2026-01-01"}
         assert client.get(f"{REP}/{path}", params=reversed_range, headers=admin_headers).status_code == 400

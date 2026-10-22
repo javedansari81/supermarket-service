@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     customers,
     invoices,
     reports,
+    gst_reports,
     settings,
     audit,
 )
@@ -89,6 +90,9 @@ api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"]
 
 # Reports
 api_router.include_router(reports.router, prefix="/reports", tags=["Reports"])
+
+# GST return reports (GSTR-1, GSTR-3B)
+api_router.include_router(gst_reports.router, prefix="/reports/gst", tags=["GST Reports"])
 
 # Settings
 api_router.include_router(settings.router, prefix="/settings", tags=["Settings"])

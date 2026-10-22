@@ -91,6 +91,8 @@ export const API_ENDPOINTS = {
   REPORTS_PAYMENT_MODES: '/reports/payment-modes',
   REPORTS_PROFIT: '/reports/profit',
   REPORTS_STOCK: '/reports/stock-report',
+  REPORTS_GSTR1: '/reports/gst/gstr1',
+  REPORTS_GSTR3B: '/reports/gst/gstr3b',
   
   // Settings
   SETTINGS: '/settings',
