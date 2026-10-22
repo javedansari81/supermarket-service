@@ -27,6 +27,7 @@ import Barcode from './pages/Barcode';
 import Invoices from './pages/Invoices';
 import Customers from './pages/Customers';
 import Reports from './pages/Reports';
+import GstReturns from './pages/GstReturns';
 import Users from './pages/Users';
 import AuditLogs from './pages/AuditLogs';
 import Settings from './pages/Settings';
@@ -66,6 +67,7 @@ function App() {
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="customers" element={<Customers />} />
                 <Route path="reports" element={<ProtectedRoute requireAdmin><Reports /></ProtectedRoute>} />
+                <Route path="gst-returns" element={<ProtectedRoute requireAdmin><GstReturns /></ProtectedRoute>} />
                 <Route path="users" element={<ProtectedRoute requireAdmin><Users /></ProtectedRoute>} />
                 <Route path="audit" element={<ProtectedRoute requireAdmin><AuditLogs /></ProtectedRoute>} />
                 <Route path="settings" element={<ProtectedRoute requireAdmin><Settings /></ProtectedRoute>} />

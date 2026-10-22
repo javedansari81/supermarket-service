@@ -39,6 +39,7 @@ import {
   EventBusy,
   LocalOffer,
   ConfirmationNumber,
+  RequestQuote,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -85,6 +86,7 @@ const navItems: NavItem[] = [
   { title: 'Invoices', path: '/invoices', icon: <Receipt />, group: 'Sales' },
   { title: 'Customers', path: '/customers', icon: <Contacts />, group: 'Sales' },
   { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true, group: 'Insights' },
+  { title: 'GST Returns', path: '/gst-returns', icon: <RequestQuote />, adminOnly: true, group: 'Insights' },
   { title: 'Users', path: '/users', icon: <People />, adminOnly: true, group: 'Administration' },
   { title: 'Audit Logs', path: '/audit', icon: <History />, adminOnly: true, group: 'Administration' },
   { title: 'Settings', path: '/settings', icon: <Settings />, adminOnly: true, group: 'Administration' },

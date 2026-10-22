@@ -12,7 +12,6 @@ import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
-import GstReturns from '../components/reports/GstReturns';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 
@@ -55,35 +54,35 @@ const Reports: React.FC = () => {
   const [profit, setProfit] = useState<ProfitResponse | null>(null);
   const [profitSort, setProfitSort] = useState<{ key: ProfitSortKey; desc: boolean }>({ key: 'profit', desc: true });
 
-  const fetchData = useCallback(async () => {
+  const fetchSummary = useCallback(async () => {
     const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD') };
     try {
-      const [summary, products, categories, cashiers, payments] = await Promise.all([
-        api.get<SalesSummaryResponse>(API_ENDPOINTS.REPORTS_SALES_SUMMARY, { params }),
-        api.get<TopProductsResponse>(API_ENDPOINTS.REPORTS_TOP_PRODUCTS, { params }),
-        api.get<CategorySalesResponse>(API_ENDPOINTS.REPORTS_CATEGORY_SALES, { params }),
-        api.get<CashierPerfResponse>(API_ENDPOINTS.REPORTS_CASHIER_PERFORMANCE, { params }),
-        api.get<PaymentModesResponse>(API_ENDPOINTS.REPORTS_PAYMENT_MODES, { params }),
-      ]);
-      setSalesSummary(summary.data.summary);
-      setTopProducts(products.data.products || []);
-      setCategorySales(categories.data.categories || []);
-      setCashierPerf(cashiers.data.cashiers || []);
-      setPaymentModes(payments.data);
-    } catch (error) { toast.error('Failed to fetch reports'); }
+      const res = await api.get<SalesSummaryResponse>(API_ENDPOINTS.REPORTS_SALES_SUMMARY, { params });
+      setSalesSummary(res.data.summary);
+    } catch (error) { toast.error('Failed to fetch sales summary'); }
   }, [fromDate, toDate]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchSummary(); }, [fetchSummary]);
 
-  const fetchProfit = useCallback(async () => {
-    const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD'), group_by: profitGroup };
+  // Only the open tab is loaded; switching tabs or dates loads that tab again
+  const fetchTab = useCallback(async () => {
+    const params = { from_date: fromDate?.format('YYYY-MM-DD'), to_date: toDate?.format('YYYY-MM-DD') };
     try {
-      const res = await api.get<ProfitResponse>(API_ENDPOINTS.REPORTS_PROFIT, { params });
-      setProfit(res.data);
-    } catch (error) { toast.error('Failed to fetch profit report'); }
-  }, [fromDate, toDate, profitGroup]);
+      if (tab === 0) {
+        setTopProducts((await api.get<TopProductsResponse>(API_ENDPOINTS.REPORTS_TOP_PRODUCTS, { params })).data.products || []);
+      } else if (tab === 1) {
+        setCategorySales((await api.get<CategorySalesResponse>(API_ENDPOINTS.REPORTS_CATEGORY_SALES, { params })).data.categories || []);
+      } else if (tab === 2) {
+        setCashierPerf((await api.get<CashierPerfResponse>(API_ENDPOINTS.REPORTS_CASHIER_PERFORMANCE, { params })).data.cashiers || []);
+      } else if (tab === 3) {
+        setPaymentModes((await api.get<PaymentModesResponse>(API_ENDPOINTS.REPORTS_PAYMENT_MODES, { params })).data);
+      } else if (tab === 4) {
+        setProfit((await api.get<ProfitResponse>(API_ENDPOINTS.REPORTS_PROFIT, { params: { ...params, group_by: profitGroup } })).data);
+      }
+    } catch (error) { toast.error('Failed to fetch report'); }
+  }, [tab, fromDate, toDate, profitGroup]);
 
-  useEffect(() => { fetchProfit(); }, [fetchProfit]);
+  useEffect(() => { fetchTab(); }, [fetchTab]);
 
   const profitRows = useMemo(() => {
     const rows = [...(profit?.rows || [])];
@@ -152,7 +151,7 @@ const Reports: React.FC = () => {
         </Grid>
       )}
       <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
-        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" /><Tab label="GST Returns" />
+        <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" />
       </Tabs>
       {tab === 0 && (
         <TableContainer component={Paper}>
@@ -298,7 +297,6 @@ const Reports: React.FC = () => {
           </Typography>
         </Box>
       )}
-      {tab === 5 && <GstReturns fromDate={fromDate?.format('YYYY-MM-DD')} toDate={toDate?.format('YYYY-MM-DD')} />}
     </Box>
   );
 };

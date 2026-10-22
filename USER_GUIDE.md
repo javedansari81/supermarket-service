@@ -436,7 +436,7 @@ Use this for billing mistakes. Click the void icon (or **Void** in the detail di
 
 ## 13. Reports (Admin)
 
-Analytics for a date range (default: start of month → today). Changing dates reloads all widgets.
+Analytics for a date range (default: start of month → today). The summary cards and the open tab load for the chosen dates; other tabs load when you open them. GST returns have their own page (see **GST Returns** below).
 
 **Summary cards**
 
@@ -453,7 +453,6 @@ Analytics for a date range (default: start of month → today). Changing dates r
 | Cashier Performance | Cashier name, transactions, total sales |
 | Payment Modes | Mode, bills, collected, refunds, refunded, net; plus net by day |
 | Profit | Revenue, cost, gross profit and margin %, by product, category or day |
-| GST Returns | GSTR-1 tables (including HSN summary) and GSTR-3B summary for filing |
 
 **Payment Modes** is for matching takings with the cash drawer and bank statements:
 
@@ -469,7 +468,16 @@ Analytics for a date range (default: start of month → today). Changing dates r
 - Cost is the purchase price saved on each bill line when it was billed (the batch's cost, else the product's), so later price changes do not alter past profit. Returns take off both revenue and cost on the return date.
 - Days follow India time. Bills made before cost tracking started, and items with no purchase price, appear under **Revenue without Cost** and are left out of profit and margin.
 
-**GST Returns** helps prepare the monthly (or quarterly) GST returns. Set the dates to the return period, e.g. 1st to last day of the month. Switch between **GSTR-1** and **GSTR-3B**:
+Use this for purchasing, staffing, and daily/monthly review.
+
+---
+
+## 14. GST Returns (Admin)
+
+Helps prepare the GST returns. Open **GST Returns** under **Insights** in the sidebar.
+
+1. Choose **Monthly** and pick the **Return Month** (default: last month), or **Quarterly** and pick the **Return Quarter** (financial-year quarters: Q1 Apr–Jun, Q2 Jul–Sep, Q3 Oct–Dec, Q4 Jan–Mar; default: last quarter). The dates covered are shown next to the picker.
+2. Switch between **GSTR-1** and **GSTR-3B**. Only the selected return is loaded.
 
 - **GSTR-1** lists B2B invoices (buyer with GSTIN, table 4A), B2C Large (inter-state bills above ₹1,00,000, table 5), B2C Small by place of supply and rate (table 7, after its returns), nil rated / exempt (0% items, table 8), credit notes to registered buyers (CDNR) and on B2C Large bills (CDNUR), the HSN summary split into B2B and B2C (table 12), and invoice / credit note number ranges (table 13).
 - **GSTR-3B** shows outward taxable and nil / exempt supplies after returns (3.1), inter-state sales to unregistered buyers (3.2), input tax credit from purchases (4), exempt / nil / no-GST purchases (5), and an estimate of tax paid from credit and in cash (6.1), with credit left to carry forward.
@@ -478,11 +486,9 @@ Analytics for a date range (default: start of month → today). Changing dates r
 - Warnings at the top flag a missing store GSTIN or bill lines without an HSN code. 0% items are shown together as nil rated / exempt; split them as your CA advises.
 - Check the figures with your CA before filing.
 
-Use this for purchasing, staffing, and daily/monthly review.
-
 ---
 
-## 14. Users (Admin)
+## 15. Users (Admin)
 
 Staff accounts. Roles: **admin**, **supervisor** or **cashier**.
 
@@ -503,7 +509,7 @@ Inactive users should not sign in. Give cashiers **cashier**, floor supervisors 
 
 ---
 
-## 15. Audit Logs (Admin)
+## 16. Audit Logs (Admin)
 
 Who did what, and when. Default range: last 7 days.
 
@@ -515,7 +521,7 @@ Use after unexpected stock, price, or user changes.
 
 ---
 
-## 16. Settings (Admin)
+## 17. Settings (Admin)
 
 ### Store Settings
 
@@ -532,7 +538,7 @@ Save after changes. Currency in the UI is **₹**.
 
 ---
 
-## 17. Recommended workflows
+## 18. Recommended workflows
 
 ### First-time setup (Admin)
 
@@ -556,7 +562,7 @@ Save after changes. Currency in the UI is **₹**.
 
 ---
 
-## 18. Troubleshooting
+## 19. Troubleshooting
 
 | Problem | What to try |
 |---------|-------------|
@@ -576,7 +582,7 @@ Save after changes. Currency in the UI is **₹**.
 
 ---
 
-## 19. Quick menu map
+## 20. Quick menu map
 
 | Menu | Path | Who |
 |------|------|-----|
@@ -591,6 +597,7 @@ Save after changes. Currency in the UI is **₹**.
 | Barcode | `/barcode` | Admin, Supervisor |
 | Invoices | `/invoices` | All |
 | Reports | `/reports` | Admin |
+| GST Returns | `/gst-returns` | Admin |
 | Users | `/users` | Admin |
 | Audit Logs | `/audit` | Admin |
 | Settings | `/settings` | Admin |

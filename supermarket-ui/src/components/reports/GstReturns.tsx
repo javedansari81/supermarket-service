@@ -1,5 +1,5 @@
 /**
- * GST return reports (GSTR-1 and GSTR-3B) for the Reports page date range
+ * GST return reports (GSTR-1 and GSTR-3B) for a return period
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -117,7 +117,7 @@ const GstReturns: React.FC<Props> = ({ fromDate, toDate }) => {
           <ToggleButton value="gstr3b">GSTR-3B</ToggleButton>
         </ToggleButtonGroup>
         <Typography variant="caption" color="text.secondary">
-          Prepared from bills, credit notes and purchases in the selected dates. Check with your CA before filing.
+          Prepared from bills, credit notes and purchases in the selected period. Check with your CA before filing.
         </Typography>
       </Box>
       {warnings.map((w) => <Alert key={w} severity="warning" sx={{ mb: 1 }}>{w}</Alert>)}
