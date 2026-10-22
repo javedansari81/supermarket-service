@@ -89,7 +89,8 @@ async def list_active_suppliers(
         Supplier.status == "active"
     ).order_by(Supplier.supplier_name).all()
     
-    return [{"id": s.id, "supplier_code": s.supplier_code, "supplier_name": s.supplier_name} for s in suppliers]
+    return [{"id": s.id, "supplier_code": s.supplier_code, "supplier_name": s.supplier_name,
+             "gst_no": s.gst_no} for s in suppliers]
 
 
 @router.get("/{supplier_id}", response_model=SupplierResponse)

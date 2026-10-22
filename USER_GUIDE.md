@@ -304,12 +304,28 @@ Goods-in: receiving stock from a supplier increases inventory.
 
 1. Click **New Purchase**.
 2. Select **Supplier** and **Purchase Date**.
-3. Optionally click **Attach Bill** to add the supplier's bill (JPG, PNG, WEBP or PDF, up to 10 MB).
-4. For each line: product, quantity, unit price → **Add**. MRP, selling price and **Expiry** are pre-filled from the product; change the expiry if this delivery has a different date. Saving the purchase sets that date as the product's expiry (a line left without an expiry keeps the current one).
-5. Remove a line with the trash icon. The table shows line totals and a grand total.
-6. **Save Purchase**.
+3. Check **Bill Type** (see below). It is set from the supplier: **GST bill** when the supplier has a GSTIN, else **No GST (receipt / bill of supply)**.
+4. Optionally click **Attach Bill** to add the supplier's bill (JPG, PNG, WEBP or PDF, up to 10 MB).
+5. For each line: product, quantity, rate as on the bill → **Add**. MRP, selling price and **Expiry** are pre-filled from the product; change the expiry if this delivery has a different date. Saving the purchase sets that date as the product's expiry (a line left without an expiry keeps the current one). On a GST bill also enter **HSN** (pre-filled from the product) and **GST %** as printed on the bill.
+6. Remove a line with the trash icon. The table shows line amounts and the items total.
+7. Enter **Bill Grand Total** as printed on the bill. A difference of up to ₹1 from the items total is saved as round-off; a larger difference must be fixed before saving.
+8. **Save Purchase**.
 
 You need a supplier and at least one item. Success: **Purchase recorded**. The grid lists Purchase No, Date, Supplier, Amount, and Status (`completed` vs other).
+
+### GST on purchases
+
+| Bill type | Use for | GST claimed | Cost saved to stock |
+|---|---|---|---|
+| **GST bill** | Bills with the supplier's GSTIN, HSN and GST % | Yes, on lines with GST % entered | Rate without GST |
+| **No GST** | Handwritten receipts, bills of supply (composition suppliers) | No | Full rate |
+
+- Rates are entered as printed, GST included. GST is worked out from the line amount: at 5%, ₹1,050 is ₹1,000 taxable value + ₹50 GST.
+- Leave **GST %** blank when the bill does not show it. That line's GST is not claimed and its cost is the full rate. The helper text shows the product's GST % for reference only.
+- A GST bill needs a supplier with a GSTIN (set it on **Suppliers**). GST is split into CGST + SGST when the supplier's state (first two digits of the GSTIN) matches the store's, else IGST.
+- The purchase cost saved to stock (used for profit and stock value) excludes claimed GST.
+- Eye shows bill type, supplier GSTIN, HSN, GST % and GST per line (**Not claimed** when blank), taxable value, CGST / SGST or IGST, round-off and total.
+- Editing a purchase recalculates GST and costs; changing the supplier may change the bill type.
 
 ### Supplier bill
 

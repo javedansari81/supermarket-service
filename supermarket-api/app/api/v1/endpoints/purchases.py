@@ -4,6 +4,7 @@ Purchase/Procurement management endpoints
 import logging
 import os
 import uuid
+from dataclasses import dataclass
 from typing import Optional, List
 from datetime import date, datetime
 from decimal import Decimal
@@ -15,6 +16,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import match_or_create_batch, sync_batches, uses_batches
+from app.core.offers import CENTS
 from app.models.audit_log import AuditLog
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.product import Product
@@ -24,13 +26,103 @@ from app.models.stock_movement import StockMovement
 from app.models.store_location import ProductLocation
 from app.schemas.purchase import (
     PurchaseCreate, PurchaseUpdate, PurchaseCancel, PurchaseResponse, PurchaseListResponse,
-    PurchaseBillUrl
+    PurchaseBillUrl, PurchaseItemCreate
 )
+from app.schemas.settings import state_code_for
 from app.schemas.store_location import PutawayItem, ProductLocationResponse
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
+from app.api.v1.endpoints.settings import build_store_settings
+from app.api.v1.endpoints.sale_returns import split_tax
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# Largest gap allowed between the bill's grand total and the sum of its lines
+ROUND_OFF_LIMIT = Decimal("1")
+
+
+@dataclass
+class BillGst:
+    """How GST on a purchase bill is treated: claimed only on a GST bill"""
+    claims_gst: bool
+    supplier_gstin: Optional[str]
+    is_interstate: bool
+
+
+def default_bill_type(supplier: Optional[Supplier]) -> str:
+    return Purchase.BILL_GST_INVOICE if supplier and supplier.gst_no else Purchase.BILL_NO_GST
+
+
+def bill_gst(db: Session, tenant_id: int, bill_type: str, supplier: Optional[Supplier]) -> BillGst:
+    """A GST bill needs a supplier GSTIN; inter-state when its state differs from the store's"""
+    gstin = supplier.gst_no if supplier else None
+    if bill_type != Purchase.BILL_GST_INVOICE:
+        return BillGst(claims_gst=False, supplier_gstin=gstin, is_interstate=False)
+    if not gstin:
+        raise HTTPException(status_code=400, detail="A GST bill needs a supplier with a GSTIN")
+    store_state = build_store_settings(db, tenant_id).store_state_code or ""
+    supplier_state = state_code_for(gstin)
+    return BillGst(claims_gst=True, supplier_gstin=gstin,
+                   is_interstate=bool(store_state and supplier_state and store_state != supplier_state))
+
+
+def line_amounts(product: Product, item_data, bill: BillGst) -> dict:
+    """Line amount as on the bill (rate includes GST) and its GST. GST is claimed only on a
+    GST bill line with its GST % shown; then the cost to stock is without GST."""
+    amount = (item_data.quantity * item_data.unit_cost).quantize(CENTS)
+    gst_percent = item_data.gst_percent if bill.claims_gst else None
+    if gst_percent is None:
+        taxable, tax, unit_cost = amount, Decimal("0"), item_data.unit_cost
+    else:
+        taxable = (amount * 100 / (100 + gst_percent)).quantize(CENTS)
+        tax = amount - taxable
+        unit_cost = (taxable / item_data.quantity).quantize(CENTS)
+    cgst, sgst, igst = split_tax(tax, bill.is_interstate)
+    return {
+        "rate": item_data.unit_cost,
+        "unit_cost": unit_cost,
+        "total_cost": amount,
+        "hsn_code": item_data.hsn_code or product.hsn_code,
+        "gst_percent": gst_percent,
+        "taxable_value": taxable,
+        "tax_amount": tax,
+        "cgst_amount": cgst,
+        "sgst_amount": sgst,
+        "igst_amount": igst,
+        "itc_eligible": gst_percent is not None,
+    }
+
+
+def apply_totals(purchase: Purchase, bill_total: Optional[Decimal]) -> None:
+    """Purchase totals from its lines; a bill total sets the round-off (kept as is otherwise)"""
+    items = purchase.items
+    lines_total = sum((i.total_cost for i in items), Decimal("0"))
+    if bill_total is None:
+        round_off = purchase.round_off or Decimal("0")
+    else:
+        round_off = bill_total - lines_total
+        if abs(round_off) > ROUND_OFF_LIMIT:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Bill total ₹{bill_total:.2f} differs from the items total "
+                       f"₹{lines_total:.2f} by more than ₹{ROUND_OFF_LIMIT}"
+            )
+    purchase.taxable_amount = sum((i.taxable_value for i in items), Decimal("0"))
+    purchase.tax_amount = sum((i.tax_amount for i in items), Decimal("0"))
+    purchase.cgst_amount = sum((i.cgst_amount for i in items), Decimal("0"))
+    purchase.sgst_amount = sum((i.sgst_amount for i in items), Decimal("0"))
+    purchase.igst_amount = sum((i.igst_amount for i in items), Decimal("0"))
+    purchase.round_off = round_off
+    purchase.total_amount = lines_total + round_off
+
+
+def item_from_line(item: PurchaseItem) -> PurchaseItemCreate:
+    """A saved purchase line as entered, for recalculating it"""
+    return PurchaseItemCreate.model_construct(
+        product_id=item.product_id, quantity=item.quantity, unit_cost=item.rate,
+        hsn_code=item.hsn_code, gst_percent=item.gst_percent, mrp=item.mrp,
+        selling_price=item.selling_price, expiry_date=item.expiry_date, batch_no=item.batch_no
+    )
 
 
 def generate_purchase_no(db: Session, tenant_id: int) -> str:
@@ -63,30 +155,30 @@ def line_prices(product: Product, item_data):
     return mrp, selling_price
 
 
-def receive_line(db: Session, product: Product, item_data, purchase: Purchase,
+def receive_line(db: Session, product: Product, item_data, purchase: Purchase, bill: BillGst,
                  candidates: Optional[List[ProductBatch]] = None) -> PurchaseItem:
     """Add a purchase line's quantity to stock. Packed items go into the batch with the same
     MRP / price / expiry (or a new one); the product keeps the latest prices and expiry."""
     mrp, selling_price = line_prices(product, item_data)
+    amounts = line_amounts(product, item_data, bill)
     batch = None
     if uses_batches(product):
         batch = match_or_create_batch(
-            db, product, mrp=mrp, selling_price=selling_price, purchase_price=item_data.unit_cost,
+            db, product, mrp=mrp, selling_price=selling_price, purchase_price=amounts["unit_cost"],
             expiry_date=item_data.expiry_date, batch_no=item_data.batch_no,
             purchase_id=purchase.id, candidates=candidates
         )
         batch.quantity_received = (batch.quantity_received or 0) + item_data.quantity
         batch.quantity_left = (batch.quantity_left or 0) + item_data.quantity
     product.stock_quantity = (product.stock_quantity or 0) + item_data.quantity
-    product.purchase_price = item_data.unit_cost
+    product.purchase_price = amounts["unit_cost"]
     product.mrp, product.selling_price = mrp, selling_price
     if item_data.expiry_date:
         product.expiry_date = item_data.expiry_date
     return PurchaseItem(
         product_id=product.id,
         quantity=item_data.quantity,
-        unit_cost=item_data.unit_cost,
-        total_cost=item_data.quantity * item_data.unit_cost,
+        **amounts,
         batch_id=batch.id if batch else None,
         batch_no=item_data.batch_no,
         mrp=mrp,
@@ -238,6 +330,7 @@ async def create_purchase(
     """
     Create a new purchase and update stock (admin only)
     """
+    supplier = None
     if purchase_data.supplier_id:
         supplier = db.query(Supplier).filter(
             Supplier.id == purchase_data.supplier_id,
@@ -248,12 +341,12 @@ async def create_purchase(
         if supplier.status != "active":
             raise HTTPException(status_code=400, detail=f"Supplier {supplier.supplier_name} is inactive")
 
+    bill_type = purchase_data.bill_type or default_bill_type(supplier)
+    bill = bill_gst(db, context.tenant_id, bill_type, supplier)
+
     # Generate purchase number
     purchase_no = generate_purchase_no(db, context.tenant_id)
-    
-    # Calculate total amount
-    total_amount = Decimal("0")
-    
+
     # Create purchase
     purchase = Purchase(
         tenant_id=context.tenant_id,
@@ -261,6 +354,9 @@ async def create_purchase(
         supplier_id=purchase_data.supplier_id,
         supplier_invoice_no=purchase_data.supplier_invoice_no,
         purchase_date=purchase_data.purchase_date,
+        bill_type=bill_type,
+        supplier_gstin=bill.supplier_gstin,
+        is_interstate=bill.is_interstate,
         remarks=purchase_data.remarks,
         created_by=context.user_id
     )
@@ -271,8 +367,7 @@ async def create_purchase(
 
     # Add purchase items and update stock
     for item_data in purchase_data.items:
-        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase)
-        total_amount += purchase_item.total_cost
+        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase, bill)
         purchase.items.append(purchase_item)
 
         # Create stock movement
@@ -287,8 +382,8 @@ async def create_purchase(
             created_by=context.user_id
         )
         db.add(stock_movement)
-    
-    purchase.total_amount = total_amount
+
+    apply_totals(purchase, purchase_data.bill_total)
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "purchase", purchase.id,
@@ -328,7 +423,8 @@ def reverse_line(product: Product, item: PurchaseItem, batch: Optional[ProductBa
         batch.quantity_received = max((batch.quantity_received or 0) - item.quantity, Decimal("0"))
 
 
-def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: TenantContext) -> None:
+def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: TenantContext,
+                           bill: BillGst, bill_total: Optional[Decimal]) -> None:
     """Replace purchase lines and post stock differences per batch as adjustment movements"""
     old_items = list(purchase.items)
     products = lock_purchase_products(
@@ -338,11 +434,9 @@ def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: 
 
     deltas: dict = {}
     purchase.items.clear()
-    total_amount = Decimal("0")
     for item_data in new_items:
-        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase,
+        purchase_item = receive_line(db, products[item_data.product_id], item_data, purchase, bill,
                                      candidates=list(old_batches.values()))
-        total_amount += purchase_item.total_cost
         purchase.items.append(purchase_item)
         key = (item_data.product_id, purchase_item.batch_id)
         deltas[key] = deltas.get(key, Decimal("0")) + item_data.quantity
@@ -370,7 +464,7 @@ def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: 
             remarks=remarks,
             created_by=context.user_id
         ))
-    purchase.total_amount = total_amount
+    apply_totals(purchase, bill_total)
 
 
 @router.put("/{purchase_id}", response_model=PurchaseResponse)
@@ -384,15 +478,18 @@ async def update_purchase(
 ):
     """
     Update a purchase (admin only). When items are sent they replace the existing
-    lines and stock is adjusted by the difference per product.
+    lines and stock is adjusted by the difference per product. A change of supplier,
+    bill type or bill total recalculates GST and costs of the lines.
     """
     purchase = get_tenant_purchase(db, purchase_id, context.tenant_id)
     if purchase.status == "cancelled":
         raise HTTPException(status_code=400, detail="Cancelled purchase cannot be edited")
 
-    update_data = purchase_data.model_dump(exclude_unset=True, exclude={"items"})
+    update_data = purchase_data.model_dump(exclude_unset=True, exclude={"items", "bill_total"})
     if "purchase_date" in update_data and update_data["purchase_date"] is None:
         raise HTTPException(status_code=400, detail="Purchase date is required")
+    if "bill_type" in update_data and update_data["bill_type"] is None:
+        del update_data["bill_type"]
 
     new_supplier_id = update_data.get("supplier_id")
     if new_supplier_id and new_supplier_id != purchase.supplier_id:
@@ -406,11 +503,21 @@ async def update_purchase(
             raise HTTPException(status_code=400, detail=f"Supplier {supplier.supplier_name} is inactive")
 
     old_value = purchase_snapshot(purchase)
+    new_items = purchase_data.items
+    recalculate = purchase_data.model_fields_set & {"supplier_id", "bill_type", "bill_total"}
+    if new_items is None and recalculate:
+        new_items = [item_from_line(item) for item in purchase.items]
     for field, value in update_data.items():
         setattr(purchase, field, value)
 
-    if purchase_data.items is not None:
-        replace_purchase_items(db, purchase, purchase_data.items, context)
+    if new_items is not None:
+        supplier = db.query(Supplier).filter(
+            Supplier.id == purchase.supplier_id,
+            Supplier.tenant_id == context.tenant_id
+        ).first() if purchase.supplier_id else None
+        bill = bill_gst(db, context.tenant_id, purchase.bill_type, supplier)
+        purchase.supplier_gstin, purchase.is_interstate = bill.supplier_gstin, bill.is_interstate
+        replace_purchase_items(db, purchase, new_items, context, bill, purchase_data.bill_total)
 
     db.flush()
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,

@@ -119,6 +119,87 @@ def test_purchase_putaway_list(client, category, product, locations, admin_heade
     assert client.get(f"{PUR}/{pid}/putaway", headers=admin_b_headers).status_code == 404
 
 
+# ---------- GST on purchases ----------
+
+STORE_GSTIN = "27ABCDE1234F1Z5"
+
+
+def gst_supplier(client, db, supplier, admin_headers, gstin="27AAAPA1234A1Z5"):
+    client.put("/api/v1/settings/store", json={"store_name": "Mart A", "gstin": STORE_GSTIN},
+               headers=admin_headers)
+    supplier.gst_no = gstin
+    db.commit()
+    return supplier
+
+
+def gst_body(product, supplier, rate=105, gst_percent=5, **extra):
+    line = {"product_id": product.id, "quantity": 10, "unit_cost": rate, "gst_percent": gst_percent}
+    return {"supplier_id": supplier.id, "purchase_date": "2026-09-01", "items": [line], **extra}
+
+
+def test_gst_bill_claims_gst_and_costs_without_it(client, db, product, supplier, admin_headers):
+    gst_supplier(client, db, supplier, admin_headers)
+    res = client.post(PUR, json=gst_body(product, supplier), headers=admin_headers)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["bill_type"] == "gst_invoice" and body["supplier_gstin"] == "27AAAPA1234A1Z5"
+    assert body["is_interstate"] is False
+    assert float(body["total_amount"]) == 1050 and float(body["taxable_amount"]) == 1000
+    assert float(body["tax_amount"]) == 50
+    assert float(body["cgst_amount"]) == 25 and float(body["sgst_amount"]) == 25
+    line = body["items"][0]
+    assert float(line["rate"]) == 105 and float(line["unit_cost"]) == 100
+    assert line["itc_eligible"] is True
+    product_res = client.get(f"/api/v1/products/{product.id}", headers=admin_headers).json()
+    assert float(product_res["purchase_price"]) == 100
+
+
+def test_gst_bill_from_other_state_is_igst(client, db, product, supplier, admin_headers):
+    gst_supplier(client, db, supplier, admin_headers, gstin="29AAAPA1234A1Z5")
+    body = client.post(PUR, json=gst_body(product, supplier), headers=admin_headers).json()
+    assert body["is_interstate"] is True
+    assert float(body["igst_amount"]) == 50 and float(body["cgst_amount"]) == 0
+
+
+def test_gst_line_without_percent_is_not_claimed(client, db, product, supplier, admin_headers):
+    gst_supplier(client, db, supplier, admin_headers)
+    body = client.post(PUR, json=gst_body(product, supplier, gst_percent=None),
+                       headers=admin_headers).json()
+    line = body["items"][0]
+    assert line["itc_eligible"] is False and line["gst_percent"] is None
+    assert float(line["unit_cost"]) == 105 and float(body["tax_amount"]) == 0
+    assert float(body["total_amount"]) == 1050
+
+
+def test_no_gst_bill_ignores_gst(client, db, product, supplier, admin_headers):
+    res = client.post(PUR, json=gst_body(product, supplier), headers=admin_headers)
+    assert res.status_code == 201
+    body = res.json()
+    assert body["bill_type"] == "no_gst" and float(body["tax_amount"]) == 0
+    assert body["items"][0]["gst_percent"] is None and float(body["items"][0]["unit_cost"]) == 105
+    gst_bill = gst_body(product, supplier, bill_type="gst_invoice")
+    assert client.post(PUR, json=gst_bill, headers=admin_headers).status_code == 400
+
+
+def test_bill_total_round_off(client, db, product, supplier, admin_headers):
+    gst_supplier(client, db, supplier, admin_headers)
+    body = client.post(PUR, json=gst_body(product, supplier, bill_total=1049.5),
+                       headers=admin_headers).json()
+    assert float(body["round_off"]) == -0.5 and float(body["total_amount"]) == 1049.5
+    res = client.post(PUR, json=gst_body(product, supplier, bill_total=1052), headers=admin_headers)
+    assert res.status_code == 400
+
+
+def test_change_bill_type_recalculates_lines(client, db, product, supplier, admin_headers):
+    gst_supplier(client, db, supplier, admin_headers)
+    pid = client.post(PUR, json=gst_body(product, supplier), headers=admin_headers).json()["id"]
+    res = client.put(f"{PUR}/{pid}", json={"bill_type": "no_gst"}, headers=admin_headers)
+    assert res.status_code == 200
+    body = res.json()
+    assert float(body["tax_amount"]) == 0 and float(body["items"][0]["unit_cost"]) == 105
+    assert stock_of(client, product, admin_headers) == 110
+
+
 # ---------- Supplier bill ----------
 
 @pytest.fixture()
