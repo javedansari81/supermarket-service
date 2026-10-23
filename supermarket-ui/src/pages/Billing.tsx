@@ -22,10 +22,6 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Alert,
   List,
   ListItemButton,
@@ -38,9 +34,26 @@ import {
   Checkbox,
   CircularProgress,
   Popper,
+  Tooltip,
 } from '@mui/material';
+import type { ButtonProps, SxProps, Theme } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import Grid from '@mui/material/Grid';
-import { Delete, Add, Remove, Print, Search, PauseCircleOutline, ReceiptLong } from '@mui/icons-material';
+import {
+  Delete,
+  Add,
+  Remove,
+  Print,
+  Search,
+  PauseCircleOutline,
+  ReceiptLong,
+  DeleteSweep,
+  QrCodeScanner,
+  Payments,
+  CreditCard,
+  QrCode2,
+  Keyboard,
+} from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
@@ -222,6 +235,64 @@ const highlightMatch = (text: string, term: string) => {
     .map((part, i) => (i % 2 ? <strong key={i}>{part}</strong> : part));
 };
 
+const lineKey = (productId: number, batchId?: number) => `${productId}-${batchId ?? ''}`;
+
+const primaryTint = (t: Theme) => (t.vars
+  ? `rgba(${t.vars.palette.primary.mainChannel} / 0.08)`
+  : alpha(t.palette.primary.main, 0.08));
+
+const PAY_ICONS: Record<PayMode, React.ReactNode> = {
+  cash: <Payments />, card: <CreditCard />, upi: <QrCode2 />, points: null,
+};
+
+const SHORTCUTS: { key: string; label: string }[] = [
+  { key: 'F2', label: 'Search / scan' },
+  { key: 'F4', label: 'Hold bill' },
+  { key: 'F7', label: 'Held bills' },
+  { key: 'F8', label: 'Clear bill' },
+  { key: 'F9', label: 'Checkout, then complete sale' },
+];
+
+const Kbd: React.FC<{ children: React.ReactNode; sx?: SxProps<Theme> }> = ({ children, sx }) => (
+  <Box
+    component="kbd"
+    aria-hidden
+    sx={[
+      {
+        ml: 1, px: 0.75, fontFamily: 'inherit', fontSize: '0.7rem', fontWeight: 600, lineHeight: 1.6,
+        border: 1, borderColor: 'currentColor', borderRadius: 0.75, opacity: 0.7,
+      },
+      ...(Array.isArray(sx) ? sx : [sx]),
+    ]}
+  >
+    {children}
+  </Box>
+);
+
+const ActionTile: React.FC<ButtonProps & { icon: React.ReactNode; label: string; shortcut: string }> = (
+  { icon, label, shortcut, sx, ...props },
+) => (
+  <Button
+    variant="outlined"
+    aria-keyshortcuts={shortcut}
+    sx={[{ flex: 1, flexDirection: 'column', gap: 0.25, py: 1, minWidth: 0 }, ...(Array.isArray(sx) ? sx : [sx])]}
+    {...props}
+  >
+    {icon}
+    <span>{label}</span>
+    <Kbd sx={{ ml: 0 }}>{shortcut}</Kbd>
+  </Button>
+);
+
+const SummaryRow: React.FC<{ label: string; value: string; color?: string; small?: boolean }> = (
+  { label, value, color, small },
+) => (
+  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.75 }}>
+    <Typography variant={small ? 'body2' : 'body1'} color={color ?? 'text.secondary'}>{label}</Typography>
+    <Typography variant={small ? 'body2' : 'body1'} color={color} fontWeight={500}>{value}</Typography>
+  </Box>
+);
+
 const Billing: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -266,6 +337,7 @@ const Billing: React.FC = () => {
   const [couponChecking, setCouponChecking] = useState(false);
   const couponSeq = useRef(0);
   const [loyalty, setLoyalty] = useState<LoyaltySettings | null>(null);
+  const [lastAddedKey, setLastAddedKey] = useState<string | null>(null);
 
   const loadHeldBills = () =>
     api.get(API_ENDPOINTS.HELD_BILLS)
@@ -369,6 +441,10 @@ const Billing: React.FC = () => {
   useEffect(() => {
     if (highlight >= 0) document.getElementById(`search-option-${highlight}`)?.scrollIntoView({ block: 'nearest' });
   }, [highlight]);
+
+  useEffect(() => {
+    if (lastAddedKey) document.getElementById(`cart-row-${lastAddedKey}`)?.scrollIntoView?.({ block: 'nearest' });
+  }, [lastAddedKey, cartItems.length]);
 
   const searchProduct = async () => {
     const term = searchInput.trim();
@@ -579,6 +655,7 @@ const Billing: React.FC = () => {
       });
       setCartItems([...cartItems, newItem]);
     }
+    setLastAddedKey(lineKey(product.id, product.batch_id));
     searchRef.current?.focus();
     return true;
   };
@@ -628,6 +705,7 @@ const Billing: React.FC = () => {
     const updated = [...cartItems];
     updated[index] = calculateLine({ ...updated[index], quantity: newQty });
     setCartItems(updated);
+    setLastAddedKey(lineKey(updated[index].product_id, updated[index].batch_id));
   };
 
   const removeItem = (index: number) => {
@@ -692,8 +770,17 @@ const Billing: React.FC = () => {
     setSplitAmounts(EMPTY_BY_MODE);
     setPaymentRefs(EMPTY_BY_MODE);
     setCashTendered('');
+    setLastAddedKey(null);
     removeCoupon();
     searchRef.current?.focus();
+  };
+
+  const clearBill = () => {
+    if (cartItems.length === 0) return;
+    const message = heldBillId
+      ? 'Clear this bill? The held copy stays in Held Bills.'
+      : 'Clear all items from this bill?';
+    if (window.confirm(message)) resetBill();
   };
 
   const holdBill = async () => {
@@ -903,17 +990,77 @@ const Billing: React.FC = () => {
     }
   };
 
+  const completeDisabled = loading || !!paymentError || (!!couponCode && (couponChecking || !coupon));
+  const cashSuggestions = cashDue > 0
+    ? Array.from(new Set([cashDue, ...[10, 50, 100, 500, 2000].map((step) => Math.ceil(cashDue / step) * step)])).slice(0, 5)
+    : [];
+  const focusSearch = () => searchRef.current?.focus();
+
+  const shortcutHandler = useRef<(e: KeyboardEvent) => void>(() => undefined);
+  shortcutHandler.current = (e: KeyboardEvent) => {
+    if (e.altKey || e.ctrlKey || e.metaKey || e.repeat) return;
+    if (checkoutOpen) {
+      if (e.key === 'F9') {
+        e.preventDefault();
+        if (!completeDisabled) completeSale();
+      }
+      return;
+    }
+    if (heldOpen || batchPick || weighProduct) return;
+    const actions: Record<string, () => void> = {
+      F2: () => { searchRef.current?.focus(); searchRef.current?.select(); },
+      F4: () => { if (!holding) holdBill(); },
+      F7: openHeldBills,
+      F8: clearBill,
+      F9: handleCheckout,
+    };
+    const action = actions[e.key];
+    if (action) {
+      e.preventDefault();
+      action();
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => shortcutHandler.current(e);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
+  const itemCount = cartItems.length;
+  const qtyButtonSx = { border: 1, borderColor: 'divider', width: 36, height: 36 };
+
   return (
-    <Box>
-      <PageHeader title="Billing / POS" />
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: { md: 'calc(100vh - 112px)' }, minHeight: { md: 520 } }}>
+      <PageHeader
+        title="Billing / POS"
+        actions={
+          <Tooltip
+            title={
+              <Box sx={{ py: 0.5 }}>
+                {SHORTCUTS.map((s) => (
+                  <Box key={s.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}>
+                    <span>{s.label}</span>
+                    <b>{s.key}</b>
+                  </Box>
+                ))}
+              </Box>
+            }
+          >
+            <IconButton size="small" aria-label="Keyboard shortcuts">
+              <Keyboard fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        }
+      />
 
-      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-      <Grid container spacing={2}>
-        <Grid size={{ xs: 12, md: 8 }}>
-          <Card sx={{ mb: 2 }}>
-            <CardContent sx={{ pb: 1 }}>
-              <Box>
+      <Grid container spacing={2} sx={{ flex: 1, minHeight: 0 }}>
+        <Grid
+          size={{ xs: 12, md: 8 }}
+          sx={{ display: 'flex', flexDirection: 'column', gap: 2, height: { md: '100%' }, minHeight: 0 }}
+        >
+          <Card sx={{ flexShrink: 0 }}>
+            <CardContent sx={{ '&:last-child': { pb: 2 } }}>
                 <Box ref={searchAnchorRef} sx={{ display: 'flex', gap: 1 }}>
                   <TextField
                     fullWidth
@@ -925,13 +1072,20 @@ const Billing: React.FC = () => {
                     onFocus={() => setDropdownOpen(true)}
                     onBlur={() => setDropdownOpen(false)}
                     inputRef={searchRef}
+                    aria-keyshortcuts="F2"
+                    sx={{ '& .MuiInputBase-root': { height: 52, fontSize: '1.05rem' } }}
                     InputProps={{
                       startAdornment: <Search sx={{ color: 'text.secondary', mr: 1 }} />,
-                      endAdornment: searching ? <InputAdornment position="end"><CircularProgress size={18} /></InputAdornment> : undefined,
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          {searching ? <CircularProgress size={18} /> : <Kbd sx={{ display: { xs: 'none', sm: 'inline' } }}>F2</Kbd>}
+                        </InputAdornment>
+                      ),
                     }}
                   />
-                  <Button variant="contained" onClick={searchProduct}>Add</Button>
+                  <Button variant="contained" onClick={searchProduct} sx={{ px: 3 }}>Add</Button>
                 </Box>
+                {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
                 <Popper
                   open={showDropdown && (resultsCurrent || matches.length > 0)}
                   anchorEl={searchAnchorRef.current}
@@ -981,24 +1135,42 @@ const Billing: React.FC = () => {
                     )}
                   </Paper>
                 </Popper>
-              </Box>
             </CardContent>
           </Card>
 
-          <TableContainer component={Paper}>
-            <Table size="small">
+          <TableContainer
+            component={Paper}
+            variant="outlined"
+            sx={{ flex: 1, minHeight: { xs: 240, md: 0 }, overflow: 'auto' }}
+          >
+            <Table stickyHeader size="small" sx={{ '& td': { py: 1.25 } }}>
               <TableHead>
-                <TableRow sx={{ bgcolor: 'primary.main' }}>
-                  <TableCell sx={{ color: 'primary.contrastText' }}>Product</TableCell>
-                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Price</TableCell>
-                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Qty</TableCell>
-                  <TableCell sx={{ color: 'primary.contrastText' }} align="right">Total</TableCell>
-                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Action</TableCell>
+                <TableRow sx={{ '& th': { bgcolor: 'background.subtle' } }}>
+                  <TableCell sx={{ width: 40 }}>#</TableCell>
+                  <TableCell>Product</TableCell>
+                  <TableCell align="center">Price</TableCell>
+                  <TableCell align="center">Qty</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                  <TableCell align="center" sx={{ width: 64 }} />
                 </TableRow>
               </TableHead>
               <TableBody>
-                {cartItems.map((item, index) => (
-                  <TableRow key={`${item.product_id}-${item.batch_id ?? ''}`}>
+                {cartItems.map((item, index) => {
+                  const key = lineKey(item.product_id, item.batch_id);
+                  const isLast = key === lastAddedKey;
+                  return (
+                  <TableRow
+                    key={key}
+                    id={`cart-row-${key}`}
+                    hover
+                    sx={isLast ? {
+                      bgcolor: 'action.selected',
+                      '& td:first-of-type': {
+                        boxShadow: (t: Theme) => `inset 3px 0 0 ${(t.vars || t).palette.primary.main}`,
+                      },
+                    } : undefined}
+                  >
+                    <TableCell sx={{ color: 'text.secondary' }}>{index + 1}</TableCell>
                     <TableCell>
                       <Typography variant="body2" fontWeight="bold">{item.product_name}</Typography>
                       <Typography variant="caption" color="text.secondary">
@@ -1033,27 +1205,40 @@ const Billing: React.FC = () => {
                     </TableCell>
                     <TableCell align="center">
                       {item.is_loose ? (
-                        <Button size="small" variant="outlined" onClick={() => editLooseItem(item)}>
+                        <Button variant="outlined" onClick={() => editLooseItem(item)}>
                           {formatQty(item.quantity, item.unit_type, true)}
                         </Button>
                       ) : (
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <IconButton size="small" onClick={() => updateQuantity(index, -1)}><Remove /></IconButton>
-                          <Typography sx={{ mx: 1 }}>{item.quantity}</Typography>
-                          <IconButton size="small" onClick={() => updateQuantity(index, 1)}><Add /></IconButton>
+                          <IconButton aria-label="Decrease quantity" sx={qtyButtonSx} onClick={() => updateQuantity(index, -1)}>
+                            <Remove fontSize="small" />
+                          </IconButton>
+                          <Typography sx={{ minWidth: 36, textAlign: 'center', fontWeight: 700, fontSize: '1.05rem' }}>
+                            {item.quantity}
+                          </Typography>
+                          <IconButton aria-label="Increase quantity" sx={qtyButtonSx} onClick={() => updateQuantity(index, 1)}>
+                            <Add fontSize="small" />
+                          </IconButton>
                         </Box>
                       )}
                     </TableCell>
-                    <TableCell align="right">₹{item.line_total.toFixed(2)}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                      ₹{item.line_total.toFixed(2)}
+                    </TableCell>
                     <TableCell align="center">
-                      <IconButton size="small" color="error" onClick={() => removeItem(index)}><Delete /></IconButton>
+                      <IconButton color="error" aria-label="Remove item" onClick={() => removeItem(index)}><Delete /></IconButton>
                     </TableCell>
                   </TableRow>
-                ))}
-                {cartItems.length === 0 && (
+                  );
+                })}
+                {itemCount === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} align="center" sx={{ py: 4 }}>
-                      <Typography color="text.secondary">Scan or search products to add to cart</Typography>
+                    <TableCell colSpan={6} sx={{ borderBottom: 0 }}>
+                      <Box sx={{ py: 6, textAlign: 'center', color: 'text.secondary' }}>
+                        <QrCodeScanner sx={{ fontSize: 56, opacity: 0.5, mb: 1 }} />
+                        <Typography variant="h6" color="text.primary">Ready to scan</Typography>
+                        <Typography variant="body2">Scan a barcode or search by product name to add items</Typography>
+                      </Box>
                     </TableCell>
                   </TableRow>
                 )}
@@ -1062,67 +1247,71 @@ const Billing: React.FC = () => {
           </TableContainer>
         </Grid>
 
-        <Grid size={{ xs: 12, md: 4 }}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>Order Summary</Typography>
-              <Divider sx={{ my: 2 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography>Items:</Typography>
-                <Typography>{cartItems.length}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography>Taxable Value:</Typography>
-                <Typography>₹{getSubtotal().toFixed(2)}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography>GST{taxInclusive ? ' (included)' : ''}:</Typography>
-                <Typography>₹{getTotalTax().toFixed(2)}</Typography>
-              </Box>
-              {getDiscountTotal() > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography color="success.main">Discount:</Typography>
-                  <Typography color="success.main">−₹{getDiscountTotal().toFixed(2)}</Typography>
-                </Box>
-              )}
-              {coupon && coupon.coupon_discount > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="body2" color="success.main">incl. coupon {coupon.code}:</Typography>
-                  <Typography variant="body2" color="success.main">−₹{coupon.coupon_discount.toFixed(2)}</Typography>
-                </Box>
-              )}
-              {getMrpSavings() > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography color="success.main">You save (vs MRP):</Typography>
-                  <Typography color="success.main">₹{getMrpSavings().toFixed(2)}</Typography>
-                </Box>
-              )}
-              <Divider sx={{ my: 2 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-                <Typography variant="h6">Grand Total:</Typography>
-                <Typography variant="h6" color="primary">₹{getGrandTotal().toFixed(2)}</Typography>
+        <Grid size={{ xs: 12, md: 4 }} sx={{ height: { md: '100%' }, minHeight: 0 }}>
+          <Card sx={{ height: { md: '100%' }, display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', '&:last-child': { pb: 2 } }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                <Typography variant="h6">Current Bill</Typography>
+                <Chip size="small" label={`${itemCount} item${itemCount === 1 ? '' : 's'}`} />
               </Box>
               {heldBillId && (
                 <Alert severity="info" sx={{ mb: 2 }}>Recalled held bill</Alert>
               )}
-              <Button fullWidth variant="contained" size="large" onClick={handleCheckout} disabled={cartItems.length === 0}>
-                Checkout
+              <SummaryRow label="Taxable Value:" value={`₹${getSubtotal().toFixed(2)}`} />
+              <SummaryRow label={`GST${taxInclusive ? ' (included)' : ''}:`} value={`₹${getTotalTax().toFixed(2)}`} />
+              {getDiscountTotal() > 0 && (
+                <SummaryRow label="Discount:" value={`−₹${getDiscountTotal().toFixed(2)}`} color="success.main" />
+              )}
+              {coupon && coupon.coupon_discount > 0 && (
+                <SummaryRow small label={`incl. coupon ${coupon.code}:`} value={`−₹${coupon.coupon_discount.toFixed(2)}`} color="success.main" />
+              )}
+              {getMrpSavings() > 0 && (
+                <SummaryRow label="You save (vs MRP):" value={`₹${getMrpSavings().toFixed(2)}`} color="success.main" />
+              )}
+              <Box sx={{ flex: 1, minHeight: 16 }} />
+              <Box
+                sx={{
+                  p: 2,
+                  mb: 2,
+                  borderRadius: 2,
+                  bgcolor: primaryTint,
+                }}
+              >
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>Grand Total</Typography>
+                <Typography sx={{ fontSize: { xs: '2rem', md: '2.5rem' }, fontWeight: 700, lineHeight: 1.15, color: 'primary.main' }}>
+                  ₹{getGrandTotal().toFixed(2)}
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="contained"
+                size="large"
+                onClick={handleCheckout}
+                disabled={itemCount === 0}
+                aria-keyshortcuts="F9"
+                sx={{ py: 1.5, fontSize: '1.1rem' }}
+              >
+                Checkout<Kbd>F9</Kbd>
               </Button>
               <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-                <Button fullWidth variant="outlined" startIcon={<PauseCircleOutline />}
-                  onClick={holdBill} disabled={cartItems.length === 0 || holding}>
-                  Hold Bill
-                </Button>
-                <Button fullWidth variant="outlined" startIcon={<ReceiptLong />} onClick={openHeldBills}>
-                  Held ({heldBills.length})
-                </Button>
+                <ActionTile icon={<PauseCircleOutline />} label="Hold Bill" shortcut="F4"
+                  onClick={holdBill} disabled={itemCount === 0 || holding} />
+                <ActionTile icon={<ReceiptLong />} label={`Held (${heldBills.length})`} shortcut="F7" onClick={openHeldBills} />
+                <ActionTile icon={<DeleteSweep />} label="Clear" shortcut="F8" color="error"
+                  onClick={clearBill} disabled={itemCount === 0} />
               </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      <Dialog open={checkoutOpen} onClose={() => setCheckoutOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={checkoutOpen}
+        onClose={() => setCheckoutOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ transition: { onExited: focusSearch } }}
+      >
         <DialogTitle>Complete Sale</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
@@ -1163,17 +1352,23 @@ const Billing: React.FC = () => {
                 </Typography>
               </Box>
             ) : (
-              <Box sx={{ display: 'flex', gap: 1, mt: 1, mb: 2 }}>
-                <FormControl sx={{ flex: 1 }}>
-                  <InputLabel>Payment Mode</InputLabel>
-                  <Select value={paymentMode} onChange={(e) => setPaymentMode(e.target.value as PayMode)} label="Payment Mode">
-                    {PAY_MODES.map(({ mode, label }) => <MenuItem key={mode} value={mode}>{label}</MenuItem>)}
-                  </Select>
-                </FormControl>
+              <Box sx={{ mt: 1, mb: 2 }}>
+                <ToggleButtonGroup
+                  exclusive fullWidth color="primary" value={paymentMode} aria-label="Payment mode"
+                  onChange={(_, v) => { if (v) setPaymentMode(v as PayMode); }}
+                >
+                  {PAY_MODES.map(({ mode, label }) => (
+                    <ToggleButton key={mode} value={mode} sx={{ py: 1.5, flexDirection: 'column', gap: 0.5, fontWeight: 600 }}>
+                      {PAY_ICONS[mode]}
+                      {label}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
                 {paymentMode !== 'cash' && (
                   <TextField
+                    fullWidth
                     label={paymentMode === 'upi' ? 'UPI transaction ID (optional)' : 'Card last 4 digits (optional)'}
-                    value={paymentRefs[paymentMode]} sx={{ flex: 1 }}
+                    value={paymentRefs[paymentMode]} sx={{ mt: 2 }}
                     onChange={(e) => setPaymentRefs((r) => ({ ...r, [paymentMode]: e.target.value }))}
                     inputProps={{ maxLength: 50 }}
                   />
@@ -1181,16 +1376,28 @@ const Billing: React.FC = () => {
               </Box>
             )}
             {cashDue > 0 && (
-              <TextField
-                fullWidth type="number" label="Cash Received (Optional)" value={cashTendered}
-                onChange={(e) => setCashTendered(e.target.value)}
-                error={changeDue !== null && changeDue < 0}
-                helperText={changeDue === null ? `Cash to collect: ₹${cashDue.toFixed(2)}`
-                  : changeDue < 0 ? paymentError : `Change to return: ₹${changeDue.toFixed(2)}`}
-                inputProps={{ min: 0, step: '0.01' }}
-                InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
-                sx={{ mb: 2 }}
-              />
+              <Box sx={{ mb: 2 }}>
+                <TextField
+                  fullWidth type="number" label="Cash Received (Optional)" value={cashTendered}
+                  onChange={(e) => setCashTendered(e.target.value)}
+                  error={changeDue !== null && changeDue < 0}
+                  helperText={changeDue === null ? `Cash to collect: ₹${cashDue.toFixed(2)}`
+                    : changeDue < 0 ? paymentError : `Change to return: ₹${changeDue.toFixed(2)}`}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  InputProps={{ startAdornment: <InputAdornment position="start">₹</InputAdornment> }}
+                />
+                <Box sx={{ display: 'flex', gap: 1, mt: 1, flexWrap: 'wrap' }}>
+                  {cashSuggestions.map((amount, i) => (
+                    <Chip
+                      key={amount}
+                      label={i === 0 ? `Exact ₹${amount.toFixed(2)}` : `₹${amount}`}
+                      onClick={() => setCashTendered(amount.toString())}
+                      color={toAmount(cashTendered) === amount ? 'primary' : 'default'}
+                      variant={toAmount(cashTendered) === amount ? 'filled' : 'outlined'}
+                    />
+                  ))}
+                </Box>
+              </Box>
             )}
             <TextField
               fullWidth autoFocus label="Customer Mobile (Optional)" value={customerPhone}
@@ -1259,24 +1466,41 @@ const Billing: React.FC = () => {
                 {coupon.notes.map((n) => <Typography key={n} variant="caption" display="block">{n}</Typography>)}
               </Alert>
             ))}
-            <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
-              <Typography variant="h5" align="center" color="primary">Total: ₹{getGrandTotal().toFixed(2)}</Typography>
+            <Box
+              sx={{
+                mt: 3,
+                p: 2,
+                borderRadius: 2,
+                textAlign: 'center',
+                bgcolor: primaryTint,
+              }}
+            >
+              <Typography variant="h4" color="primary" fontWeight={700}>Total: ₹{getGrandTotal().toFixed(2)}</Typography>
               {changeDue !== null && changeDue >= 0 && (
-                <Typography variant="h6" align="center">Change: ₹{changeDue.toFixed(2)}</Typography>
+                <Typography variant="h5" color="success.main" fontWeight={700} sx={{ mt: 0.5 }}>
+                  Change: ₹{changeDue.toFixed(2)}
+                </Typography>
               )}
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setCheckoutOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={completeSale}
-            disabled={loading || !!paymentError || (!!couponCode && (couponChecking || !coupon))} startIcon={<Print />}>
+          <Button variant="contained" size="large" onClick={completeSale} aria-keyshortcuts="F9"
+            disabled={completeDisabled} startIcon={<Print />}>
             {loading ? 'Processing...' : 'Complete & Print'}
+            <Kbd>F9</Kbd>
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={heldOpen} onClose={() => setHeldOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={heldOpen}
+        onClose={() => setHeldOpen(false)}
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ transition: { onExited: focusSearch } }}
+      >
         <DialogTitle>Held Bills</DialogTitle>
         <DialogContent sx={{ px: 1 }}>
           {heldBills.length === 0 ? (

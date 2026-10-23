@@ -58,7 +58,7 @@ beforeEach(() => {
   mockPrint.mockResolvedValue(undefined);
 });
 
-const grandTotal = () => screen.getByText('Grand Total:').nextElementSibling?.textContent;
+const grandTotal = () => screen.getByText('Grand Total').nextElementSibling?.textContent;
 
 const scanSugar = async () => {
   userEvent.type(screen.getByPlaceholderText(/Scan barcode/), '8901234567890{enter}');
