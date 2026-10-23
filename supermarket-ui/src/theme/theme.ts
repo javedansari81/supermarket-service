@@ -85,7 +85,7 @@ const theme = createTheme({
         },
         sidebar: {
           ...sidebarBase,
-          background: '#0f172a',
+          background: '#1e293b',
         },
       },
     },
@@ -133,7 +133,7 @@ const theme = createTheme({
         },
         sidebar: {
           ...sidebarBase,
-          background: '#020617',
+          background: '#111827',
         },
       },
     },
