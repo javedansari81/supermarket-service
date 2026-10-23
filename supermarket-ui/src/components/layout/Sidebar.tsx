@@ -138,8 +138,10 @@ const Sidebar: React.FC<SidebarProps> = ({
         '& .MuiDrawer-paper': {
           width,
           boxSizing: 'border-box',
-          backgroundColor: '#1a237e',
-          color: 'white',
+          backgroundColor: 'sidebar.background',
+          color: 'sidebar.text',
+          borderRight: 1,
+          borderColor: 'sidebar.divider',
           overflowX: 'hidden',
           transition: (theme) => theme.transitions.create('width'),
         },
@@ -191,20 +193,20 @@ const Sidebar: React.FC<SidebarProps> = ({
           </IconButton>
         </Tooltip>
       </Toolbar>
-      <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)' }} />
+      <Divider sx={{ borderColor: 'sidebar.divider' }} />
 
       <List sx={{ pt: 1 }}>
         {sections.map((section) => (
           <React.Fragment key={section.title ?? 'main'}>
             {section.title &&
               (collapsed ? (
-                <Divider sx={{ borderColor: 'rgba(255,255,255,0.2)', mx: 1, my: 1 }} />
+                <Divider sx={{ borderColor: 'sidebar.divider', mx: 1, my: 1 }} />
               ) : (
                 <ListSubheader
                   disableSticky
                   sx={{
                     backgroundColor: 'transparent',
-                    color: 'rgba(255,255,255,0.6)',
+                    color: 'sidebar.textMuted',
                     fontSize: '0.75rem',
                     fontWeight: 600,
                     letterSpacing: 0.5,
@@ -229,13 +231,14 @@ const Sidebar: React.FC<SidebarProps> = ({
                       justifyContent: collapsed ? 'center' : 'flex-start',
                       px: collapsed ? 1.5 : 2,
                       '&.Mui-selected': {
-                        backgroundColor: 'rgba(255,255,255,0.15)',
+                        backgroundColor: 'sidebar.selected',
+                        color: 'sidebar.selectedText',
                         '&:hover': {
-                          backgroundColor: 'rgba(255,255,255,0.2)',
+                          backgroundColor: 'sidebar.selected',
                         },
                       },
                       '&:hover': {
-                        backgroundColor: 'rgba(255,255,255,0.1)',
+                        backgroundColor: 'sidebar.hover',
                       },
                     }}
                   >

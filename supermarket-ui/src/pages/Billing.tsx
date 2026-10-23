@@ -989,11 +989,11 @@ const Billing: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ bgcolor: 'primary.main' }}>
-                  <TableCell sx={{ color: 'white' }}>Product</TableCell>
-                  <TableCell sx={{ color: 'white' }} align="center">Price</TableCell>
-                  <TableCell sx={{ color: 'white' }} align="center">Qty</TableCell>
-                  <TableCell sx={{ color: 'white' }} align="right">Total</TableCell>
-                  <TableCell sx={{ color: 'white' }} align="center">Action</TableCell>
+                  <TableCell sx={{ color: 'primary.contrastText' }}>Product</TableCell>
+                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Price</TableCell>
+                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Qty</TableCell>
+                  <TableCell sx={{ color: 'primary.contrastText' }} align="right">Total</TableCell>
+                  <TableCell sx={{ color: 'primary.contrastText' }} align="center">Action</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1259,7 +1259,7 @@ const Billing: React.FC = () => {
                 {coupon.notes.map((n) => <Typography key={n} variant="caption" display="block">{n}</Typography>)}
               </Alert>
             ))}
-            <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+            <Box sx={{ mt: 3, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
               <Typography variant="h5" align="center" color="primary">Total: ₹{getGrandTotal().toFixed(2)}</Typography>
               {changeDue !== null && changeDue >= 0 && (
                 <Typography variant="h6" align="center">Change: ₹{changeDue.toFixed(2)}</Typography>
@@ -1369,7 +1369,7 @@ const Billing: React.FC = () => {
               ))}
             </Box>
           )}
-          <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.100', borderRadius: 1, display: 'flex', justifyContent: 'space-between' }}>
+          <Box sx={{ mt: 2, p: 1.5, bgcolor: 'action.hover', borderRadius: 1, display: 'flex', justifyContent: 'space-between' }}>
             <Typography>{weighProduct && formatQty(weighQty(), weighProduct.unit_type, true)}</Typography>
             <Typography fontWeight="bold">₹{weighProduct ? round2(weighQty() * weighProduct.selling_price).toFixed(2) : '0.00'}</Typography>
           </Box>

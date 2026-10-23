@@ -37,10 +37,18 @@ import Coupons from './pages/Coupons';
 
 function App() {
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <ThemeProvider theme={theme} defaultMode="light" noSsr>
+      <CssBaseline enableColorScheme />
       <LocalizationProvider dateAdapter={AdapterDayjs}>
-        <Toaster position="top-right" />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            style: {
+              background: 'var(--mui-palette-background-paper)',
+              color: 'var(--mui-palette-text-primary)',
+            },
+          }}
+        />
         <BrowserRouter>
           <AuthProvider>
             <Routes>

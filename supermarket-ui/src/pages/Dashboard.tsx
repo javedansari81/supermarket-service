@@ -22,6 +22,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import { alpha, useTheme } from '@mui/material/styles';
 import Grid from '@mui/material/Grid';
 import {
   TrendingUp,
@@ -51,12 +52,14 @@ const formatHour = (hour: number) => {
   return `${hour % 12 === 0 ? 12 : hour % 12}${suffix}`;
 };
 
-const PAYMENT_COLORS: Record<string, string> = {
-  cash: '#2e7d32',
-  upi: '#7b1fa2',
-  card: '#1976d2',
-  credit: '#ed6c02',
-  points: '#c2185b',
+type PaletteKey = 'primary' | 'secondary' | 'success' | 'info' | 'warning' | 'error';
+
+const PAYMENT_COLORS: Record<string, PaletteKey> = {
+  cash: 'success',
+  upi: 'secondary',
+  card: 'info',
+  credit: 'warning',
+  points: 'primary',
 };
 
 interface DeltaProps {
@@ -118,7 +121,7 @@ const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, color, subtitle, 
             </Typography>
           )}
         </Box>
-        <Box sx={{ p: 1.25, borderRadius: 2, backgroundColor: `${color}15`, color }}>
+        <Box sx={{ p: 1.25, borderRadius: 2, backgroundColor: alpha(color, 0.1), color }}>
           {icon}
         </Box>
       </Box>
@@ -187,6 +190,7 @@ const Dashboard: React.FC = () => {
   const [refreshing, setRefreshing] = useState(false);
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { palette } = useTheme();
 
   const fetchDashboard = useCallback(async () => {
     setRefreshing(true);
@@ -262,7 +266,7 @@ const Dashboard: React.FC = () => {
       title: "Today's Sales",
       value: formatCurrency(data.today_sales),
       icon: <TrendingUp />,
-      color: '#2e7d32',
+      color: palette.success.main,
       delta: { value: data.today.vs_last_week_pct, label: 'vs same time last week' },
       subtitle: `Yesterday by now: ${formatCurrency(data.today.yesterday_sales)}`,
     },
@@ -270,21 +274,21 @@ const Dashboard: React.FC = () => {
       title: 'Bills Today',
       value: data.today_transactions,
       icon: <Receipt />,
-      color: '#0288d1',
+      color: palette.info.main,
       subtitle: `${data.today.items_per_bill} items per bill`,
     },
     {
       title: 'Average Bill Value',
       value: formatCurrency(data.today.avg_bill),
       icon: <ShoppingBasket />,
-      color: '#9c27b0',
+      color: palette.secondary.main,
       subtitle: `Discounts: ${formatCurrency(data.today.discount)} (${data.today.discount_pct}%)`,
     },
     {
       title: 'Month-to-Date Sales',
       value: formatCurrency(data.mtd_sales),
       icon: <ShoppingCart />,
-      color: '#1976d2',
+      color: palette.primary.main,
       delta: { value: data.mtd.vs_prev_pct, label: 'vs last month to date' },
       subtitle: `${data.mtd.transactions} bills this month`,
     },
@@ -296,7 +300,7 @@ const Dashboard: React.FC = () => {
         title: 'Gross Margin Today (est.)',
         value: formatCurrency(admin.gross_margin),
         icon: <Savings />,
-        color: '#388e3c',
+        color: palette.success.dark,
         subtitle: admin.gross_margin_pct !== null
           ? `${admin.gross_margin_pct}% of net sales (at current cost price)`
           : 'Based on current cost price',
@@ -305,14 +309,14 @@ const Dashboard: React.FC = () => {
         title: 'Stock Value (at cost)',
         value: formatCurrency(admin.stock_value),
         icon: <Inventory />,
-        color: '#5d4037',
+        color: palette.grey[700],
         subtitle: `${data.total_products} active products · ${data.total_categories} categories`,
       },
       {
         title: 'Stock Alerts',
         value: data.low_stock_count + data.out_of_stock_count,
         icon: <LocalOffer />,
-        color: '#ed6c02',
+        color: palette.warning.main,
         subtitle: `${data.out_of_stock_count} out of stock · ${data.low_stock_count} low`,
       },
     );
@@ -322,14 +326,14 @@ const Dashboard: React.FC = () => {
       title: 'Returns',
       value: data.returns_today.count,
       icon: <AssignmentReturn />,
-      color: '#ed6c02',
+      color: palette.warning.main,
       subtitle: `${formatCurrency(data.returns_today.amount)} refunded today`,
     },
     {
       title: 'Voided Sales',
       value: data.cancelled_today.count,
       icon: <Cancel />,
-      color: '#d32f2f',
+      color: palette.error.main,
       subtitle: `${formatCurrency(data.cancelled_today.amount)} today`,
     },
   );
@@ -371,7 +375,7 @@ const Dashboard: React.FC = () => {
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Sales by Hour" subheader="Today · current hour highlighted" />
             <CardContent>
-              <BarChart data={hourlyBars} color="#1976d2" />
+              <BarChart data={hourlyBars} color={palette.primary.main} />
             </CardContent>
           </Card>
         </Grid>
@@ -387,7 +391,8 @@ const Dashboard: React.FC = () => {
               )}
               {data.payment_mix.map((p) => {
                 const share = paymentTotal ? (p.amount / paymentTotal) * 100 : 0;
-                const color = PAYMENT_COLORS[p.mode] || '#757575';
+                const paletteKey = PAYMENT_COLORS[p.mode];
+                const color = paletteKey ? palette[paletteKey].main : palette.grey[600];
                 return (
                   <Box key={p.mode} sx={{ mb: 2 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
@@ -404,7 +409,7 @@ const Dashboard: React.FC = () => {
                       sx={{
                         height: 8,
                         borderRadius: 4,
-                        backgroundColor: `${color}22`,
+                        backgroundColor: alpha(color, 0.13),
                         '& .MuiLinearProgress-bar': { backgroundColor: color },
                       }}
                     />
@@ -422,7 +427,7 @@ const Dashboard: React.FC = () => {
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Last 7 Days" subheader={`Total ${formatCurrency(weekTotal)}`} />
             <CardContent>
-              <BarChart data={trendBars} color="#2e7d32" />
+              <BarChart data={trendBars} color={palette.success.main} />
             </CardContent>
           </Card>
         </Grid>
