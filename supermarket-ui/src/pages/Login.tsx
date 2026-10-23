@@ -5,8 +5,6 @@ import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
-  Card,
-  CardContent,
   TextField,
   Button,
   Typography,
@@ -15,16 +13,32 @@ import {
   InputAdornment,
   IconButton,
 } from '@mui/material';
-import { Visibility, VisibilityOff, Store } from '@mui/icons-material';
+import {
+  Visibility,
+  VisibilityOff,
+  Store,
+  PointOfSale,
+  ReceiptLong,
+  Inventory2,
+  LocalOffer,
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
+
+const features = [
+  { icon: <PointOfSale />, text: 'Fast billing with barcode scanning' },
+  { icon: <ReceiptLong />, text: 'GST-ready invoices and returns' },
+  { icon: <Inventory2 />, text: 'Inventory, purchase and expiry tracking' },
+  { icon: <LocalOffer />, text: 'Offers, coupons and loyalty points' },
+];
 
 const Login: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [capsLock, setCapsLock] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  
+
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -46,31 +60,103 @@ const Login: React.FC = () => {
     }
   };
 
+  const handlePasswordKey = (e: React.KeyboardEvent) => {
+    setCapsLock(e.getModifierState('CapsLock'));
+  };
+
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'background.default',
-        padding: 2,
-      }}
-    >
-      <Card sx={{ maxWidth: 400, width: '100%' }}>
-        <CardContent sx={{ p: 4 }}>
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Store sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
-            <Typography variant="h5" fontWeight="bold">
-              Supermarket POS
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              Sign in to your account
+    <Box sx={{ minHeight: '100vh', display: 'flex', backgroundColor: 'background.default' }}>
+      <Box
+        sx={(theme) => {
+          const palette = (theme.vars || theme).palette;
+          return {
+            display: { xs: 'none', md: 'flex' },
+            flex: '1 1 50%',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            position: 'relative',
+            overflow: 'hidden',
+            p: 6,
+            color: '#ffffff',
+            background: `linear-gradient(135deg, ${palette.primary.dark} 0%, ${palette.primary.main} 100%)`,
+            ...theme.applyStyles('dark', {
+              background: `linear-gradient(135deg, ${palette.background.paper} 0%, ${palette.primary.dark} 100%)`,
+            }),
+            '&::before, &::after': {
+              content: '""',
+              position: 'absolute',
+              borderRadius: '50%',
+              backgroundColor: 'rgba(255,255,255,0.06)',
+            },
+            '&::before': { width: 420, height: 420, top: -120, right: -140 },
+            '&::after': { width: 300, height: 300, bottom: -100, left: -80 },
+          };
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, position: 'relative' }}>
+          <Store sx={{ fontSize: 36 }} />
+          <Typography variant="h5" fontWeight="bold">
+            SuperMart
+          </Typography>
+        </Box>
+
+        <Box sx={{ position: 'relative', maxWidth: 440 }}>
+          <Typography variant="h4" sx={{ mb: 2 }}>
+            Billing and inventory, all in one place.
+          </Typography>
+          <Typography sx={{ opacity: 0.85, mb: 4 }}>
+            Everything your store needs to sell, stock and grow.
+          </Typography>
+          {features.map((f) => (
+            <Box key={f.text} sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  placeItems: 'center',
+                  width: 40,
+                  height: 40,
+                  borderRadius: 2,
+                  backgroundColor: 'rgba(255,255,255,0.14)',
+                }}
+              >
+                {f.icon}
+              </Box>
+              <Typography>{f.text}</Typography>
+            </Box>
+          ))}
+        </Box>
+
+        <Typography variant="caption" sx={{ position: 'relative', opacity: 0.7 }}>
+          © {new Date().getFullYear()} SuperMart
+        </Typography>
+      </Box>
+
+      <Box
+        sx={{
+          flex: '1 1 50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          p: { xs: 3, sm: 6 },
+        }}
+      >
+        <Box sx={{ width: '100%', maxWidth: 380 }}>
+          <Box sx={{ display: { xs: 'flex', md: 'none' }, alignItems: 'center', gap: 1, mb: 4 }}>
+            <Store sx={{ fontSize: 32, color: 'primary.main' }} />
+            <Typography variant="h6" fontWeight="bold">
+              SuperMart
             </Typography>
           </Box>
 
+          <Typography variant="h4" sx={{ mb: 1 }}>
+            Welcome back
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>
+            Sign in to continue to your store
+          </Typography>
+
           {error && (
-            <Alert severity="error" sx={{ mb: 3 }}>
+            <Alert severity="error" sx={{ mb: 2 }}>
               {error}
             </Alert>
           )}
@@ -96,12 +182,18 @@ const Login: React.FC = () => {
               margin="normal"
               required
               autoComplete="current-password"
+              onKeyDown={handlePasswordKey}
+              onKeyUp={handlePasswordKey}
+              onBlur={() => setCapsLock(false)}
+              helperText={capsLock ? 'Caps Lock is on' : undefined}
+              FormHelperTextProps={{ sx: { color: 'warning.main' } }}
               InputProps={{
                 endAdornment: (
                   <InputAdornment position="end">
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -121,8 +213,8 @@ const Login: React.FC = () => {
               {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+        </Box>
+      </Box>
     </Box>
   );
 };

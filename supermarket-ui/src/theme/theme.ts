@@ -28,12 +28,12 @@ declare module '@mui/material/styles' {
 }
 
 const sidebarBase = {
-  text: '#e2e8f0',
-  textMuted: '#94a3b8',
-  divider: 'rgba(148,163,184,0.16)',
-  hover: 'rgba(148,163,184,0.12)',
-  selected: alpha('#14b8a6', 0.18),
-  selectedText: '#5eead4',
+  text: alpha('#ffffff', 0.9),
+  textMuted: alpha('#ffffff', 0.6),
+  divider: alpha('#ffffff', 0.12),
+  hover: alpha('#ffffff', 0.08),
+  selected: alpha('#ffffff', 0.16),
+  selectedText: '#ffffff',
 };
 
 const theme = createTheme({
@@ -85,7 +85,7 @@ const theme = createTheme({
         },
         sidebar: {
           ...sidebarBase,
-          background: '#1e293b',
+          background: '#115e59',
         },
       },
     },
@@ -133,7 +133,7 @@ const theme = createTheme({
         },
         sidebar: {
           ...sidebarBase,
-          background: '#111827',
+          background: '#0f2f2d',
         },
       },
     },

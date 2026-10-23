@@ -2,7 +2,7 @@
  * API Service - Axios instance with interceptors
  */
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL, API_ENDPOINTS } from '../config/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -29,7 +29,7 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && error.config?.url !== API_ENDPOINTS.LOGIN) {
       // Clear auth data and redirect to login
       localStorage.removeItem('access_token');
       localStorage.removeItem('user');
