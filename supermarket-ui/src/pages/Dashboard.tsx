@@ -7,13 +7,13 @@ import {
   Box,
   Button,
   Card,
+  CardActionArea,
   CardContent,
   CardHeader,
   Chip,
-  CircularProgress,
-  Divider,
   IconButton,
   LinearProgress,
+  Skeleton,
   Table,
   TableBody,
   TableCell,
@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import { alpha, useTheme } from '@mui/material/styles';
 import Grid from '@mui/material/Grid';
+import { BarChart, LineChart, PieChart, SparkLineChart } from '@mui/x-charts';
 import {
   TrendingUp,
   ShoppingCart,
@@ -37,6 +38,7 @@ import {
   Refresh,
   ArrowUpward,
   ArrowDownward,
+  ChevronRight,
 } from '@mui/icons-material';
 import api from '../services/api';
 import { API_ENDPOINTS } from '../config/api';
@@ -46,6 +48,12 @@ import PageHeader from '../components/layout/PageHeader';
 
 const formatCurrency = (value: number) =>
   `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+
+const compactNumber = new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 1 });
+const formatCompactCurrency = (value: number | null) => `₹${compactNumber.format(value ?? 0)}`;
+
+const LIST_ROWS = 5;
+const CHART_HEIGHT = 240;
 
 const formatHour = (hour: number) => {
   const suffix = hour < 12 ? 'am' : 'pm';
@@ -101,80 +109,108 @@ interface KpiCardProps {
   color: string;
   subtitle?: string;
   delta?: DeltaProps;
+  trend?: number[];
 }
 
-const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, color, subtitle, delta }) => (
+const KpiCard: React.FC<KpiCardProps> = ({ title, value, icon, color, subtitle, delta, trend }) => (
   <Card sx={{ height: '100%' }}>
-    <CardContent>
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-        <Box sx={{ minWidth: 0 }}>
-          <Typography color="text.secondary" variant="body2" gutterBottom>
-            {title}
-          </Typography>
-          <Typography variant="h5" fontWeight="bold" noWrap>
-            {value}
-          </Typography>
-          {delta && <Delta {...delta} />}
-          {subtitle && (
-            <Typography variant="caption" color="text.secondary" display="block">
-              {subtitle}
-            </Typography>
-          )}
-        </Box>
-        <Box sx={{ p: 1.25, borderRadius: 2, backgroundColor: alpha(color, 0.1), color }}>
+    <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', '&:last-child': { pb: 2 } }}>
+      <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1 }}>
+        <Typography color="text.secondary" variant="body2" fontWeight={600}>
+          {title}
+        </Typography>
+        <Box sx={{ display: 'flex', p: 1, borderRadius: 2, backgroundColor: alpha(color, 0.12), color }}>
           {icon}
         </Box>
       </Box>
+      <Typography variant="h4" noWrap sx={{ mt: 0.5, mb: 0.5 }}>
+        {value}
+      </Typography>
+      {delta && <Delta {...delta} />}
+      {subtitle && (
+        <Typography variant="caption" color="text.secondary" display="block">
+          {subtitle}
+        </Typography>
+      )}
+      {trend && trend.some((v) => v > 0) && (
+        <Box sx={{ mt: 'auto', pt: 1, mx: -1 }}>
+          <SparkLineChart data={trend} height={44} area curve="natural" color={color} showTooltip={false} />
+        </Box>
+      )}
     </CardContent>
   </Card>
 );
 
-interface BarDatum {
-  label: string;
-  value: number;
-  tooltip: string;
-  highlight?: boolean;
+type Tone = 'neutral' | 'warning' | 'error';
+
+interface StatTileProps {
+  title: string;
+  value: string | number;
+  subtitle: string;
+  icon: React.ReactNode;
+  tone?: Tone;
+  onClick?: () => void;
 }
 
-const BarChart: React.FC<{ data: BarDatum[]; color: string; height?: number }> = ({
-  data,
-  color,
-  height = 180,
-}) => {
-  const max = Math.max(...data.map((d) => d.value), 0);
-  if (max === 0) {
-    return (
-      <Box display="flex" alignItems="center" justifyContent="center" height={height}>
-        <Typography variant="body2" color="text.secondary">
-          No sales yet
+const StatTile: React.FC<StatTileProps> = ({ title, value, subtitle, icon, tone = 'neutral', onClick }) => {
+  const toneColor = tone === 'neutral' ? 'text.secondary' : `${tone}.main`;
+  const content = (
+    <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, '&:last-child': { pb: 1.5 } }}>
+      <Box sx={{ display: 'flex', color: toneColor }}>{icon}</Box>
+      <Box sx={{ minWidth: 0, flex: 1 }}>
+        <Typography variant="caption" color="text.secondary" fontWeight={600} noWrap component="div">
+          {title}
+        </Typography>
+        <Typography variant="h6" noWrap color={tone === 'neutral' ? 'text.primary' : toneColor}>
+          {value}
+        </Typography>
+        <Typography variant="caption" color="text.secondary" noWrap component="div">
+          {subtitle}
         </Typography>
       </Box>
-    );
-  }
+      {onClick && <ChevronRight sx={{ color: 'text.disabled' }} />}
+    </CardContent>
+  );
   return (
-    <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 0.75, height: height + 24 }}>
-      {data.map((d) => (
-        <Tooltip key={d.label} title={d.tooltip} arrow>
-          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <Box
-              sx={{
-                width: '100%',
-                height: Math.max((d.value / max) * height, d.value > 0 ? 3 : 0),
-                backgroundColor: color,
-                opacity: d.highlight ? 1 : 0.55,
-                borderRadius: '4px 4px 0 0',
-                transition: 'height 0.3s',
-              }}
-            />
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: 10, mt: 0.5 }}>
-              {d.label}
-            </Typography>
-          </Box>
-        </Tooltip>
-      ))}
-    </Box>
+    <Card
+      sx={(t) => ({
+        height: '100%',
+        ...(tone !== 'neutral' && { borderColor: alpha(t.palette[tone].main, 0.5) }),
+      })}
+    >
+      {onClick ? <CardActionArea onClick={onClick} sx={{ height: '100%' }}>{content}</CardActionArea> : content}
+    </Card>
   );
 };
+
+const EmptyChart: React.FC<{ height?: number; text?: string }> = ({ height = CHART_HEIGHT, text = 'No sales yet' }) => (
+  <Box sx={{ height, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <Typography variant="body2" color="text.secondary">{text}</Typography>
+  </Box>
+);
+
+const ViewAll: React.FC<{ onClick: () => void; label?: string }> = ({ onClick, label = 'View all' }) => (
+  <Button size="small" endIcon={<ChevronRight />} onClick={onClick}>{label}</Button>
+);
+
+const DashboardSkeleton: React.FC = () => (
+  <Grid container spacing={3}>
+    {[0, 1, 2, 3].map((i) => (
+      <Grid key={i} size={{ xs: 12, sm: 6, lg: 3 }}>
+        <Skeleton variant="rounded" height={150} />
+      </Grid>
+    ))}
+    <Grid size={12}>
+      <Skeleton variant="rounded" height={72} />
+    </Grid>
+    <Grid size={{ xs: 12, md: 8 }}>
+      <Skeleton variant="rounded" height={320} />
+    </Grid>
+    <Grid size={{ xs: 12, md: 4 }}>
+      <Skeleton variant="rounded" height={320} />
+    </Grid>
+  </Grid>
+);
 
 const EmptyRow: React.FC<{ colSpan: number; text: string }> = ({ colSpan, text }) => (
   <TableRow>
@@ -211,9 +247,9 @@ const Dashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="400px">
+      <Box>
         <PageHeader title="Dashboard" />
-        <CircularProgress />
+        <DashboardSkeleton />
       </Box>
     );
   }
@@ -237,29 +273,23 @@ const Dashboard: React.FC = () => {
   const activeHours = data.hourly_sales.filter((h) => h.sales > 0).map((h) => h.hour);
   const firstHour = Math.min(8, ...activeHours);
   const lastHour = Math.max(21, ...activeHours);
-  const hourlyBars: BarDatum[] = data.hourly_sales
-    .filter((h) => h.hour >= firstHour && h.hour <= lastHour)
-    .map((h) => ({
-      label: formatHour(h.hour),
-      value: h.sales,
-      tooltip: `${formatHour(h.hour)}: ${formatCurrency(h.sales)} · ${h.transactions} bills`,
-      highlight: h.hour === currentHour,
-    }));
-  const trendBars: BarDatum[] = data.daily_trend.map((d, i) => {
-    const day = new Date(`${d.date}T00:00:00`);
-    const label = i === data.daily_trend.length - 1
-      ? 'Today'
-      : day.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' });
-    return {
-      label,
-      value: d.sales,
-      tooltip: `${label}: ${formatCurrency(d.sales)} · ${d.transactions} bills`,
-      highlight: i === data.daily_trend.length - 1,
-    };
-  });
-  const weekTotal = data.daily_trend.reduce((sum, d) => sum + d.sales, 0);
+  const hours = data.hourly_sales.filter((h) => h.hour >= firstHour && h.hour <= lastHour);
+  const hourLabels = hours.map((h) => formatHour(h.hour));
+  const hasHourlySales = hours.some((h) => h.sales > 0);
+  const trendLabels = data.daily_trend.map((d, i) => (i === data.daily_trend.length - 1
+    ? 'Today'
+    : new Date(`${d.date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric' })));
+  const trendSales = data.daily_trend.map((d) => d.sales);
+  const weekTotal = trendSales.reduce((sum, v) => sum + v, 0);
   const paymentTotal = data.payment_mix.reduce((sum, p) => sum + p.amount, 0);
+  const paymentColor = (mode: string) => {
+    const key = PAYMENT_COLORS[mode];
+    return key ? palette[key].main : palette.grey[500];
+  };
   const newCustomers = data.customers_today.unique - data.customers_today.repeat;
+  const topRevenue = Math.max(...data.top_products.map((p) => p.revenue), 0);
+  const cashierTotal = admin ? admin.cashiers.reduce((sum, c) => sum + c.sales, 0) : 0;
+  const stockAlerts = data.low_stock_count + data.out_of_stock_count;
 
   const kpis: KpiCardProps[] = [
     {
@@ -269,6 +299,7 @@ const Dashboard: React.FC = () => {
       color: palette.success.main,
       delta: { value: data.today.vs_last_week_pct, label: 'vs same time last week' },
       subtitle: `Yesterday by now: ${formatCurrency(data.today.yesterday_sales)}`,
+      trend: trendSales,
     },
     {
       title: 'Bills Today',
@@ -294,47 +325,51 @@ const Dashboard: React.FC = () => {
     },
   ];
 
+  const tiles: StatTileProps[] = [];
   if (admin) {
-    kpis.push(
+    tiles.push(
       {
         title: 'Gross Margin Today (est.)',
         value: formatCurrency(admin.gross_margin),
         icon: <Savings />,
-        color: palette.success.dark,
         subtitle: admin.gross_margin_pct !== null
-          ? `${admin.gross_margin_pct}% of net sales (at current cost price)`
+          ? `${admin.gross_margin_pct}% of net sales (at current cost)`
           : 'Based on current cost price',
+        onClick: () => navigate('/reports'),
       },
       {
         title: 'Stock Value (at cost)',
         value: formatCurrency(admin.stock_value),
         icon: <Inventory />,
-        color: palette.grey[700],
-        subtitle: `${data.total_products} active products · ${data.total_categories} categories`,
+        subtitle: `${data.total_products} products · ${data.total_categories} categories`,
+        onClick: () => navigate('/products'),
       },
       {
         title: 'Stock Alerts',
-        value: data.low_stock_count + data.out_of_stock_count,
+        value: stockAlerts,
         icon: <LocalOffer />,
-        color: palette.warning.main,
+        tone: data.out_of_stock_count > 0 ? 'error' : data.low_stock_count > 0 ? 'warning' : 'neutral',
         subtitle: `${data.out_of_stock_count} out of stock · ${data.low_stock_count} low`,
+        onClick: () => navigate('/inventory'),
       },
     );
   }
-  kpis.push(
+  tiles.push(
     {
       title: 'Returns',
       value: data.returns_today.count,
       icon: <AssignmentReturn />,
-      color: palette.warning.main,
+      tone: data.returns_today.count > 0 ? 'warning' : 'neutral',
       subtitle: `${formatCurrency(data.returns_today.amount)} refunded today`,
+      onClick: () => navigate('/invoices'),
     },
     {
       title: 'Voided Sales',
       value: data.cancelled_today.count,
       icon: <Cancel />,
-      color: palette.error.main,
+      tone: data.cancelled_today.count > 0 ? 'error' : 'neutral',
       subtitle: `${formatCurrency(data.cancelled_today.amount)} today`,
+      onClick: () => navigate('/invoices'),
     },
   );
 
@@ -366,16 +401,48 @@ const Dashboard: React.FC = () => {
 
       <Grid container spacing={3}>
         {kpis.map((kpi) => (
-          <Grid key={kpi.title} size={{ xs: 12, sm: 6, md: 3 }}>
+          <Grid key={kpi.title} size={{ xs: 12, sm: 6, lg: 3 }}>
             <KpiCard {...kpi} />
           </Grid>
         ))}
 
+        <Grid size={12}>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))' }}>
+            {tiles.map((tile) => <StatTile key={tile.title} {...tile} />)}
+          </Box>
+        </Grid>
+
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Sales by Hour" subheader="Today · current hour highlighted" />
-            <CardContent>
-              <BarChart data={hourlyBars} color={palette.primary.main} />
+            <CardContent sx={{ pt: 0 }}>
+              {hasHourlySales ? (
+                <BarChart
+                  height={CHART_HEIGHT}
+                  hideLegend
+                  borderRadius={4}
+                  grid={{ horizontal: true }}
+                  margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
+                  xAxis={[{
+                    scaleType: 'band',
+                    data: hourLabels,
+                    colorMap: {
+                      type: 'ordinal',
+                      values: hourLabels,
+                      colors: hours.map((h) => (h.hour === currentHour
+                        ? palette.primary.main
+                        : alpha(palette.primary.main, 0.45))),
+                    },
+                  }]}
+                  yAxis={[{ valueFormatter: formatCompactCurrency, width: 56 }]}
+                  series={[{
+                    data: hours.map((h) => h.sales),
+                    label: 'Sales',
+                    valueFormatter: (v, { dataIndex }) =>
+                      `${formatCurrency(v ?? 0)} · ${hours[dataIndex]?.transactions ?? 0} bills`,
+                  }]}
+                />
+              ) : <EmptyChart />}
             </CardContent>
           </Card>
         </Grid>
@@ -383,42 +450,57 @@ const Dashboard: React.FC = () => {
         <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Payment Mix" subheader="Today" />
-            <CardContent>
-              {data.payment_mix.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  No payments yet
-                </Typography>
-              )}
-              {data.payment_mix.map((p) => {
-                const share = paymentTotal ? (p.amount / paymentTotal) * 100 : 0;
-                const paletteKey = PAYMENT_COLORS[p.mode];
-                const color = paletteKey ? palette[paletteKey].main : palette.grey[600];
-                return (
-                  <Box key={p.mode} sx={{ mb: 2 }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                      <Typography variant="body2" fontWeight="medium" sx={{ textTransform: 'uppercase' }}>
-                        {p.mode}
-                      </Typography>
-                      <Typography variant="body2">
-                        {formatCurrency(p.amount)} · {share.toFixed(0)}%
-                      </Typography>
-                    </Box>
-                    <LinearProgress
-                      variant="determinate"
-                      value={share}
-                      sx={{
-                        height: 8,
-                        borderRadius: 4,
-                        backgroundColor: alpha(color, 0.13),
-                        '& .MuiLinearProgress-bar': { backgroundColor: color },
-                      }}
+            <CardContent sx={{ pt: 0 }}>
+              {paymentTotal === 0 ? <EmptyChart text="No payments yet" /> : (
+                <>
+                  <Box sx={{ position: 'relative' }}>
+                    <PieChart
+                      height={180}
+                      hideLegend
+                      margin={8}
+                      series={[{
+                        data: data.payment_mix.map((p) => ({
+                          id: p.mode,
+                          value: p.amount,
+                          label: p.mode.toUpperCase(),
+                          color: paymentColor(p.mode),
+                        })),
+                        innerRadius: 58,
+                        outerRadius: 82,
+                        paddingAngle: 2,
+                        cornerRadius: 4,
+                        valueFormatter: (item) => formatCurrency(item.value),
+                      }]}
                     />
-                    <Typography variant="caption" color="text.secondary">
-                      {p.transactions} bills
-                    </Typography>
+                    <Box
+                      sx={{
+                        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+                      }}
+                    >
+                      <Typography variant="caption" color="text.secondary">Collected</Typography>
+                      <Typography variant="h6">{formatCompactCurrency(paymentTotal)}</Typography>
+                    </Box>
                   </Box>
-                );
-              })}
+                  <Box sx={{ mt: 1 }}>
+                    {data.payment_mix.map((p) => (
+                      <Box key={p.mode} sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 0.5 }}>
+                        <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: paymentColor(p.mode) }} />
+                        <Typography variant="body2" fontWeight={600} sx={{ textTransform: 'uppercase', flex: 1 }}>
+                          {p.mode}
+                          <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1, textTransform: 'none' }}>
+                            {p.transactions} bills
+                          </Typography>
+                        </Typography>
+                        <Typography variant="body2">{formatCurrency(p.amount)}</Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ width: 36, textAlign: 'right' }}>
+                          {Math.round((p.amount / paymentTotal) * 100)}%
+                        </Typography>
+                      </Box>
+                    ))}
+                  </Box>
+                </>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -426,8 +508,27 @@ const Dashboard: React.FC = () => {
         <Grid size={{ xs: 12, md: 8 }}>
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Last 7 Days" subheader={`Total ${formatCurrency(weekTotal)}`} />
-            <CardContent>
-              <BarChart data={trendBars} color={palette.success.main} />
+            <CardContent sx={{ pt: 0 }}>
+              {weekTotal > 0 ? (
+                <LineChart
+                  height={CHART_HEIGHT}
+                  hideLegend
+                  grid={{ horizontal: true }}
+                  margin={{ left: 0, right: 16, top: 8, bottom: 0 }}
+                  xAxis={[{ scaleType: 'point', data: trendLabels }]}
+                  yAxis={[{ valueFormatter: formatCompactCurrency, width: 56 }]}
+                  series={[{
+                    data: trendSales,
+                    label: 'Sales',
+                    area: true,
+                    curve: 'monotoneX',
+                    color: palette.primary.main,
+                    valueFormatter: (v, { dataIndex }) =>
+                      `${formatCurrency(v ?? 0)} · ${data.daily_trend[dataIndex]?.transactions ?? 0} bills`,
+                  }]}
+                  sx={{ '& .MuiAreaElement-root': { fillOpacity: 0.15 } }}
+                />
+              ) : <EmptyChart />}
             </CardContent>
           </Card>
         </Grid>
@@ -435,29 +536,29 @@ const Dashboard: React.FC = () => {
         <Grid size={{ xs: 12, md: 4 }}>
           <Card sx={{ height: '100%' }}>
             <CardHeader title="Customers Today" />
-            <CardContent>
-              <Typography variant="h4" fontWeight="bold">
+            <CardContent sx={{ pt: 0 }}>
+              <Typography variant="h3" fontWeight={700}>
                 {data.customers_today.unique}
               </Typography>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
                 identified customers
               </Typography>
-              <Divider sx={{ my: 2 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">Repeat customers</Typography>
-                <Typography variant="body2" fontWeight="bold">{data.customers_today.repeat}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="body2">New customers</Typography>
-                <Typography variant="body2" fontWeight="bold">{newCustomers}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Bills with mobile number</Typography>
-                <Typography variant="body2" fontWeight="bold">
-                  {data.today_transactions
-                    ? `${Math.round((data.customers_today.identified_bills / data.today_transactions) * 100)}%`
-                    : '—'}
-                </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1 }}>
+                {[
+                  { label: 'Repeat', value: data.customers_today.repeat },
+                  { label: 'New', value: newCustomers },
+                  {
+                    label: 'Bills with mobile',
+                    value: data.today_transactions
+                      ? `${Math.round((data.customers_today.identified_bills / data.today_transactions) * 100)}%`
+                      : '—',
+                  },
+                ].map((s) => (
+                  <Box key={s.label} sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.subtle', textAlign: 'center' }}>
+                    <Typography variant="h6">{s.value}</Typography>
+                    <Typography variant="caption" color="text.secondary">{s.label}</Typography>
+                  </Box>
+                ))}
               </Box>
             </CardContent>
           </Card>
@@ -469,18 +570,28 @@ const Dashboard: React.FC = () => {
             <Table size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ width: 40 }}>#</TableCell>
                   <TableCell>Product</TableCell>
                   <TableCell align="right">Qty</TableCell>
                   <TableCell align="right">Revenue</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {data.top_products.length === 0 && <EmptyRow colSpan={3} text="No sales yet" />}
-                {data.top_products.map((p) => (
+                {data.top_products.length === 0 && <EmptyRow colSpan={4} text="No sales yet" />}
+                {data.top_products.map((p, i) => (
                   <TableRow key={p.product_id}>
-                    <TableCell>{p.product_name}</TableCell>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
+                    <TableCell>
+                      {p.product_name}
+                      <LinearProgress
+                        variant="determinate"
+                        value={topRevenue ? (p.revenue / topRevenue) * 100 : 0}
+                        aria-hidden
+                        sx={{ mt: 0.5, height: 4, borderRadius: 2, maxWidth: 220 }}
+                      />
+                    </TableCell>
                     <TableCell align="right">{p.quantity}</TableCell>
-                    <TableCell align="right">{formatCurrency(p.revenue)}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(p.revenue)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -500,17 +611,21 @@ const Dashboard: React.FC = () => {
                       <TableCell align="right">Bills</TableCell>
                       <TableCell align="right">Sales</TableCell>
                       <TableCell align="right">Avg Bill</TableCell>
+                      <TableCell align="right">Share</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {admin.cashiers.length === 0 && <EmptyRow colSpan={4} text="No sales yet" />}
+                    {admin.cashiers.length === 0 && <EmptyRow colSpan={5} text="No sales yet" />}
                     {admin.cashiers.map((c) => (
                       <TableRow key={c.user_id}>
                         <TableCell>{c.full_name}</TableCell>
                         <TableCell align="right">{c.transactions}</TableCell>
-                        <TableCell align="right">{formatCurrency(c.sales)}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(c.sales)}</TableCell>
                         <TableCell align="right">
                           {formatCurrency(c.transactions ? c.sales / c.transactions : 0)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {cashierTotal ? `${Math.round((c.sales / cashierTotal) * 100)}%` : '—'}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -525,9 +640,12 @@ const Dashboard: React.FC = () => {
                   title="Reorder Needed"
                   subheader={`${data.out_of_stock_count} out of stock · ${data.low_stock_count} low stock`}
                   action={
-                    <Button size="small" onClick={() => navigate('/purchases')}>
-                      Create Purchase
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Button size="small" variant="outlined" onClick={() => navigate('/purchases')}>
+                        Create Purchase
+                      </Button>
+                      <ViewAll onClick={() => navigate('/inventory')} />
+                    </Box>
                   }
                 />
                 <Table size="small">
@@ -540,7 +658,7 @@ const Dashboard: React.FC = () => {
                   </TableHead>
                   <TableBody>
                     {admin.reorder_items.length === 0 && <EmptyRow colSpan={3} text="All items are stocked" />}
-                    {admin.reorder_items.map((p) => (
+                    {admin.reorder_items.slice(0, LIST_ROWS).map((p) => (
                       <TableRow key={p.product_id}>
                         <TableCell>{p.product_name}</TableCell>
                         <TableCell align="right">
@@ -566,11 +684,7 @@ const Dashboard: React.FC = () => {
                     `${admin.expired_count} expired · ${admin.expiring_7_count} within 7 days · ` +
                     `${admin.expiring_30_count} within 30 days`
                   }
-                  action={
-                    <Button size="small" onClick={() => navigate('/products')}>
-                      View Products
-                    </Button>
-                  }
+                  action={<ViewAll onClick={() => navigate('/near-expiry')} />}
                 />
                 <Table size="small">
                   <TableHead>
@@ -584,7 +698,7 @@ const Dashboard: React.FC = () => {
                     {admin.expiring_items.length === 0 && (
                       <EmptyRow colSpan={3} text="Nothing expiring in the next 30 days" />
                     )}
-                    {admin.expiring_items.map((p) => (
+                    {admin.expiring_items.slice(0, LIST_ROWS).map((p) => (
                       <TableRow key={p.product_id}>
                         <TableCell>{p.product_name}</TableCell>
                         <TableCell align="right">{`${p.stock_quantity} ${p.unit_type || ''}`.trim()}</TableCell>
