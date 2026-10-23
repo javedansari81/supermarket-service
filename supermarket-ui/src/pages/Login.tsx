@@ -77,16 +77,13 @@ const Login: React.FC = () => {
             position: 'relative',
             overflow: 'hidden',
             p: 6,
-            color: '#ffffff',
-            background: `linear-gradient(135deg, ${palette.primary.dark} 0%, ${palette.primary.main} 100%)`,
-            ...theme.applyStyles('dark', {
-              background: `linear-gradient(135deg, ${palette.background.paper} 0%, ${palette.primary.dark} 100%)`,
-            }),
+            color: palette.sidebar.text,
+            backgroundColor: palette.sidebar.background,
             '&::before, &::after': {
               content: '""',
               position: 'absolute',
               borderRadius: '50%',
-              backgroundColor: 'rgba(255,255,255,0.06)',
+              backgroundColor: palette.sidebar.hover,
             },
             '&::before': { width: 420, height: 420, top: -120, right: -140 },
             '&::after': { width: 300, height: 300, bottom: -100, left: -80 },
@@ -94,7 +91,7 @@ const Login: React.FC = () => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, position: 'relative' }}>
-          <Store sx={{ fontSize: 36 }} />
+          <Store sx={{ fontSize: 36, color: 'sidebar.selectedText' }} />
           <Typography variant="h5" fontWeight="bold">
             SuperMart
           </Typography>
@@ -104,7 +101,7 @@ const Login: React.FC = () => {
           <Typography variant="h4" sx={{ mb: 2 }}>
             Billing and inventory, all in one place.
           </Typography>
-          <Typography sx={{ opacity: 0.85, mb: 4 }}>
+          <Typography sx={{ color: 'sidebar.textMuted', mb: 4 }}>
             Everything your store needs to sell, stock and grow.
           </Typography>
           {features.map((f) => (
@@ -116,7 +113,8 @@ const Login: React.FC = () => {
                   width: 40,
                   height: 40,
                   borderRadius: 2,
-                  backgroundColor: 'rgba(255,255,255,0.14)',
+                  backgroundColor: 'sidebar.selected',
+                  color: 'sidebar.selectedText',
                 }}
               >
                 {f.icon}
@@ -126,7 +124,7 @@ const Login: React.FC = () => {
           ))}
         </Box>
 
-        <Typography variant="caption" sx={{ position: 'relative', opacity: 0.7 }}>
+        <Typography variant="caption" sx={{ position: 'relative', color: 'sidebar.textMuted' }}>
           © {new Date().getFullYear()} SuperMart
         </Typography>
       </Box>
