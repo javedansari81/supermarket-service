@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Box, Typography, Card, CardContent, Tabs, Tab,
+  Box, Typography, Card, CardContent, Chip, Tabs, Tab,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
   TableSortLabel, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
@@ -40,6 +40,14 @@ const MODE_LABELS: Record<string, string> = { cash: 'Cash', card: 'Card', upi: '
 const modeLabel = (mode: string) => MODE_LABELS[mode] || mode;
 const PROFIT_NAME_LABELS: Record<ProfitGroup, string> = { product: 'Product', category: 'Category', day: 'Date' };
 const profitRowName = (r: ProfitRow) => r.product_name ?? r.category_name ?? r.date ?? '';
+
+const EmptyRow: React.FC<{ colSpan: number }> = ({ colSpan }) => (
+  <TableRow>
+    <TableCell colSpan={colSpan} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+      No sales in this period
+    </TableCell>
+  </TableRow>
+);
 
 const Reports: React.FC = () => {
   const [tab, setTab] = useState(0);
@@ -121,6 +129,20 @@ const Reports: React.FC = () => {
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'stretch', sm: 'center' } }}>
           <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
           <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Today', from: dayjs(), to: dayjs() },
+              { label: 'Last 7 days', from: dayjs().subtract(6, 'day'), to: dayjs() },
+              { label: 'This month', from: dayjs().startOf('month'), to: dayjs() },
+              { label: 'Last month', from: dayjs().subtract(1, 'month').startOf('month'), to: dayjs().subtract(1, 'month').endOf('month') },
+            ].map((r) => {
+              const active = !!fromDate && !!toDate && fromDate.isSame(r.from, 'day') && toDate.isSame(r.to, 'day');
+              return (
+                <Chip key={r.label} label={r.label} clickable color={active ? 'primary' : 'default'}
+                  variant={active ? 'filled' : 'outlined'} onClick={() => { setFromDate(r.from); setToDate(r.to); }} />
+              );
+            })}
+          </Box>
         </Box>
       </Card>
       {salesSummary && (
@@ -128,7 +150,7 @@ const Reports: React.FC = () => {
           <Grid size={{ xs: 12, md: 4 }}>
             <Card><CardContent>
               <Typography color="text.secondary">Net Sales</Typography>
-              <Typography variant="h4">₹{salesSummary.total_sales?.toLocaleString()}</Typography>
+              <Typography variant="h4">₹{salesSummary.total_sales?.toLocaleString('en-IN')}</Typography>
               {!!salesSummary.total_returns && (
                 <Typography variant="caption" color="text.secondary">
                   Gross ₹{salesSummary.gross_sales?.toLocaleString()} − Returns ₹{salesSummary.total_returns.toLocaleString()}
@@ -150,38 +172,50 @@ const Reports: React.FC = () => {
           </Grid>
         </Grid>
       )}
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile sx={{ mb: 2 }}>
+      <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="scrollable" allowScrollButtonsMobile
+        sx={{ mb: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Tab label="Top Products" /><Tab label="Category Sales" /><Tab label="Cashier Performance" /><Tab label="Payment Modes" /><Tab label="Profit" />
       </Tabs>
       {tab === 0 && (
-        <TableContainer component={Paper}>
-          <Table size="small"><TableHead><TableRow><TableCell>Product</TableCell><TableCell>Qty Sold</TableCell><TableCell>Revenue</TableCell></TableRow></TableHead>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small"><TableHead><TableRow>
+            <TableCell sx={{ width: 48 }}>#</TableCell><TableCell>Product</TableCell>
+            <TableCell align="right">Qty Sold</TableCell><TableCell align="right">Revenue</TableCell>
+          </TableRow></TableHead>
             <TableBody>
               {topProducts.map((p, i) => (
-                <TableRow key={i}><TableCell>{p.product_name}</TableCell><TableCell>{p.total_quantity}</TableCell><TableCell>₹{p.total_revenue?.toFixed(2)}</TableCell></TableRow>
+                <TableRow key={i} hover><TableCell sx={{ color: 'text.secondary' }}>{i + 1}</TableCell><TableCell>{p.product_name}</TableCell>
+                  <TableCell align="right">{p.total_quantity}</TableCell><TableCell align="right">₹{p.total_revenue?.toFixed(2)}</TableCell></TableRow>
               ))}
+              {topProducts.length === 0 && <EmptyRow colSpan={4} />}
             </TableBody>
           </Table>
         </TableContainer>
       )}
       {tab === 1 && (
-        <TableContainer component={Paper}>
-          <Table size="small"><TableHead><TableRow><TableCell>Category</TableCell><TableCell>Items Sold</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small"><TableHead><TableRow><TableCell>Category</TableCell>
+            <TableCell align="right">Items Sold</TableCell><TableCell align="right">Total Sales</TableCell></TableRow></TableHead>
             <TableBody>
               {categorySales.map((c, i) => (
-                <TableRow key={i}><TableCell>{c.category_name}</TableCell><TableCell>{c.total_quantity}</TableCell><TableCell>₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>
+                <TableRow key={i} hover><TableCell>{c.category_name}</TableCell>
+                  <TableCell align="right">{c.total_quantity}</TableCell><TableCell align="right">₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>
               ))}
+              {categorySales.length === 0 && <EmptyRow colSpan={3} />}
             </TableBody>
           </Table>
         </TableContainer>
       )}
       {tab === 2 && (
-        <TableContainer component={Paper}>
-          <Table size="small"><TableHead><TableRow><TableCell>Cashier</TableCell><TableCell>Transactions</TableCell><TableCell>Total Sales</TableCell></TableRow></TableHead>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small"><TableHead><TableRow><TableCell>Cashier</TableCell>
+            <TableCell align="right">Transactions</TableCell><TableCell align="right">Total Sales</TableCell></TableRow></TableHead>
             <TableBody>
               {cashierPerf.map((c, i) => (
-                <TableRow key={i}><TableCell>{c.full_name}</TableCell><TableCell>{c.total_transactions}</TableCell><TableCell>₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>
+                <TableRow key={i} hover><TableCell>{c.full_name}</TableCell>
+                  <TableCell align="right">{c.total_transactions}</TableCell><TableCell align="right">₹{c.total_sales?.toFixed(2)}</TableCell></TableRow>
               ))}
+              {cashierPerf.length === 0 && <EmptyRow colSpan={3} />}
             </TableBody>
           </Table>
         </TableContainer>

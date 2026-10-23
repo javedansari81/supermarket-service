@@ -11,6 +11,7 @@ import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -79,8 +80,8 @@ const AuditLogs: React.FC = () => {
   return (
     <Box>
       <PageHeader title="Audit Logs" />
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+      <Card>
+        <ListToolbar>
           <FormControl sx={{ minWidth: 120, flex: { xs: '1 1 calc(50% - 8px)', sm: '0 0 auto' } }}>
             <InputLabel>Action</InputLabel>
             <Select value={action} label="Action" onChange={(e) => setAction(e.target.value)}>
@@ -109,10 +110,9 @@ const AuditLogs: React.FC = () => {
           </FormControl>
           <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
           <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
-        </Box>
-      </Card>
-      <Card>
+        </ListToolbar>
         <DataGrid rows={logs} columns={columns} loading={loading} rowCount={total}
+          initialState={{ columns: { columnVisibilityModel: { ip_address: false } } }}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}

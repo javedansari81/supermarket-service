@@ -3,7 +3,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Button, Card, TextField, IconButton, InputAdornment,
+  Box, Typography, Button, Card, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions, Chip, Divider,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, TablePagination,
   Tabs, Tab,
@@ -14,6 +14,7 @@ import { Search, Refresh, Visibility, Edit, Print, Tune } from '@mui/icons-mater
 import dayjs from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar, RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Customer, CustomerSale, LoyaltyHistory, PaginatedResponse } from '../types';
 import { printReceipt } from '../services/receipt';
@@ -144,29 +145,30 @@ const Customers: React.FC = () => {
     { field: 'customer_name', headerName: 'Name', flex: 1, minWidth: 150 },
     { field: 'customer_gstin', headerName: 'GSTIN', width: 170 },
     { field: 'visits', headerName: 'Visits', width: 80, type: 'number' },
-    { field: 'total_spent', headerName: 'Total Spent', width: 130, renderCell: (p: GridRenderCellParams) => `₹${money(p.value)}` },
+    { field: 'total_spent', headerName: 'Total Spent', width: 130, type: 'number',
+      renderCell: (p: GridRenderCellParams) => `₹${money(p.value)}` },
     { field: 'points_balance', headerName: 'Points', width: 90, type: 'number' },
     { field: 'last_visit', headerName: 'Last Visit', width: 120, renderCell: (p: GridRenderCellParams) => fmtDate(p.value) },
-    { field: 'actions', headerName: 'Actions', width: 100, sortable: false, renderCell: (p: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 100, sortable: false, align: 'right', renderCell: (p: GridRenderCellParams) => (
       <>
-        <IconButton size="small" title="Purchase history" onClick={() => openView(p.row)}><Visibility fontSize="small" /></IconButton>
-        <IconButton size="small" title="Edit" onClick={() => openEdit(p.row)}><Edit fontSize="small" /></IconButton>
+        <RowAction title="Purchase history" icon={<Visibility fontSize="small" />} onClick={() => openView(p.row)} />
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => openEdit(p.row)} />
       </>
     )},
   ];
 
   return (
     <Box>
-      <PageHeader title="Customers" />
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
+      <PageHeader
+        title="Customers"
+        actions={<RowAction title="Refresh" icon={<Refresh />} onClick={fetchCustomers} />}
+      />
+      <Card>
+        <ListToolbar>
           <TextField placeholder="Search by mobile or name..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
-          <IconButton onClick={fetchCustomers}><Refresh /></IconButton>
-        </Box>
-      </Card>
-      <Card>
+        </ListToolbar>
         <DataGrid rows={customers} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
@@ -181,10 +183,19 @@ const Customers: React.FC = () => {
         <DialogContent>
           {viewCustomer && (
             <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid size={{ xs: 6, sm: 3 }}><Typography variant="caption" color="text.secondary">Visits</Typography><Typography variant="h6">{viewCustomer.visits}</Typography></Grid>
-              <Grid size={{ xs: 6, sm: 3 }}><Typography variant="caption" color="text.secondary">Total Spent</Typography><Typography variant="h6">₹{money(viewCustomer.total_spent)}</Typography></Grid>
-              <Grid size={{ xs: 6, sm: 3 }}><Typography variant="caption" color="text.secondary">First Visit</Typography><Typography variant="h6">{fmtDate(viewCustomer.first_visit) || '-'}</Typography></Grid>
-              <Grid size={{ xs: 6, sm: 3 }}><Typography variant="caption" color="text.secondary">Last Visit</Typography><Typography variant="h6">{fmtDate(viewCustomer.last_visit) || '-'}</Typography></Grid>
+              {[
+                { label: 'Visits', value: viewCustomer.visits },
+                { label: 'Total Spent', value: `₹${money(viewCustomer.total_spent)}` },
+                { label: 'First Visit', value: fmtDate(viewCustomer.first_visit) || '-' },
+                { label: 'Last Visit', value: fmtDate(viewCustomer.last_visit) || '-' },
+              ].map((s) => (
+                <Grid key={s.label} size={{ xs: 6, sm: 3 }}>
+                  <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: 'background.subtle', height: '100%' }}>
+                    <Typography variant="caption" color="text.secondary">{s.label}</Typography>
+                    <Typography variant="h6">{s.value}</Typography>
+                  </Box>
+                </Grid>
+              ))}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Typography variant="caption" color="text.secondary">Loyalty Points</Typography>
                 <Typography variant="h6">
@@ -280,14 +291,12 @@ const Customers: React.FC = () => {
                     <TableCell sx={{ textTransform: 'uppercase' }}>{s.payment_mode || '-'}</TableCell>
                     <TableCell align="right">₹{money(s.total_amount)}</TableCell>
                     <TableCell>
-                      <Chip size="small" label={s.status} color={s.status === 'completed' ? 'success' : 'default'} />
+                      <Chip size="small" label={humanize(s.status)} color={s.status === 'completed' ? 'success' : 'default'} />
                     </TableCell>
                     <TableCell>
                       {s.invoice_id && (
-                        <IconButton size="small" title="Reprint"
-                          onClick={() => printReceipt(s.invoice_id!).catch(() => toast.error('Failed to print invoice'))}>
-                          <Print fontSize="small" />
-                        </IconButton>
+                        <RowAction title="Reprint" icon={<Print fontSize="small" />}
+                          onClick={() => printReceipt(s.invoice_id!).catch(() => toast.error('Failed to print invoice'))} />
                       )}
                     </TableCell>
                   </TableRow>

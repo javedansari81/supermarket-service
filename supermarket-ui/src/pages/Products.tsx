@@ -7,7 +7,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, Divider, Autocomplete, Typography, Collapse, createFilterOptions,
-  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell, Tooltip,
+  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -18,6 +18,7 @@ import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
+import { ListToolbar, RowAction, StatusChip } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { Product, Category, GstItem, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
@@ -465,14 +466,14 @@ const Products: React.FC = () => {
       return loc ? <span title={formatLocations(params.row.locations)}>{loc.location_code}</span> : '-';
     }},
     { field: 'status', headerName: 'Status', width: 90, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+      <StatusChip status={params.value} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 130, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 120, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" title="View" onClick={() => setViewProduct(params.row)}><Visibility fontSize="small" /></IconButton>
-        <IconButton size="small" title="Edit" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
+        <RowAction title="View" icon={<Visibility fontSize="small" />} onClick={() => setViewProduct(params.row)} />
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => handleOpenDialog(params.row)} />
         {isAdmin && (
-          <IconButton size="small" title="Delete" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+          <RowAction title="Delete" icon={<Delete fontSize="small" />} color="error" onClick={() => handleDelete(params.row.id)} />
         )}
       </>
     )},
@@ -480,28 +481,27 @@ const Products: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Products" />
+      <PageHeader
+        title="Products"
+        actions={
+          <>
+            <RowAction title="Refresh" icon={<Refresh />} onClick={fetchProducts} />
+            {isAdmin && (
+              <>
+                <RowAction title="Import products from an Excel or CSV file" icon={<UploadFile />} color="primary" onClick={openImport} />
+                <RowAction title="Export scale file: loose items with PLU and rate, for the weighing scale"
+                  icon={<FileDownload />} color="primary" onClick={handleScaleExport} />
+              </>
+            )}
+          </>
+        }
+      />
 
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 2 }}>
+      <Card>
+        <ListToolbar sx={{ flexDirection: 'column', alignItems: 'stretch' }}>
           <TextField size="small" placeholder="Search by name, code or barcode..." value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }}
-            sx={{ flex: 1 }} />
-          <Tooltip title="Refresh">
-            <IconButton onClick={fetchProducts} aria-label="Refresh"><Refresh /></IconButton>
-          </Tooltip>
-          {isAdmin && (
-            <>
-              <Tooltip title="Import products from an Excel or CSV file">
-                <IconButton color="primary" onClick={openImport} aria-label="Import products"><UploadFile /></IconButton>
-              </Tooltip>
-              <Tooltip title="Export scale file: loose items with PLU and rate, for loading into the weighing scale">
-                <IconButton color="primary" onClick={handleScaleExport} aria-label="Export scale file"><FileDownload /></IconButton>
-              </Tooltip>
-            </>
-          )}
-        </Box>
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, sm: 6, md: 3 }}>
             <SearchableSelect label="Location" size="small" value={locationFilter} sx={{ width: '100%' }}
@@ -547,10 +547,9 @@ const Products: React.FC = () => {
             </FormControl>
           </Grid>
         </Grid>
-      </Card>
-
-      <Card>
+        </ListToolbar>
         <DataGrid rows={products} columns={columns} loading={loading} rowCount={total}
+          initialState={{ columns: { columnVisibilityModel: { barcode: false, plu_code: false } } }}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
           onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}

@@ -226,7 +226,7 @@ const Barcode: React.FC = () => {
 
   return (
     <Box>
-      <PageHeader title="Barcode Management" />
+      <PageHeader title="Barcode Labels" />
       <Paper sx={{ mb: 3 }}>
         <Tabs value={tab} onChange={(_, v) => setTab(v)} variant="fullWidth">
           <Tab icon={<LocalOffer />} iconPosition="start" label="Manufacturer Labels" />
@@ -238,9 +238,8 @@ const Barcode: React.FC = () => {
           {tab === 0 ? (
             <Card>
               <CardContent>
-                <Typography variant="h6">Manufacturer Labels</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  Reprint the maker's barcode when a pack's label is damaged. Add products to the list, then print them together.
+                  Reprint the maker's barcode when a pack's label is damaged.
                 </Typography>
                 <Grid container spacing={2} alignItems="center">
                   <Grid size={{ xs: 12, sm: 6 }}>
@@ -263,7 +262,8 @@ const Barcode: React.FC = () => {
                         {printItems.map((item, index) => (
                           <TableRow key={index}><TableCell>{item.product_name}</TableCell><TableCell><Chip label={item.barcode} size="small" /></TableCell>
                             <TableCell>₹{item.mrp.toFixed(2)}</TableCell><TableCell>{item.quantity}</TableCell>
-                            <TableCell><IconButton size="small" onClick={() => handleRemoveItem(index)}><Delete fontSize="small" /></IconButton></TableCell></TableRow>
+                            <TableCell align="right"><IconButton size="small" color="error" aria-label="Remove"
+                              onClick={() => handleRemoveItem(index)}><Delete fontSize="small" /></IconButton></TableCell></TableRow>
                         ))}
                         <TableRow><TableCell colSpan={3}><strong>Total Labels</strong></TableCell><TableCell colSpan={2}><strong>{getTotalLabels()}</strong></TableCell></TableRow>
                       </TableBody>
@@ -271,7 +271,7 @@ const Barcode: React.FC = () => {
                   </TableContainer>
                 ) : (
                   <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                    No products added yet.
+                    No products added yet. Pick a product above and add it to the list.
                   </Typography>
                 )}
               </CardContent>
@@ -279,9 +279,8 @@ const Barcode: React.FC = () => {
           ) : (
             <Card>
               <CardContent>
-                <Typography variant="h6">Own Packed Labels</Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                  For items you pack in the store (e.g. Toor Dal 1 kg). Pack size, MRP and barcode come from the product. Add products to the list, then print them together.
+                  For items packed in the store (e.g. Toor Dal 1 kg). Pack size, MRP and barcode come from the product.
                 </Typography>
                 <Grid container spacing={2}>
                   <Grid size={12}>
@@ -332,7 +331,8 @@ const Barcode: React.FC = () => {
                             <TableCell>₹{item.mrp.toFixed(2)}</TableCell>
                             <TableCell>{item.packed_date}{item.best_before_date ? ` / ${item.best_before_date}` : ''}</TableCell>
                             <TableCell>{item.copies}</TableCell>
-                            <TableCell><IconButton size="small" onClick={() => setPackedItems(packedItems.filter((_, i) => i !== index))}>
+                            <TableCell align="right"><IconButton size="small" color="error" aria-label="Remove"
+                              onClick={() => setPackedItems(packedItems.filter((_, i) => i !== index))}>
                               <Delete fontSize="small" /></IconButton></TableCell>
                           </TableRow>
                         ))}
@@ -342,7 +342,7 @@ const Barcode: React.FC = () => {
                   </TableContainer>
                 ) : (
                   <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 3 }}>
-                    No products added yet.
+                    No products added yet. Pick a product above and add it to the list.
                   </Typography>
                 )}
               </CardContent>
@@ -350,7 +350,7 @@ const Barcode: React.FC = () => {
           )}
         </Grid>
         <Grid size={{ xs: 12, md: 4 }}>
-          <Card>
+          <Card sx={{ position: { md: 'sticky' }, top: { md: 88 } }}>
             <CardContent>
               <Typography variant="h6" gutterBottom>Print</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Label size: {LABEL_SIZE.label}</Typography>

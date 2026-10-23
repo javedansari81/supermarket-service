@@ -210,6 +210,7 @@ const theme = createTheme({
           borderColor: (theme.vars || theme).palette.divider,
           '--DataGrid-rowBorderColor': (theme.vars || theme).palette.divider,
           '--DataGrid-containerBackground': (theme.vars || theme).palette.background.subtle,
+          '.MuiCard-root > &': { border: 0 },
         }),
         columnHeaderTitle: {
           fontWeight: 600,

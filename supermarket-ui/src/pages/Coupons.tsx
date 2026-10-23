@@ -3,13 +3,14 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, CardContent, TextField, IconButton, Typography, Switch, FormControlLabel,
+  Alert, Box, Button, Card, TextField, Typography, Switch, FormControlLabel,
   Dialog, DialogTitle, DialogContent, DialogActions, Chip, Table, TableHead, TableBody, TableRow,
-  TableCell, ToggleButton, ToggleButtonGroup,
+  TableCell, TableContainer, ToggleButton, ToggleButtonGroup,
 } from '@mui/material';
 import { Edit, Delete, Add } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar, RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 
@@ -143,23 +144,23 @@ const Coupons: React.FC = () => {
     <Box>
       <PageHeader title="Coupons" />
 
+      <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+        One coupon per bill, entered at checkout. On each line the best of coupon, offer or near-expiry
+        discount applies, and never below purchase cost.
+      </Alert>
+
       <Card>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-            <ToggleButtonGroup size="small" exclusive value={statusFilter} onChange={(_, v) => v != null && setStatusFilter(v)}>
-              <ToggleButton value="">All</ToggleButton>
-              <ToggleButton value="running">Running</ToggleButton>
-              <ToggleButton value="upcoming">Upcoming</ToggleButton>
-              <ToggleButton value="ended">Ended</ToggleButton>
-              <ToggleButton value="inactive">Off</ToggleButton>
-            </ToggleButtonGroup>
-            <Button variant="contained" startIcon={<Add />} onClick={openNew}>New coupon</Button>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            The cashier enters the code at checkout; one coupon per bill. On each bill line the coupon, offer and
-            near-expiry discount are compared and the one saving the customer most applies. A coupon never takes
-            a line below its purchase cost, and does not apply to items with no purchase cost.
-          </Typography>
+        <ListToolbar sx={{ justifyContent: 'space-between' }}>
+          <ToggleButtonGroup size="small" exclusive value={statusFilter} onChange={(_, v) => v != null && setStatusFilter(v)}>
+            <ToggleButton value="">All</ToggleButton>
+            <ToggleButton value="running">Running</ToggleButton>
+            <ToggleButton value="upcoming">Upcoming</ToggleButton>
+            <ToggleButton value="ended">Ended</ToggleButton>
+            <ToggleButton value="inactive">Off</ToggleButton>
+          </ToggleButtonGroup>
+          <Button variant="contained" startIcon={<Add />} onClick={openNew}>New coupon</Button>
+        </ListToolbar>
+        <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -190,18 +191,22 @@ const Coupons: React.FC = () => {
                   <TableCell>
                     <Chip size="small" color={STATUS_COLOR[c.status]} label={c.status === 'inactive' ? 'Off' : c.status[0].toUpperCase() + c.status.slice(1)} />
                   </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => openEdit(c)}><Edit fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => deleteCoupon(c)}><Delete fontSize="small" /></IconButton>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => openEdit(c)} />
+                    <RowAction title="Delete" icon={<Delete fontSize="small" />} color="error" onClick={() => deleteCoupon(c)} />
                   </TableCell>
                 </TableRow>
               ))}
               {coupons.length === 0 && (
-                <TableRow><TableCell colSpan={8} align="center">No coupons</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    {statusFilter ? 'No coupons with this status' : 'No coupons yet. Create one with New coupon.'}
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
-        </CardContent>
+        </TableContainer>
       </Card>
 
       <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth="sm" fullWidth>

@@ -3,13 +3,14 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, CardContent, TextField, IconButton, Typography, Switch, FormControlLabel,
+  Alert, Box, Button, Card, TextField, IconButton, Switch, FormControlLabel,
   Dialog, DialogTitle, DialogContent, DialogActions, Chip, Autocomplete, Table, TableHead,
-  TableBody, TableRow, TableCell, ToggleButton, ToggleButtonGroup, Tooltip,
+  TableBody, TableRow, TableCell, TableContainer, ToggleButton, ToggleButtonGroup, Tooltip,
 } from '@mui/material';
 import { Edit, Delete, Add, WarningAmber } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar, RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Product } from '../types';
 import toast from 'react-hot-toast';
@@ -170,23 +171,23 @@ const Offers: React.FC = () => {
     <Box>
       <PageHeader title="Offers" />
 
+      <Alert severity="info" variant="outlined" sx={{ mb: 2 }}>
+        Running offers apply automatically at billing. On each line the best of offer, coupon or near-expiry
+        discount applies. ₹ off on a loose item is per selling unit (e.g. per kg).
+      </Alert>
+
       <Card>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1, mb: 1 }}>
-            <ToggleButtonGroup size="small" exclusive value={statusFilter} onChange={(_, v) => v != null && setStatusFilter(v)}>
-              <ToggleButton value="">All</ToggleButton>
-              <ToggleButton value="running">Running</ToggleButton>
-              <ToggleButton value="upcoming">Upcoming</ToggleButton>
-              <ToggleButton value="ended">Ended</ToggleButton>
-              <ToggleButton value="inactive">Off</ToggleButton>
-            </ToggleButtonGroup>
-            <Button variant="contained" startIcon={<Add />} onClick={openNew}>New offer</Button>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Running offers apply at billing automatically and the cashier cannot remove them. On a bill line the offer,
-            near-expiry discount and coupon are compared; the one saving the customer most applies.
-            ₹ off on a loose item is per kg (or its selling unit).
-          </Typography>
+        <ListToolbar sx={{ justifyContent: 'space-between' }}>
+          <ToggleButtonGroup size="small" exclusive value={statusFilter} onChange={(_, v) => v != null && setStatusFilter(v)}>
+            <ToggleButton value="">All</ToggleButton>
+            <ToggleButton value="running">Running</ToggleButton>
+            <ToggleButton value="upcoming">Upcoming</ToggleButton>
+            <ToggleButton value="ended">Ended</ToggleButton>
+            <ToggleButton value="inactive">Off</ToggleButton>
+          </ToggleButtonGroup>
+          <Button variant="contained" startIcon={<Add />} onClick={openNew}>New offer</Button>
+        </ListToolbar>
+        <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -197,25 +198,29 @@ const Offers: React.FC = () => {
             <TableBody>
               {offers.map(o => (
                 <TableRow key={o.id} hover>
-                  <TableCell>{o.name}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{o.name}</TableCell>
                   <TableCell>{showDate(o.start_date)}</TableCell>
                   <TableCell>{showDate(o.end_date)}</TableCell>
                   <TableCell align="right">{o.item_count}</TableCell>
                   <TableCell>
                     <Chip size="small" color={STATUS_COLOR[o.status]} label={o.status === 'inactive' ? 'Off' : o.status[0].toUpperCase() + o.status.slice(1)} />
                   </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => openEdit(o)}><Edit fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => deleteOffer(o)}><Delete fontSize="small" /></IconButton>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => openEdit(o)} />
+                    <RowAction title="Delete" icon={<Delete fontSize="small" />} color="error" onClick={() => deleteOffer(o)} />
                   </TableCell>
                 </TableRow>
               ))}
               {offers.length === 0 && (
-                <TableRow><TableCell colSpan={6} align="center">No offers</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={6} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                    {statusFilter ? 'No offers with this status' : 'No offers yet. Create one with New offer.'}
+                  </TableCell>
+                </TableRow>
               )}
             </TableBody>
           </Table>
-        </CardContent>
+        </TableContainer>
       </Card>
 
       <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth="md" fullWidth>

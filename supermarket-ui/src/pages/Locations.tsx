@@ -3,9 +3,9 @@
  */
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Box, Button, Card, TextField, IconButton, InputAdornment,
+  Box, Button, Card, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Chip, Typography, Autocomplete,
+  FormControl, InputLabel, Select, MenuItem, Typography, Autocomplete,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
@@ -14,6 +14,7 @@ import { Edit, Block, Search, Inventory2 } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import { ListToolbar, RowAction, StatusChip, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { StoreLocation, LocationProduct, LocationType, LocationSuggestion, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -167,22 +168,21 @@ const Locations: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
-    { field: 'location_code', headerName: 'Code', width: 120 },
+    { field: 'location_code', headerName: 'Code', width: 120,
+      renderCell: (params: GridRenderCellParams) => <strong>{params.value}</strong> },
     { field: 'location_type', headerName: 'Type', width: 130,
       valueGetter: (value: LocationType) => LOCATION_TYPES.find((t) => t.value === value)?.label ?? value },
     { field: 'floor', headerName: 'Floor', width: 100 },
-    { field: 'rack_no', headerName: 'Rack', width: 100 },
-    { field: 'shelf_no', headerName: 'Shelf', width: 90 },
     { field: 'description', headerName: 'Description', flex: 1, minWidth: 140 },
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+      <StatusChip status={params.value} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 140, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 130, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" title="Products here" onClick={() => handleViewProducts(params.row)}><Inventory2 fontSize="small" /></IconButton>
-        <IconButton size="small" title="Edit" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" title="Deactivate" color="error" disabled={params.row.status !== 'active'}
-          onClick={() => handleDeactivate(params.row)}><Block fontSize="small" /></IconButton>
+        <RowAction title="Products here" icon={<Inventory2 fontSize="small" />} onClick={() => handleViewProducts(params.row)} />
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => handleOpenDialog(params.row)} />
+        <RowAction title="Deactivate" icon={<Block fontSize="small" />} color="error"
+          disabled={params.row.status !== 'active'} onClick={() => handleDeactivate(params.row)} />
       </>
     )},
   ];
@@ -194,13 +194,12 @@ const Locations: React.FC = () => {
     <Box>
       <PageHeader title="Store Locations" />
 
-      <Card sx={{ mb: 2, p: 2 }}>
-        <TextField fullWidth placeholder="Search by code or description..." value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
-      </Card>
-
       <Card>
+        <ListToolbar>
+          <TextField fullWidth placeholder="Search by code or description..." value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
+        </ListToolbar>
         <DataGrid rows={locations} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
@@ -289,7 +288,7 @@ const Locations: React.FC = () => {
                   {locationProducts.map((p) => (
                     <TableRow key={`${p.product_id}-${p.role}`}>
                       <TableCell>{p.product_no}</TableCell><TableCell>{p.product_name}</TableCell>
-                      <TableCell>{p.role}{p.is_primary ? ' (primary)' : ''}</TableCell>
+                      <TableCell>{humanize(p.role)}{p.is_primary ? ' (primary)' : ''}</TableCell>
                       <TableCell align="right">{Number(p.stock_quantity)}</TableCell>
                     </TableRow>
                   ))}

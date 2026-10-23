@@ -3,14 +3,15 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, CardContent, TextField, IconButton, Typography, Switch, FormControlLabel,
+  Box, Button, Card, CardHeader, TextField, IconButton, Typography, Switch, FormControlLabel,
   Dialog, DialogTitle, DialogContent, DialogActions, Chip, Autocomplete, Table, TableHead,
-  TableBody, TableRow, TableCell, ToggleButton, ToggleButtonGroup, Alert,
+  TableBody, TableRow, TableCell, TableContainer, ToggleButton, ToggleButtonGroup, Alert,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Edit, Delete, Add } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Category, Product } from '../types';
 import toast from 'react-hot-toast';
@@ -186,16 +187,19 @@ const NearExpiry: React.FC = () => {
   };
 
   const ruleRows = (scope: 'category' | 'product', list: Rule[]) => list.map(rule => (
-    <TableRow key={rule.id}>
-      <TableCell>{scope === 'category' ? rule.category_name : rule.product_name}</TableCell>
+    <TableRow key={rule.id} hover>
+      <TableCell>
+        {scope === 'category' ? rule.category_name : rule.product_name}
+        <Chip size="small" variant="outlined" label={scope === 'category' ? 'Category' : 'Product'} sx={{ ml: 1 }} />
+      </TableCell>
       <TableCell>{tierText(rule.tiers)}</TableCell>
-      <TableCell align="right">
-        <IconButton size="small" onClick={() => setEditing({
+      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+        <RowAction title="Edit tiers" icon={<Edit fontSize="small" />} onClick={() => setEditing({
           scope, isNew: false, tiers: copyTiers(rule.tiers),
           id: (scope === 'category' ? rule.category_id : rule.product_id) ?? undefined,
           name: (scope === 'category' ? rule.category_name : rule.product_name) ?? undefined,
-        })}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" color="error" onClick={() => deleteRule(scope, rule)}><Delete fontSize="small" /></IconButton>
+        })} />
+        <RowAction title="Remove rule" icon={<Delete fontSize="small" />} color="error" onClick={() => deleteRule(scope, rule)} />
       </TableCell>
     </TableRow>
   ));
@@ -205,42 +209,43 @@ const NearExpiry: React.FC = () => {
       <PageHeader title="Near Expiry" />
 
       <Card sx={{ mb: 2 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
-            <FormControlLabel label="Apply near-expiry discount tiers at billing"
+        <CardHeader
+          title="Discount rules"
+          subheader="Product rule beats category rule, which beats the store default. Expired stock cannot be billed."
+          action={
+            <FormControlLabel label="Apply at billing" labelPlacement="start"
               control={<Switch checked={!!rules?.enabled} onChange={(e) => toggleEnabled(e.target.checked)} />} />
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button size="small" startIcon={<Add />} onClick={() => setEditing({ scope: 'category', isNew: true, tiers: [{ days_left: 3, percent: 10 }] })}>
-                Category rule
-              </Button>
-              <Button size="small" startIcon={<Add />} onClick={() => setEditing({ scope: 'product', isNew: true, tiers: [{ days_left: 3, percent: 10 }] })}>
-                Product rule
-              </Button>
-            </Box>
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            A product rule overrides its category rule, which overrides the store default. Expired stock cannot be billed.
-            The cashier can remove the discount on a bill line; a higher manual discount wins.
-          </Typography>
+          }
+        />
+        <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow><TableCell>Applies to</TableCell><TableCell>Tiers (days left → % off)</TableCell><TableCell /></TableRow>
             </TableHead>
             <TableBody>
-              <TableRow>
+              <TableRow hover>
                 <TableCell><b>Store default</b></TableCell>
                 <TableCell>{rules ? tierText(rules.default.tiers) : ''}</TableCell>
                 <TableCell align="right">
-                  <IconButton size="small" disabled={!rules} onClick={() => rules && setEditing({
-                    scope: 'default', isNew: false, tiers: copyTiers(rules.default.tiers),
-                  })}><Edit fontSize="small" /></IconButton>
+                  <RowAction title="Edit tiers" icon={<Edit fontSize="small" />} disabled={!rules}
+                    onClick={() => rules && setEditing({
+                      scope: 'default', isNew: false, tiers: copyTiers(rules.default.tiers),
+                    })} />
                 </TableCell>
               </TableRow>
               {rules && ruleRows('category', rules.categories)}
               {rules && ruleRows('product', rules.products)}
             </TableBody>
           </Table>
-        </CardContent>
+        </TableContainer>
+        <Box sx={{ display: 'flex', gap: 1, p: 1.5 }}>
+          <Button size="small" startIcon={<Add />} onClick={() => setEditing({ scope: 'category', isNew: true, tiers: [{ days_left: 3, percent: 10 }] })}>
+            Category rule
+          </Button>
+          <Button size="small" startIcon={<Add />} onClick={() => setEditing({ scope: 'product', isNew: true, tiers: [{ days_left: 3, percent: 10 }] })}>
+            Product rule
+          </Button>
+        </Box>
       </Card>
 
       {rules && !rules.enabled && (
@@ -250,13 +255,15 @@ const NearExpiry: React.FC = () => {
       <Grid container spacing={2}>
         <Grid size={{ xs: 12, lg: 7 }}>
           <Card>
-            <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                <Typography variant="h6">Packed stock expiring soon</Typography>
+            <CardHeader
+              title="Packed stock expiring soon"
+              action={
                 <ToggleButtonGroup size="small" exclusive value={days} onChange={(_, v) => v != null && setDays(v)}>
                   {[7, 15, 30, 90].map(d => <ToggleButton key={d} value={d}>{d} days</ToggleButton>)}
                 </ToggleButtonGroup>
-              </Box>
+              }
+            />
+            <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
@@ -293,19 +300,22 @@ const NearExpiry: React.FC = () => {
                     </TableRow>
                   ))}
                   {batches.length === 0 && (
-                    <TableRow><TableCell colSpan={5} align="center">No packed stock expires within {days} days</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                        No packed stock expires within {days} days
+                      </TableCell>
+                    </TableRow>
                   )}
                 </TableBody>
               </Table>
-            </CardContent>
+            </TableContainer>
           </Card>
         </Grid>
 
         <Grid size={{ xs: 12, lg: 5 }}>
           <Card>
-            <CardContent>
-              <Typography variant="h6">Loose items: today's markdown</Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>Ends at midnight. Leave empty or 0 to remove.</Typography>
+            <CardHeader title="Loose items: today's markdown" subheader="Ends at midnight. Leave empty or 0 to remove." />
+            <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow><TableCell>Item</TableCell><TableCell align="right">Price</TableCell><TableCell>% off</TableCell></TableRow>
@@ -332,11 +342,13 @@ const NearExpiry: React.FC = () => {
                     </TableRow>
                   ))}
                   {loose.length === 0 && (
-                    <TableRow><TableCell colSpan={3} align="center">No loose items in stock</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={3} align="center" sx={{ py: 4, color: 'text.secondary' }}>No loose items in stock</TableCell>
+                    </TableRow>
                   )}
                 </TableBody>
               </Table>
-            </CardContent>
+            </TableContainer>
           </Card>
         </Grid>
       </Grid>

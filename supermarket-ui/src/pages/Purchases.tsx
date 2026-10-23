@@ -17,6 +17,7 @@ import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
+import { RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, Product, PaginatedResponse, PutawayItem } from '../types';
 import toast from 'react-hot-toast';
@@ -458,23 +459,25 @@ const Purchases: React.FC = () => {
 
   const columns: GridColDef[] = [
     { field: 'purchase_no', headerName: 'Purchase No', width: 130 },
-    { field: 'purchase_date', headerName: 'Date', width: 110 },
+    { field: 'purchase_date', headerName: 'Date', width: 110,
+      valueFormatter: (value: string) => (value ? dayjs(value).format('DD/MM/YYYY') : '') },
     { field: 'supplier_name', headerName: 'Supplier', flex: 1, minWidth: 150 },
     { field: 'supplier_invoice_no', headerName: 'Supplier Bill No', width: 140 },
-    { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => money(params.value) },
-    { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={statusColor(params.value)} />
+    { field: 'total_amount', headerName: 'Amount', width: 120, type: 'number',
+      renderCell: (params: GridRenderCellParams) => <strong>{money(params.value)}</strong> },
+    { field: 'status', headerName: 'Status', width: 110, renderCell: (params: GridRenderCellParams) => (
+      <Chip label={humanize(params.value)} size="small" color={statusColor(params.value)} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 165, sortable: false, renderCell: (params: GridRenderCellParams) => {
+    { field: 'actions', headerName: '', width: 160, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => {
       const cancelled = params.row.status === 'cancelled';
       return (
         <Box>
-          <IconButton size="small" title="View" onClick={() => handleView(params.row.id)}><Visibility fontSize="small" /></IconButton>
-          <IconButton size="small" title={params.row.bill_file_name ? `Open bill (${params.row.bill_file_name})` : 'No bill uploaded'}
-            disabled={!params.row.bill_file_name} onClick={() => handleBillOpen(params.row.id)}><AttachFile fontSize="small" /></IconButton>
-          <IconButton size="small" title="Edit details" disabled={cancelled} onClick={() => handleEditOpen(params.row.id)}><Edit fontSize="small" /></IconButton>
-          <IconButton size="small" title="Cancel purchase" color="error" disabled={cancelled}
-            onClick={() => { setCancelReason(''); setCancelPurchase(params.row as Purchase); }}><Block fontSize="small" /></IconButton>
+          <RowAction title="View" icon={<Visibility fontSize="small" />} onClick={() => handleView(params.row.id)} />
+          <RowAction title={params.row.bill_file_name ? `Open bill (${params.row.bill_file_name})` : 'No bill uploaded'}
+            icon={<AttachFile fontSize="small" />} disabled={!params.row.bill_file_name} onClick={() => handleBillOpen(params.row.id)} />
+          <RowAction title="Edit details" icon={<Edit fontSize="small" />} disabled={cancelled} onClick={() => handleEditOpen(params.row.id)} />
+          <RowAction title="Cancel purchase" icon={<Block fontSize="small" />} color="error" disabled={cancelled}
+            onClick={() => { setCancelReason(''); setCancelPurchase(params.row as Purchase); }} />
         </Box>
       );
     }},

@@ -3,9 +3,9 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Chip, Autocomplete, createFilterOptions,
+  FormControl, InputLabel, Select, MenuItem, Autocomplete, createFilterOptions,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -13,6 +13,7 @@ import { Edit, Delete } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import { RowAction, StatusChip } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Category, GstItem, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -103,18 +104,17 @@ const Categories: React.FC = () => {
   };
 
   const columns: GridColDef[] = [
-    { field: 'id', headerName: 'ID', width: 70 },
     { field: 'category_name', headerName: 'Category Name', flex: 1, minWidth: 200 },
     { field: 'description', headerName: 'Description', flex: 1, minWidth: 200 },
-    { field: 'gst_item_ids', headerName: 'GST Items', width: 100, sortable: false,
+    { field: 'gst_item_ids', headerName: 'GST Items', width: 100, sortable: false, type: 'number',
       valueFormatter: (value: number[] | undefined) => value?.length ?? 0 },
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+      <StatusChip status={params.value} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 100, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => handleOpenDialog(params.row)} />
+        <RowAction title="Delete" icon={<Delete fontSize="small" />} color="error" onClick={() => handleDelete(params.row.id)} />
       </>
     )},
   ];

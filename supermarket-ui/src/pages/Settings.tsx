@@ -4,7 +4,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Card, CardContent, TextField, Button,
-  Tabs, Tab, Divider, Switch, FormControlLabel, Alert,
+  Tabs, Tab, Switch, FormControlLabel, Alert,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { Save } from '@mui/icons-material';
@@ -111,16 +111,17 @@ const Settings: React.FC = () => {
   return (
     <Box>
       <PageHeader title="Settings" />
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 3 }}>
-        <Tab label="Store Settings" />
-        <Tab label="Billing Settings" />
-        <Tab label="Loyalty Points" />
-      </Tabs>
+      <Card>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Tab label="Store" />
+          <Tab label="Billing" />
+          <Tab label="Loyalty Points" />
+        </Tabs>
       {tab === 0 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>Store Information</Typography>
-            <Divider sx={{ mb: 3 }} />
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Printed on invoices and packed-goods labels.
+            </Typography>
             <Grid container spacing={3}>
               <Grid size={{ xs: 12, md: 6 }}>
                 <TextField fullWidth label="Store Name" value={storeSettings.store_name}
@@ -162,20 +163,16 @@ const Settings: React.FC = () => {
                   helperText="Printed on invoices and packed-goods labels (include city and PIN code)"
                   onChange={(e) => setStoreSettings({ ...storeSettings, store_address: e.target.value })} />
               </Grid>
-              <Grid size={12}>
+              <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveStoreSettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>
             </Grid>
           </CardContent>
-        </Card>
       )}
       {tab === 1 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>Billing Configuration</Typography>
-            <Divider sx={{ mb: 3 }} />
+          <CardContent sx={{ p: 3 }}>
             <Grid container spacing={3}>
               <Grid size={12}>
                 <FormControlLabel
@@ -183,15 +180,7 @@ const Settings: React.FC = () => {
                     onChange={(e) => setBillingSettings({ ...billingSettings, tax_inclusive_pricing: e.target.checked })} />}
                   label="Selling prices include GST" />
               </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <TextField fullWidth label="Currency Symbol" value={billingSettings.currency_symbol}
-                  onChange={(e) => setBillingSettings({ ...billingSettings, currency_symbol: e.target.value })} />
-              </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
-                <TextField fullWidth label="Default GST %" type="number" value={billingSettings.default_tax_percent}
-                  onChange={(e) => setBillingSettings({ ...billingSettings, default_tax_percent: parseFloat(e.target.value) || 0 })} />
-              </Grid>
-              <Grid size={{ xs: 12, md: 4 }}>
+              <Grid size={{ xs: 12, md: 6 }}>
                 <TextField fullWidth label="Invoice Prefix" value={billingSettings.invoice_prefix}
                   helperText="Max 16 characters in total invoice number (GST rule)"
                   onChange={(e) => setBillingSettings({ ...billingSettings, invoice_prefix: e.target.value.toUpperCase().replace(/[^A-Z0-9/-]/g, '') })} />
@@ -200,20 +189,16 @@ const Settings: React.FC = () => {
                 <TextField fullWidth label="Invoice Footer Text" multiline rows={2} value={billingSettings.invoice_footer}
                   onChange={(e) => setBillingSettings({ ...billingSettings, invoice_footer: e.target.value })} />
               </Grid>
-              <Grid size={12}>
+              <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveBillingSettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>
             </Grid>
           </CardContent>
-        </Card>
       )}
       {tab === 2 && (
-        <Card>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>Loyalty Points</Typography>
-            <Divider sx={{ mb: 3 }} />
+          <CardContent sx={{ p: 3 }}>
             <Grid container spacing={3}>
               <Grid size={12}>
                 <FormControlLabel
@@ -249,15 +234,15 @@ const Settings: React.FC = () => {
                   helperText="0 = points never expire"
                   onChange={(e) => setLoyaltyNumber('expiry_days', e.target.value)} />
               </Grid>
-              <Grid size={12}>
+              <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveLoyaltySettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>
             </Grid>
           </CardContent>
-        </Card>
       )}
+      </Card>
     </Box>
   );
 };

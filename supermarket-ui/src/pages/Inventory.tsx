@@ -3,15 +3,17 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Card, TextField, IconButton, InputAdornment,
+  Box, Typography, Card, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, Button, Chip, Tabs, Tab,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Search, Refresh, Edit, EventNote } from '@mui/icons-material';
+import dayjs from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar, RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse, ProductBatch } from '../types';
 import toast from 'react-hot-toast';
@@ -141,72 +143,82 @@ const Inventory: React.FC = () => {
     { field: 'product_name', headerName: 'Product', flex: 1, minWidth: 200 },
     { field: 'barcode', headerName: 'Barcode', width: 130 },
     { field: 'category_name', headerName: 'Category', width: 120 },
-    { field: 'stock_quantity', headerName: 'Stock', width: 110, renderCell: (params: GridRenderCellParams) => (
-      <Typography fontWeight="bold" color={Number(params.value) <= Number(params.row.reorder_level) ? 'error' : 'inherit'}>
+    { field: 'stock_quantity', headerName: 'Stock', width: 110, type: 'number', renderCell: (params: GridRenderCellParams) => (
+      <Typography component="span" fontWeight="bold"
+        color={Number(params.value) <= Number(params.row.reorder_level) ? 'error' : 'inherit'}>
         {Number(params.value)} {params.row.unit_type}</Typography>
     )},
-    { field: 'reorder_level', headerName: 'Reorder', width: 80, valueFormatter: (value) => Number(value) },
-    { field: 'status_chip', headerName: 'Status', width: 110, renderCell: (params: GridRenderCellParams) => {
+    { field: 'reorder_level', headerName: 'Reorder At', width: 100, type: 'number', valueFormatter: (value) => Number(value) },
+    { field: 'status_chip', headerName: 'Status', width: 120, sortable: false, renderCell: (params: GridRenderCellParams) => {
       const status = getStockStatus(params.row.stock_quantity, params.row.reorder_level);
-      return <Chip label={status.label} size="small" color={status.color} />;
+      return <Chip label={status.label} size="small" color={status.color} variant={status.color === 'success' ? 'outlined' : 'filled'} />;
     }},
-    { field: 'actions', headerName: 'Actions', width: 100, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 100, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" title="Adjust stock" onClick={() => openAdjustDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" title="Batches & expiry" onClick={() => openBatchesDialog(params.row)}><EventNote fontSize="small" /></IconButton>
+        <RowAction title="Adjust stock" icon={<Edit fontSize="small" />} onClick={() => openAdjustDialog(params.row)} />
+        <RowAction title="Batches & expiry" icon={<EventNote fontSize="small" />} onClick={() => openBatchesDialog(params.row)} />
       </>
     )},
   ];
 
   const movementColumns: GridColDef[] = [
-    { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (value) => value ? new Date(value).toLocaleString() : '' },
+    { field: 'created_at', headerName: 'Date', width: 170,
+      valueFormatter: (value: string) => value ? dayjs(value + (value.endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '' },
     { field: 'product_name', headerName: 'Product', flex: 1, minWidth: 200 },
-    { field: 'movement_type', headerName: 'Type', width: 130, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={String(params.value).endsWith('_in') ? 'success' : 'error'} />
+    { field: 'movement_type', headerName: 'Type', width: 150, renderCell: (params: GridRenderCellParams) => (
+      <Chip label={humanize(params.value)} size="small" variant="outlined"
+        color={String(params.value).endsWith('_in') ? 'success' : 'error'} />
     )},
-    { field: 'quantity', headerName: 'Qty', width: 80, valueFormatter: (value) => Number(value) },
-    { field: 'reference_type', headerName: 'Reference', width: 130,
-      valueGetter: (_value, row) => row.reference_type ? `${row.reference_type}${row.reference_id ? ` #${row.reference_id}` : ''}` : '' },
-    { field: 'remarks', headerName: 'Remarks', flex: 1 },
+    { field: 'quantity', headerName: 'Qty', width: 80, type: 'number', valueFormatter: (value) => Number(value) },
+    { field: 'reference_type', headerName: 'Reference', width: 140,
+      valueGetter: (_value, row) => row.reference_type ? `${humanize(row.reference_type)}${row.reference_id ? ` #${row.reference_id}` : ''}` : '' },
+    { field: 'remarks', headerName: 'Remarks', flex: 1, minWidth: 150 },
   ];
+
+  const handleTabChange = (value: number) => {
+    setTab(value);
+    setPage(0);
+  };
 
   return (
     <Box>
-      <PageHeader title="Inventory" />
-      <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
-        <Tab label="Stock Overview" /><Tab label="Stock Movements" />
-      </Tabs>
-      {tab === 0 && (
-        <>
-          <Card sx={{ mb: 2, p: 2 }}>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField placeholder="Search products..." value={search} onChange={(e) => setSearch(e.target.value)}
+      <PageHeader
+        title="Inventory"
+        actions={<RowAction title="Refresh" icon={<Refresh />} onClick={tab === 0 ? fetchStock : fetchMovements} />}
+      />
+      <Card>
+        <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}>
+          <Tab label="Stock Overview" /><Tab label="Stock Movements" />
+        </Tabs>
+        {tab === 0 && (
+          <>
+            <ListToolbar>
+              <TextField placeholder="Search products..." value={search}
+                onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                 InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
-              <IconButton onClick={fetchStock}><Refresh /></IconButton>
-            </Box>
-          </Card>
-          <Card>
+            </ListToolbar>
             <DataGrid rows={stockItems} columns={stockColumns} loading={loading} rowCount={total}
+              initialState={{ columns: { columnVisibilityModel: { barcode: false } } }}
               paginationMode="server"
               paginationModel={{ page, pageSize }}
               onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
-              pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
-          </Card>
-        </>
-      )}
-      {tab === 1 && (
-        <Card>
+              pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick sx={{ border: 0 }} />
+          </>
+        )}
+        {tab === 1 && (
           <DataGrid rows={movements} columns={movementColumns} loading={loading} rowCount={total}
             paginationMode="server"
             paginationModel={{ page, pageSize }}
             onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
-            pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick />
-        </Card>
-      )}
+            pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick sx={{ border: 0 }} />
+        )}
+      </Card>
       <Dialog open={adjustOpen} onClose={() => setAdjustOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Adjust Stock: {selectedItem?.product_name}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 2 }}>Current Stock: <strong>{selectedItem?.stock_quantity}</strong></Typography>
+          <Typography sx={{ mb: 2 }}>
+            Current Stock: <strong>{Number(selectedItem?.stock_quantity ?? 0)} {selectedItem?.unit_type}</strong>
+          </Typography>
           <Grid container spacing={2}>
             <Grid size={12}><FormControl fullWidth><InputLabel>Adjustment Type</InputLabel>
               <Select value={adjustType} label="Adjustment Type" onChange={(e) => setAdjustType(e.target.value)}>
@@ -226,7 +238,7 @@ const Inventory: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAdjustOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleAdjust}>Adjust Stock</Button>
+          <Button variant="contained" onClick={handleAdjust} disabled={!adjustQty || Number(adjustQty) <= 0}>Adjust Stock</Button>
         </DialogActions>
       </Dialog>
       <Dialog open={batchesOpen} onClose={() => setBatchesOpen(false)} maxWidth="sm" fullWidth>

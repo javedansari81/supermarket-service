@@ -3,16 +3,17 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Chip, InputAdornment,
+  FormControl, InputLabel, Select, MenuItem, InputAdornment,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search } from '@mui/icons-material';
+import { Edit, Block, Search } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import { ListToolbar, RowAction, StatusChip } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -111,12 +112,13 @@ const Suppliers: React.FC = () => {
     { field: 'gst_no', headerName: 'GSTIN', width: 170 },
     { field: 'email', headerName: 'Email', width: 180 },
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+      <StatusChip status={params.value} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 100, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 100, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => handleOpenDialog(params.row)} />
+        <RowAction title="Deactivate" icon={<Block fontSize="small" />} color="error"
+          disabled={params.row.status !== 'active'} onClick={() => handleDelete(params.row.id)} />
       </>
     )},
   ];
@@ -124,13 +126,12 @@ const Suppliers: React.FC = () => {
   return (
     <Box>
       <PageHeader title="Suppliers" />
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField placeholder="Search suppliers..." value={search} onChange={(e) => setSearch(e.target.value)}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
-        </Box>
-      </Card>
       <Card>
+        <ListToolbar>
+          <TextField placeholder="Search suppliers..." value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
+        </ListToolbar>
         <DataGrid rows={suppliers} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
           paginationModel={{ page, pageSize }}

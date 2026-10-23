@@ -3,16 +3,17 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Button, Card, TextField, IconButton,
+  Box, Button, Card, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, InputLabel, Select, MenuItem, Chip, InputAdornment,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Edit, Delete, Search, Lock } from '@mui/icons-material';
+import { Edit, Delete, Search, LockReset } from '@mui/icons-material';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
+import { ListToolbar, RowAction, StatusChip, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { User, Role, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
@@ -118,18 +119,20 @@ const Users: React.FC = () => {
     { field: 'username', headerName: 'Username', width: 130 },
     { field: 'full_name', headerName: 'Full Name', flex: 1, minWidth: 150 },
     { field: 'email', headerName: 'Email', width: 200 },
-    { field: 'role', headerName: 'Role', width: 100, renderCell: (params: GridRenderCellParams) => {
+    { field: 'role', headerName: 'Role', width: 120, renderCell: (params: GridRenderCellParams) => {
       const roleName = params.value?.role_name || params.value || '';
-      return <Chip label={roleName} size="small" color={roleName === 'admin' ? 'primary' : 'default'} />;
+      return <Chip label={humanize(roleName)} size="small" color={roleName === 'admin' ? 'primary' : 'default'}
+        variant={roleName === 'admin' ? 'filled' : 'outlined'} />;
     }},
     { field: 'status', headerName: 'Status', width: 100, renderCell: (params: GridRenderCellParams) => (
-      <Chip label={params.value} size="small" color={params.value === 'active' ? 'success' : 'default'} />
+      <StatusChip status={params.value} />
     )},
-    { field: 'actions', headerName: 'Actions', width: 140, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 130, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" onClick={() => handleOpenDialog(params.row)}><Edit fontSize="small" /></IconButton>
-        <IconButton size="small" onClick={() => { setEditUser(params.row); setPasswordOpen(true); }}><Lock fontSize="small" /></IconButton>
-        <IconButton size="small" color="error" onClick={() => handleDelete(params.row.id)}><Delete fontSize="small" /></IconButton>
+        <RowAction title="Edit" icon={<Edit fontSize="small" />} onClick={() => handleOpenDialog(params.row)} />
+        <RowAction title="Reset password" icon={<LockReset fontSize="small" />}
+          onClick={() => { setEditUser(params.row); setNewPassword(''); setPasswordOpen(true); }} />
+        <RowAction title="Delete" icon={<Delete fontSize="small" />} color="error" onClick={() => handleDelete(params.row.id)} />
       </>
     )},
   ];
@@ -137,13 +140,12 @@ const Users: React.FC = () => {
   return (
     <Box>
       <PageHeader title="Users" />
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField placeholder="Search users..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1 }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
-        </Box>
-      </Card>
       <Card>
+        <ListToolbar>
+          <TextField placeholder="Search users..." value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }} sx={{ flex: 1 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
+        </ListToolbar>
         <DataGrid rows={users} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
@@ -182,13 +184,15 @@ const Users: React.FC = () => {
         </DialogActions>
       </Dialog>
       <Dialog open={passwordOpen} onClose={() => setPasswordOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Reset Password</DialogTitle>
+        <DialogTitle>Reset Password{editUser ? ` · ${editUser.username}` : ''}</DialogTitle>
         <DialogContent>
-          <TextField fullWidth label="New Password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} sx={{ mt: 1 }} />
+          <TextField fullWidth autoFocus label="New Password" type="password" value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)} sx={{ mt: 1 }}
+            error={!!newPassword && newPassword.length < 6} helperText="At least 6 characters" />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPasswordOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleResetPassword}>Reset</Button>
+          <Button variant="contained" onClick={handleResetPassword} disabled={newPassword.length < 6}>Reset</Button>
         </DialogActions>
       </Dialog>
     </Box>

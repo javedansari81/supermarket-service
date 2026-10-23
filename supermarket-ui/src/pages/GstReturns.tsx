@@ -55,7 +55,7 @@ const GstReturns: React.FC = () => {
               {quarterOptions().map((q) => <MenuItem key={q.format('YYYY-MM-DD')} value={q.format('YYYY-MM-DD')}>{quarterLabel(q)}</MenuItem>)}
             </TextField>
           )}
-          {valid && end && (
+          {valid && end && periodType === 'month' && (
             <Typography variant="body2" color="text.secondary">
               {start.format('DD MMM YYYY')} to {end.format('DD MMM YYYY')}
             </Typography>

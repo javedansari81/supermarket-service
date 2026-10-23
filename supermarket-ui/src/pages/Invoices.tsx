@@ -3,9 +3,9 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Box, Typography, Card, TextField, IconButton, InputAdornment,
+  Box, Typography, Card, TextField, InputAdornment,
   Dialog, DialogTitle, DialogContent, DialogActions, Button, Chip,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Divider,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper,
 } from '@mui/material';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
 import { Search, Refresh, Print, Visibility, AssignmentReturn, Block } from '@mui/icons-material';
@@ -13,6 +13,7 @@ import { DatePicker } from '@mui/x-date-pickers';
 import dayjs, { Dayjs } from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
+import { ListToolbar, RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Invoice, PaginatedResponse, ReturnableSale } from '../types';
 import toast from 'react-hot-toast';
@@ -95,41 +96,37 @@ const Invoices: React.FC = () => {
       params.value ? dayjs(params.value + (String(params.value).endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '' },
     { field: 'customer_name', headerName: 'Customer', flex: 1, minWidth: 150 },
     { field: 'customer_phone', headerName: 'Mobile', width: 120 },
-    { field: 'total_amount', headerName: 'Amount', width: 120, renderCell: (params: GridRenderCellParams) => `₹${money(params.value)}` },
+    { field: 'total_amount', headerName: 'Amount', width: 120, type: 'number',
+      renderCell: (params: GridRenderCellParams) => <strong>₹{money(params.value)}</strong> },
     { field: 'sale_status', headerName: 'Status', width: 120, renderCell: (params: GridRenderCellParams) => {
-      const chip = STATUS_CHIPS[params.value] || { label: params.value || '-', color: 'default' as const };
+      const chip = STATUS_CHIPS[params.value] || { label: humanize(params.value) || '-', color: 'default' as const };
       return <Chip size="small" label={chip.label} color={chip.color} />;
     }},
-    { field: 'actions', headerName: 'Actions', width: 180, sortable: false, renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 160, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
-        <IconButton size="small" title="View" onClick={() => handleView(params.row)}><Visibility fontSize="small" /></IconButton>
-        <IconButton size="small" title="Print" onClick={() => handlePrint(params.row.id)}><Print fontSize="small" /></IconButton>
-        {params.row.sale_status !== 'cancelled' && params.row.sale_status !== 'refunded' && (
-          <IconButton size="small" title="Return items" onClick={() => openAction(params.row.sale_id, 'return')}>
-            <AssignmentReturn fontSize="small" />
-          </IconButton>
-        )}
-        {params.row.sale_status !== 'cancelled' && (
-          <IconButton size="small" title="Void sale" color="error" onClick={() => openAction(params.row.sale_id, 'void')}>
-            <Block fontSize="small" />
-          </IconButton>
-        )}
+        <RowAction title="View" icon={<Visibility fontSize="small" />} onClick={() => handleView(params.row)} />
+        <RowAction title="Print" icon={<Print fontSize="small" />} onClick={() => handlePrint(params.row.id)} />
+        <RowAction title="Return items" icon={<AssignmentReturn fontSize="small" />}
+          disabled={params.row.sale_status === 'cancelled' || params.row.sale_status === 'refunded'}
+          onClick={() => openAction(params.row.sale_id, 'return')} />
+        <RowAction title="Void sale" icon={<Block fontSize="small" />} color="error"
+          disabled={params.row.sale_status === 'cancelled'}
+          onClick={() => openAction(params.row.sale_id, 'void')} />
       </>
     )},
   ];
 
   return (
     <Box>
-      <PageHeader title="Invoices" actions={<IconButton onClick={fetchInvoices}><Refresh /></IconButton>} />
-      <Card sx={{ mb: 2, p: 2 }}>
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <TextField placeholder="Search invoice no, customer or mobile..." value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: 1, minWidth: 200 }}
-            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
-          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 200 } }} />
-          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 200 } }} />
-        </Box>
-      </Card>
+      <PageHeader title="Invoices" actions={<RowAction title="Refresh" icon={<Refresh />} onClick={fetchInvoices} />} />
       <Card>
+        <ListToolbar>
+          <TextField placeholder="Search invoice no, customer or mobile..." value={search}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }} sx={{ flex: 1, minWidth: 200 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} />
+          <DatePicker label="From" value={fromDate} onChange={setFromDate} sx={{ width: { xs: '100%', sm: 180 } }} />
+          <DatePicker label="To" value={toDate} onChange={setToDate} sx={{ width: { xs: '100%', sm: 180 } }} />
+        </ListToolbar>
         <DataGrid rows={invoices} columns={columns} loading={loading} rowCount={total}
           paginationMode="server"
           paginationModel={{ page, pageSize }}
@@ -141,14 +138,25 @@ const Invoices: React.FC = () => {
         <DialogContent>
           {selectedInvoice && (
             <Box>
-              <Box sx={{ mb: 2 }}>
-                <Typography><strong>Date:</strong> {dayjs(selectedInvoice.invoice_date).format('DD/MM/YYYY hh:mm A')}</Typography>
-                <Typography><strong>Customer:</strong> {selectedInvoice.customer_name || 'Walk-in'}</Typography>
-                {selectedInvoice.customer_gstin && <Typography><strong>Customer GSTIN:</strong> {selectedInvoice.customer_gstin}</Typography>}
-                {selectedInvoice.place_of_supply && <Typography><strong>Place of Supply:</strong> {selectedInvoice.place_of_supply}</Typography>}
-                <Typography><strong>Payment:</strong> <Chip label={selectedInvoice.payment_mode} size="small" /></Typography>
+              <Box
+                sx={{
+                  display: 'grid', gap: 1.5, mb: 2, p: 1.5, borderRadius: 2, bgcolor: 'background.subtle',
+                  gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3, 1fr)' },
+                }}
+              >
+                {[
+                  { label: 'Date', value: dayjs(selectedInvoice.invoice_date).format('DD/MM/YYYY hh:mm A') },
+                  { label: 'Customer', value: selectedInvoice.customer_name || 'Walk-in' },
+                  { label: 'Payment', value: String(selectedInvoice.payment_mode || '-').toUpperCase() },
+                  ...(selectedInvoice.customer_gstin ? [{ label: 'Customer GSTIN', value: selectedInvoice.customer_gstin }] : []),
+                  ...(selectedInvoice.place_of_supply ? [{ label: 'Place of Supply', value: selectedInvoice.place_of_supply }] : []),
+                ].map((f) => (
+                  <Box key={f.label} sx={{ minWidth: 0 }}>
+                    <Typography variant="caption" color="text.secondary">{f.label}</Typography>
+                    <Typography variant="body2" fontWeight={600} noWrap>{f.value}</Typography>
+                  </Box>
+                ))}
               </Box>
-              <Divider sx={{ my: 2 }} />
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
                   <TableHead><TableRow><TableCell>Item</TableCell><TableCell>HSN</TableCell><TableCell>GST%</TableCell><TableCell>Qty</TableCell><TableCell>Price</TableCell><TableCell>Total</TableCell></TableRow></TableHead>
