@@ -453,3 +453,49 @@ export interface PaginatedResponse<T> {
   page_size: number;
 }
 
+// Cashier shift (cash drawer) types; amounts arrive as decimal strings
+export interface CashierShift {
+  id: number;
+  shift_no: string;
+  status: 'open' | 'closed';
+  opening_float: number;
+  opened_by_name?: string | null;
+  opened_at: string;
+  closed_by_name?: string | null;
+  closed_at?: string | null;
+  counted_cash?: number | null;
+  expected_cash?: number | null;
+  difference?: number | null;
+  close_note?: string | null;
+  approval_status?: 'pending' | 'approved' | null;
+  approved_by_name?: string | null;
+  approved_at?: string | null;
+  approval_note?: string | null;
+  bill_count: number;
+}
+
+export interface ShiftCashMovement {
+  id: number;
+  movement_type: 'in' | 'out';
+  amount: number;
+  reason: string;
+  created_by_name?: string | null;
+  created_at: string;
+}
+
+export interface ShiftReport extends CashierShift {
+  report_type: 'X' | 'Z';
+  cash: {
+    opening_float: number; cash_sales: number; cash_refunds: number; cash_voids: number;
+    cash_in: number; cash_out: number; expected_cash: number;
+  };
+  denominations: { value: number; count: number; amount: number }[];
+  modes: { mode: string; collected: number; refunded: number; voided: number; net: number }[];
+  cashiers: { user_id?: number | null; name: string; bills: number; amount: number }[];
+  movements: ShiftCashMovement[];
+  void_count: number;
+  return_count: number;
+  variance_limit: number;
+}
+
+

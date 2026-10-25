@@ -23,6 +23,7 @@ interface StoreSettings {
 interface BillingSettings {
   currency_symbol: string; tax_inclusive_pricing: boolean; default_tax_percent: number;
   invoice_prefix: string; invoice_footer: string;
+  shift_required: boolean; shift_variance_limit: number;
 }
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
@@ -36,7 +37,8 @@ const Settings: React.FC = () => {
   });
   const [billingSettings, setBillingSettings] = useState<BillingSettings>({
     currency_symbol: '₹', tax_inclusive_pricing: true, default_tax_percent: 0,
-    invoice_prefix: 'INV', invoice_footer: 'Thank you for shopping!'
+    invoice_prefix: 'INV', invoice_footer: 'Thank you for shopping!',
+    shift_required: false, shift_variance_limit: 100,
   });
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings>({
     enabled: false, earn_points_per_100: 1, point_value: 1, min_redeem_points: 100,
@@ -61,7 +63,9 @@ const Settings: React.FC = () => {
           api.get(API_ENDPOINTS.SETTINGS_LOYALTY),
         ]);
         if (store.data) setStoreSettings((prev) => ({ ...prev, ...store.data }));
-        if (billing.data) setBillingSettings((prev) => ({ ...prev, ...billing.data }));
+        if (billing.data) setBillingSettings((prev) => ({
+          ...prev, ...billing.data, shift_variance_limit: Number(billing.data.shift_variance_limit ?? 100),
+        }));
         if (loyalty.data) setLoyaltySettings({ ...loyalty.data, point_value: Number(loyalty.data.point_value) });
       } catch (error) { console.error('Failed to load settings'); }
     };
@@ -188,6 +192,19 @@ const Settings: React.FC = () => {
               <Grid size={12}>
                 <TextField fullWidth label="Invoice Footer Text" multiline rows={2} value={billingSettings.invoice_footer}
                   onChange={(e) => setBillingSettings({ ...billingSettings, invoice_footer: e.target.value })} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <FormControlLabel
+                  control={<Switch checked={billingSettings.shift_required}
+                    onChange={(e) => setBillingSettings({ ...billingSettings, shift_required: e.target.checked })} />}
+                  label="Require an open cash drawer shift for billing, returns and voids" />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label="Shift difference needing approval (₹)" type="number"
+                  value={billingSettings.shift_variance_limit}
+                  helperText="A closing count short or over by more than this waits for supervisor approval"
+                  inputProps={{ min: 0, step: '1' }}
+                  onChange={(e) => setBillingSettings({ ...billingSettings, shift_variance_limit: Math.max(0, Number(e.target.value) || 0) })} />
               </Grid>
               <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveBillingSettings} disabled={loading}>

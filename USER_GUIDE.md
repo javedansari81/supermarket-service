@@ -50,6 +50,8 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisor
 | Invoices (view / print) | Yes | Yes | Yes |
 | Return items | Yes (any time) | Yes (within 15 days of sale) | Yes (within 7 days of sale) |
 | Void a sale | Yes (any sale without returns) | Any sale within 7 days | Own same-day sales only |
+| Cash drawer shift: open, cash in, close | Yes | Yes | Yes |
+| Cash drawer shift: cash out, X report, approve a difference, Shifts page | Yes | Yes | No |
 | Reports, users, audit logs, settings | Yes | No | No |
 
 ---
@@ -133,6 +135,27 @@ Notes:
 - Holding a bill does not reduce stock. Prices and stock are checked again at checkout.
 - Each user can hold up to 10 bills at a time.
 - Cashiers see only their own held bills. Supervisors and admins see all held bills in the store.
+
+### Cash drawer shifts
+
+The store has one shared cash drawer. A shift runs from the opening float to the closing count, and every bill, return and void is recorded against the open shift. All cashiers on the counter work in the same shift.
+
+1. **Open Shift** (top of the Billing screen): count the change money already in the drawer and enter it as the **Opening float**.
+2. While the shift is open, the top bar shows **Shift SH…-1 · since …**. Click it for:
+   - **Cash In** — money added to the drawer (for example change brought from the bank), with a reason.
+   - **Cash Out** (supervisors and admins) — money taken out, for example a supplier paid in cash or cash moved to the safe at end of day. It cannot be more than the cash expected in the drawer.
+   - **X Report** (supervisors and admins) — interim summary; the shift stays open.
+   - **Close Shift** — count the cash note by note (₹500 down to ₹1; ₹10 and ₹20 include coins) and optionally add a note.
+3. The count is blind: the expected amount is shown only after **Close Shift**. The **Z Report** then shows expected cash, counted cash and the difference (short or excess). Click **Print** for an 80 mm copy with signature lines.
+
+Expected cash = opening float + cash received on bills − cash refunds on returns − cash of bills voided in this shift + cash in − cash out.
+
+Notes:
+
+- A difference above the limit in **Settings → Billing** (default ₹100) is marked **Needs approval**. A supervisor or admin approves it with a reason on the **Shifts** page.
+- A closed shift cannot be changed. The next shift is opened with its own float.
+- If **Require an open cash drawer shift** is on in Settings, billing, returns and voids are blocked until a shift is opened.
+- A return or void of an older bill takes its cash out of the shift open at the time.
 
 ---
 
@@ -533,6 +556,8 @@ Store name, phone, email, GST number, address. **Save Settings**. These values a
 - **Default Tax %** (seed default 18)
 - **Invoice Prefix** (for example `INV` or `INV-`)
 - **Invoice Footer Text** (for example *Thank you for shopping with us!*)
+- **Require an open cash drawer shift for billing, returns and voids** (off by default)
+- **Shift difference needing approval (₹)** (default 100)
 
 Save after changes. Currency in the UI is **₹**.
 
@@ -557,7 +582,8 @@ Save after changes. Currency in the UI is **₹**.
 
 | Who | Tasks |
 |-----|--------|
-| Cashier | Login → Billing → scan → checkout (cash/card/UPI) → next customer. Reprint from Invoices. Logout at shift end. |
+| Cashier | First cashier of the day: **Open Shift** with the opening float. Login → Billing → scan → checkout (cash/card/UPI) → next customer. Reprint from Invoices. At closing: **Close Shift** with the note-by-note count and print the Z report. Logout at shift end. |
+| Supervisor | Record cash taken out (**Cash Out**), check the **X Report** during the day, approve shift differences on **Shifts**. |
 | Admin | Dashboard for sales and stock alerts → receive goods on Purchases → put goods away using the Put-away List → adjust exceptions in Inventory → print labels → Reports and Audit as needed. |
 
 ---
@@ -576,6 +602,7 @@ Save after changes. Currency in the UI is **₹**.
 | Invoice print window blank | Allow pop-ups for the site and try Print again. |
 | "Return window of 7 days has passed" | Ask a supervisor (up to 15 days) or an admin to process the return. |
 | Cannot void a sale | Cashiers can only void their own same-day sales; supervisors, any sale up to 7 days old. Sales with returns cannot be voided. |
+| "No shift is open" | Click **Open Shift** on the Billing screen and enter the opening float. |
 | Session lost | Sign in again. Logout, or 30 minutes without activity, clears the stored token. |
 | Location missing in product form | Only active locations are listed. Create or reactivate it on **Locations**. |
 | Put-away List shows **Unassigned** | Assign a location to that product on **Products**. |
@@ -596,6 +623,7 @@ Save after changes. Currency in the UI is **₹**.
 | Inventory | `/inventory` | Admin |
 | Barcode | `/barcode` | Admin, Supervisor |
 | Invoices | `/invoices` | All |
+| Shifts | `/shifts` | Admin, Supervisor |
 | Reports | `/reports` | Admin |
 | GST Returns | `/gst-returns` | Admin |
 | Users | `/users` | Admin |

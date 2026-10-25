@@ -17,6 +17,7 @@ from app.api.v1.endpoints import (
     sales,
     sale_returns,
     held_bills,
+    shifts,
     clearance,
     offers,
     coupons,
@@ -72,6 +73,9 @@ api_router.include_router(sale_returns.router, prefix="/sale-returns", tags=["Sa
 
 # Held (parked) bills
 api_router.include_router(held_bills.router, prefix="/held-bills", tags=["Held Bills"])
+
+# Cashier shifts (cash drawer reconciliation)
+api_router.include_router(shifts.router, prefix="/shifts", tags=["Shifts"])
 
 # Near-expiry (clearance) discounts
 api_router.include_router(clearance.router, prefix="/clearance", tags=["Clearance"])

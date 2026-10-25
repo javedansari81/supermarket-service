@@ -31,6 +31,8 @@ class SaleReturn(Base):
     points_reversed = Column(Integer, default=0, nullable=False, server_default='0')
     reason = Column(Text)
     window_override = Column(Boolean, default=False, nullable=False)
+    # Cash drawer shift the refund was paid from
+    shift_id = Column(Integer, ForeignKey('cashier_shifts.id'), index=True)
     created_by = Column(Integer, ForeignKey('users.id'))
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

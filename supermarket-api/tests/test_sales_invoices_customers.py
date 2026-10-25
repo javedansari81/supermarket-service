@@ -1033,3 +1033,115 @@ def test_loyalty_adjust(client, product, admin_headers, cashier_headers, admin_b
     logs = client.get("/api/v1/audit", params={"entity_type": "customer_points"},
                       headers=admin_headers).json()["items"]
     assert len(logs) == 2 and all(log["entity_id"] == cid and log["action"] == "update" for log in logs)
+
+
+# ---------- Cashier shifts ----------
+
+SHIFTS = "/api/v1/shifts"
+
+
+def open_shift(client, headers, opening_float=1000):
+    return client.post(f"{SHIFTS}/open", json={"opening_float": opening_float}, headers=headers)
+
+
+def move_cash(client, shift_id, headers, movement_type, amount, reason="Change from bank"):
+    return client.post(f"{SHIFTS}/{shift_id}/cash-movements", headers=headers,
+                       json={"movement_type": movement_type, "amount": amount, "reason": reason})
+
+
+def test_shift_expected_cash_and_blind_close(client, product, cashier_headers, supervisor_headers,
+                                              admin_b_headers):
+    res = open_shift(client, cashier_headers)
+    assert res.status_code == 201
+    shift = res.json()
+    assert shift["status"] == "open" and shift["shift_no"].endswith("-1")
+    assert shift["opened_by_name"] == "Cashier_A"
+
+    cash_sale = sell(client, product, cashier_headers).json()
+    split = sell(client, product, cashier_headers, payments=[{"mode": "cash", "amount": 50},
+                                                              {"mode": "upi", "amount": 60}]).json()
+    voided = sell(client, product, cashier_headers).json()
+    assert cash_sale["status"] == "completed" and split["payment_mode"] == "split"
+    assert return_items(client, cash_sale, cashier_headers, qty=1).status_code == 201
+    assert client.post(f"{SALES}/{voided['id']}/void", json={"reason": "Mistake"},
+                       headers=supervisor_headers).status_code == 200
+
+    assert move_cash(client, shift["id"], cashier_headers, "in", 200).status_code == 201
+    assert move_cash(client, shift["id"], cashier_headers, "out", 100).status_code == 403
+    assert move_cash(client, shift["id"], supervisor_headers, "out", 5000).status_code == 400
+    assert move_cash(client, shift["id"], supervisor_headers, "in", 10, reason=" ").status_code == 422
+    res = move_cash(client, shift["id"], supervisor_headers, "out", 300, reason="Paid milk supplier")
+    assert res.status_code == 201 and res.json()["created_by_name"] == "Supervisor_A"
+
+    current = client.get(f"{SHIFTS}/current", headers=cashier_headers).json()
+    assert current["shift"]["id"] == shift["id"] and current["shift"]["bill_count"] == 3
+    assert current["shift"]["expected_cash"] is None and current["shift_required"] is False
+    assert client.get(f"{SHIFTS}/{shift['id']}/report", headers=cashier_headers).status_code == 403
+    assert client.get(f"{SHIFTS}/{shift['id']}/report", headers=admin_b_headers).status_code == 404
+
+    # 1000 float + (110 + 50 + 110) cash billed - 55 refunded - 110 voided + 200 in - 300 out
+    x_report = client.get(f"{SHIFTS}/{shift['id']}/report", headers=supervisor_headers).json()
+    assert x_report["report_type"] == "X"
+    assert float(x_report["cash"]["expected_cash"]) == 1005
+    assert float(x_report["cash"]["cash_refunds"]) == 55 and float(x_report["cash"]["cash_voids"]) == 110
+
+    res = client.post(f"{SHIFTS}/{shift['id']}/close", headers=cashier_headers,
+                      json={"denominations": {"500": 2, "5": 1, "10": 0}})
+    assert res.status_code == 200
+    z_report = res.json()
+    assert z_report["report_type"] == "Z" and z_report["status"] == "closed"
+    assert float(z_report["counted_cash"]) == 1005 and float(z_report["difference"]) == 0
+    assert z_report["approval_status"] is None
+    assert [(d["value"], d["count"]) for d in z_report["denominations"]] == [(500, 2), (5, 1)]
+    modes = {m["mode"]: m for m in z_report["modes"]}
+    assert (float(modes["cash"]["collected"]), float(modes["cash"]["refunded"]),
+            float(modes["cash"]["voided"]), float(modes["cash"]["net"])) == (270, 55, 110, 105)
+    assert float(modes["upi"]["net"]) == 60
+    assert [(c["name"], c["bills"], float(c["amount"])) for c in z_report["cashiers"]] == [
+        ("Cashier_A", 2, 220)]
+    assert (z_report["void_count"], z_report["return_count"], len(z_report["movements"])) == (1, 1, 2)
+
+    assert move_cash(client, shift["id"], cashier_headers, "in", 10).status_code == 400
+    assert client.get(f"{SHIFTS}/{shift['id']}/report", headers=cashier_headers).status_code == 200
+    assert client.get(f"{SHIFTS}/current", headers=cashier_headers).json()["shift"] is None
+    assert open_shift(client, cashier_headers).json()["shift_no"].endswith("-2")
+
+
+def test_shift_required_and_difference_approval(client, product, admin_headers, cashier_headers,
+                                                supervisor_headers):
+    assert client.put("/api/v1/settings/billing", json={"shift_required": True},
+                      headers=admin_headers).status_code == 200
+    res = sell(client, product, cashier_headers)
+    assert res.status_code == 400 and "No shift is open" in res.json()["detail"]
+    assert client.get(f"{SHIFTS}/current", headers=cashier_headers).json()["shift_required"] is True
+
+    shift = open_shift(client, cashier_headers, opening_float=0).json()
+    assert open_shift(client, supervisor_headers).status_code == 400
+    sale = sell(client, product, cashier_headers).json()
+    assert sale["status"] == "completed"
+
+    bad = {"denominations": {"3": 1}}
+    assert client.post(f"{SHIFTS}/{shift['id']}/close", json=bad, headers=cashier_headers).status_code == 422
+    res = client.post(f"{SHIFTS}/{shift['id']}/close", json={"denominations": {}, "note": "Short"},
+                      headers=cashier_headers)
+    assert res.status_code == 200
+    assert float(res.json()["difference"]) == -110 and res.json()["approval_status"] == "pending"
+    assert client.post(f"{SHIFTS}/{shift['id']}/close", json={"denominations": {}},
+                       headers=cashier_headers).status_code == 400
+    assert client.post(f"{SALES}/{sale['id']}/void", json={"reason": "Mistake"},
+                       headers=admin_headers).status_code == 400
+
+    approve = {"note": "Customer paid by UPI, entered as cash"}
+    assert client.post(f"{SHIFTS}/{shift['id']}/approve", json=approve, headers=cashier_headers).status_code == 403
+    assert client.post(f"{SHIFTS}/{shift['id']}/approve", json={"note": ""},
+                       headers=supervisor_headers).status_code == 422
+    res = client.post(f"{SHIFTS}/{shift['id']}/approve", json=approve, headers=supervisor_headers)
+    assert res.status_code == 200
+    assert res.json()["approval_status"] == "approved" and res.json()["approved_by_name"] == "Supervisor_A"
+    assert client.post(f"{SHIFTS}/{shift['id']}/approve", json=approve,
+                       headers=supervisor_headers).status_code == 400
+
+    assert client.get(SHIFTS, headers=cashier_headers).status_code == 403
+    listed = client.get(SHIFTS, params={"approval_status": "approved"}, headers=supervisor_headers).json()
+    assert listed["total"] == 1 and listed["items"][0]["bill_count"] == 1
+

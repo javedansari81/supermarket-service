@@ -34,6 +34,8 @@ DEFAULT_SETTINGS = {
     "invoice_prefix": {"value": "INV", "category": "billing", "description": "Invoice number prefix"},
     "invoice_footer": {"value": "Thank you for shopping!", "category": "billing", "description": "Invoice footer text"},
     "clearance_enabled": {"value": "false", "category": "billing", "description": "Apply near-expiry discount tiers"},
+    "shift_required": {"value": "false", "category": "billing", "description": "Billing needs an open cash drawer shift"},
+    "shift_variance_limit": {"value": "100", "category": "billing", "description": "Shift closing difference needing approval (Rs)"},
     "loyalty_enabled": {"value": "false", "category": "loyalty", "description": "Loyalty points enabled"},
     "loyalty_earn_points_per_100": {"value": "1", "category": "loyalty", "description": "Points earned per Rs 100 paid"},
     "loyalty_point_value": {"value": "1", "category": "loyalty", "description": "Rs value of one point"},
@@ -68,7 +70,8 @@ async def list_settings(
 
 
 STORE_KEYS = ["store_name", "store_address", "store_phone", "store_email", "gstin", "store_state", "fssai_license"]
-BILLING_KEYS = ["currency_symbol", "tax_inclusive_pricing", "default_tax_percent", "invoice_prefix", "invoice_footer"]
+BILLING_KEYS = ["currency_symbol", "tax_inclusive_pricing", "default_tax_percent", "invoice_prefix", "invoice_footer",
+                "shift_required", "shift_variance_limit"]
 
 
 def get_settings_dict(db: Session, tenant_id: int, keys: List[str]) -> dict:
@@ -169,7 +172,9 @@ async def get_billing_settings(
         tax_inclusive_pricing=settings_dict.get("tax_inclusive_pricing", "true").lower() == "true",
         default_tax_percent=float(settings_dict.get("default_tax_percent", "0")),
         invoice_prefix=settings_dict.get("invoice_prefix", "INV"),
-        invoice_footer=settings_dict.get("invoice_footer", "Thank you for shopping!")
+        invoice_footer=settings_dict.get("invoice_footer", "Thank you for shopping!"),
+        shift_required=(settings_dict.get("shift_required") or "false").lower() == "true",
+        shift_variance_limit=settings_dict.get("shift_variance_limit") or "100"
     )
 
 
@@ -190,7 +195,9 @@ async def update_billing_settings(
         "tax_inclusive_pricing": str(billing_settings.tax_inclusive_pricing).lower(),
         "default_tax_percent": str(billing_settings.default_tax_percent),
         "invoice_prefix": billing_settings.invoice_prefix,
-        "invoice_footer": billing_settings.invoice_footer
+        "invoice_footer": billing_settings.invoice_footer,
+        "shift_required": str(billing_settings.shift_required).lower(),
+        "shift_variance_limit": str(billing_settings.shift_variance_limit)
     }
     upsert_settings(db, context.tenant_id, new_value)
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,

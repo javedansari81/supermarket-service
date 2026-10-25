@@ -62,6 +62,11 @@ export const API_ENDPOINTS = {
   SALE_RETURNS: '/sale-returns',
   HELD_BILLS: '/held-bills',
 
+  // Cashier shifts (cash drawer)
+  SHIFTS: '/shifts',
+  SHIFT_CURRENT: '/shifts/current',
+  SHIFT_OPEN: '/shifts/open',
+
   // Near-expiry (clearance) discounts
   CLEARANCE_RULES: '/clearance/rules',
   CLEARANCE_SETTINGS: '/clearance/settings',

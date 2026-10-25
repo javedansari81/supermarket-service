@@ -20,6 +20,8 @@ NAME_FIELDS = {
     "supplier": "supplier_name",
     "store_location": "location_code",
     "user": "username",
+    "cashier_shift": "shift_no",
+    "shift_cash_movement": "shift_no",
 }
 IGNORED_DIFF_FIELDS = {
     "id", "tenant_id", "created_at", "updated_at", "created_by", "updated_by", "items", "last_login",

@@ -110,6 +110,10 @@ class BillingSettings(BaseModel):
     default_tax_percent: float = Field(0, ge=0, le=100)
     invoice_prefix: Optional[str] = "INV"
     invoice_footer: Optional[str] = "Thank you for shopping!"
+    # Billing, returns and voids need an open cash drawer shift
+    shift_required: bool = False
+    # Closing difference (Rs, either way) above which a supervisor or admin must approve
+    shift_variance_limit: Decimal = Field(Decimal("100"), ge=0, le=100000, max_digits=8, decimal_places=2)
 
 
 class LoyaltySettings(BaseModel):

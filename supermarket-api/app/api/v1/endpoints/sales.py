@@ -17,6 +17,7 @@ from app.core.coupons import (SOURCE_COUPON, CouponLine, find_coupon, check_coup
                               allocate_coupon)
 from app.core.loyalty import (POINTS_MODE, get_loyalty_settings, lock_customer, expire_if_due,
                               post_points, points_to_earn, points_to_redeem)
+from app.core.shifts import shift_for_cash
 from app.models.audit_log import AuditLog
 from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.sale import Sale, SaleItem, SalePayment
@@ -319,6 +320,8 @@ async def create_sale(
     if not sale_data.items:
         raise HTTPException(status_code=400, detail="Sale must have at least one item")
 
+    shift = shift_for_cash(db, context.tenant_id)
+
     # Generate sale number
     sale_no = generate_sale_no(db, context.tenant_id)
 
@@ -372,6 +375,7 @@ async def create_sale(
         coupon_code=coupon.code if coupon else None,
         coupon_discount=coupon_result.discount if coupon_result else Decimal("0"),
         remarks=sale_data.remarks,
+        shift_id=shift.id if shift else None,
         created_by=context.user_id
     )
     db.add(sale)

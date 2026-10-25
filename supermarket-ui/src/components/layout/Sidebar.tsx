@@ -40,6 +40,7 @@ import {
   LocalOffer,
   ConfirmationNumber,
   RequestQuote,
+  LockClock,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
 
@@ -84,6 +85,7 @@ const navItems: NavItem[] = [
   { title: 'Coupons', path: '/coupons', icon: <ConfirmationNumber />, adminOnly: true, group: 'Promotions' },
   { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true, group: 'Catalog' },
   { title: 'Invoices', path: '/invoices', icon: <Receipt />, group: 'Sales' },
+  { title: 'Shifts', path: '/shifts', icon: <LockClock />, adminOnly: true, supervisor: true, group: 'Sales' },
   { title: 'Customers', path: '/customers', icon: <Contacts />, group: 'Sales' },
   { title: 'Reports', path: '/reports', icon: <BarChart />, adminOnly: true, group: 'Insights' },
   { title: 'GST Returns', path: '/gst-returns', icon: <RequestQuote />, adminOnly: true, group: 'Insights' },

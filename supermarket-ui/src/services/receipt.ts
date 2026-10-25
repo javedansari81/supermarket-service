@@ -1,8 +1,9 @@
 /**
- * 80mm thermal GST tax invoice receipt (browser print)
+ * 80mm thermal GST tax invoice receipt and shift X / Z report (browser print)
  */
 import api from './api';
 import { API_ENDPOINTS } from '../config/api';
+import { ShiftReport } from '../types';
 
 export interface ReceiptItem {
   product_name: string;
@@ -158,14 +159,13 @@ export const buildReceiptHtml = (d: InvoicePrintData): string => {
 export const fetchInvoicePrintData = async (invoiceId: number, markPrinted = false): Promise<InvoicePrintData> =>
   (await api.get<InvoicePrintData>(`${API_ENDPOINTS.INVOICES}/${invoiceId}/print`, { params: { mark_printed: markPrinted } })).data;
 
-export const printReceipt = async (invoiceId: number): Promise<void> => {
-  const data = await fetchInvoicePrintData(invoiceId, true);
+const printHtml = (html: string) => {
   const frame = document.createElement('iframe');
   frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
   document.body.appendChild(frame);
   const doc = frame.contentWindow!.document;
   doc.open();
-  doc.write(buildReceiptHtml(data));
+  doc.write(html);
   doc.close();
   setTimeout(() => {
     frame.contentWindow!.focus();
@@ -173,3 +173,61 @@ export const printReceipt = async (invoiceId: number): Promise<void> => {
     setTimeout(() => frame.remove(), 1000);
   }, 250);
 };
+
+export const printReceipt = async (invoiceId: number): Promise<void> => {
+  printHtml(buildReceiptHtml(await fetchInvoicePrintData(invoiceId, true)));
+};
+
+// Server datetimes are naive UTC
+const istDateTime = (v?: string | null) => v
+  ? new Date(v.endsWith('Z') ? v : `${v}Z`).toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  }) : '';
+
+export const buildShiftReportHtml = (r: ShiftReport): string => {
+  const c = r.cash;
+  const signed = (n: number) => `${Number(n) > 0 ? '+' : ''}${money(Number(n))}`;
+  const modes = r.modes.map((m) => row(esc(m.mode.toUpperCase()),
+    `${money(Number(m.collected))} / -${money(Number(m.refunded) + Number(m.voided))} / ${money(Number(m.net))}`)).join('');
+  const cashiers = r.cashiers.map((x) => row(`${esc(x.name)} (${x.bills})`, money(Number(x.amount)))).join('');
+  const movements = r.movements.map((m) => row(`${m.movement_type === 'in' ? 'IN' : 'OUT'} ${esc(m.reason)}`,
+    `${m.movement_type === 'in' ? '' : '-'}${money(Number(m.amount))}`)).join('');
+  const notes = r.denominations.map((d) => row(`&#8377;${d.value} x ${d.count}`, money(Number(d.amount)))).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(r.shift_no)}</title><style>
+    @page { size: 80mm auto; margin: 0; }
+    * { box-sizing: border-box; }
+    body { width: 80mm; margin: 0; padding: 2mm 2.5mm 2mm 3.5mm; font-family: 'Courier New', monospace; font-size: 11px; color: #000; }
+    .c { text-align: center; } .r { text-align: right; } .b { font-weight: bold; }
+    h2 { font-size: 13px; margin: 2px 0; } table { width: 100%; border-collapse: collapse; }
+    hr { border: 0; border-top: 1px dashed #000; margin: 4px 0; } .total td { font-size: 13px; font-weight: bold; }
+  </style></head><body>
+    <div class="c"><h2>${r.report_type === 'Z' ? 'Z REPORT (SHIFT CLOSE)' : 'X REPORT (INTERIM)'}</h2></div>
+    <table>
+      ${row('Shift', esc(r.shift_no))}
+      ${row('Opened', `${esc(istDateTime(r.opened_at))}`)}${row('&nbsp;&nbsp;by', esc(r.opened_by_name || ''))}
+      ${r.closed_at ? row('Closed', esc(istDateTime(r.closed_at))) + row('&nbsp;&nbsp;by', esc(r.closed_by_name || '')) : ''}
+      ${row('Printed', esc(istDateTime(new Date().toISOString())))}
+    </table><hr>
+    <table>
+      ${row('Opening float', money(Number(c.opening_float)))}
+      ${row('Cash on bills', `+${money(Number(c.cash_sales))}`)}
+      ${row('Cash refunds', `-${money(Number(c.cash_refunds))}`)}
+      ${row('Voided bills cash', `-${money(Number(c.cash_voids))}`)}
+      ${row('Cash in', `+${money(Number(c.cash_in))}`)}
+      ${row('Cash out', `-${money(Number(c.cash_out))}`)}
+      ${row('EXPECTED CASH', money(Number(c.expected_cash)), 'total')}
+      ${r.counted_cash != null ? row('COUNTED CASH', money(Number(r.counted_cash)), 'total')
+        + row('DIFFERENCE', signed(Number(r.difference)), 'total') : ''}
+    </table>
+    ${r.approval_status ? `<div class="c b">${r.approval_status === 'pending' ? 'DIFFERENCE AWAITS APPROVAL' : `Approved by ${esc(r.approved_by_name || '')}`}</div>` : ''}
+    ${notes ? `<hr><div class="b">Cash counted</div><table>${notes}</table>` : ''}
+    ${modes ? `<hr><div class="b">By mode: collected / refunded+voided / net</div><table>${modes}</table>` : ''}
+    <hr><table>${row('Bills', `${r.bill_count}`)}${row('Voided bills', `${r.void_count}`)}${row('Returns', `${r.return_count}`)}</table>
+    ${cashiers ? `<hr><div class="b">By cashier (bills)</div><table>${cashiers}</table>` : ''}
+    ${movements ? `<hr><div class="b">Cash in / out</div><table>${movements}</table>` : ''}
+    ${r.close_note ? `<hr><div>Note: ${esc(r.close_note)}</div>` : ''}
+    ${r.report_type === 'Z' ? '<hr><br><table>' + row('Cashier sign', '__________') + '<tr><td>&nbsp;</td></tr>' + row('Supervisor sign', '__________') + '</table>' : ''}
+  </body></html>`;
+};
+
+export const printShiftReport = (report: ShiftReport): void => printHtml(buildShiftReportHtml(report));

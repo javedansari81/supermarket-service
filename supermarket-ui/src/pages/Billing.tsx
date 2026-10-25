@@ -59,6 +59,7 @@ import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
 import { printReceipt } from '../services/receipt';
+import ShiftControl from '../components/sales/ShiftControl';
 import { stateNameFromCode } from '../config/gst';
 import { Customer, LoyaltySettings } from '../types';
 
@@ -338,6 +339,8 @@ const Billing: React.FC = () => {
   const couponSeq = useRef(0);
   const [loyalty, setLoyalty] = useState<LoyaltySettings | null>(null);
   const [lastAddedKey, setLastAddedKey] = useState<string | null>(null);
+  const [shiftMissing, setShiftMissing] = useState(false);
+  const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
 
   const loadHeldBills = () =>
     api.get(API_ENDPOINTS.HELD_BILLS)
@@ -896,6 +899,10 @@ const Billing: React.FC = () => {
       toast.error('Cart is empty');
       return;
     }
+    if (shiftMissing) {
+      toast.error('No shift is open. Open a shift before billing');
+      return;
+    }
     setCheckoutOpen(true);
   };
 
@@ -1006,7 +1013,7 @@ const Billing: React.FC = () => {
       }
       return;
     }
-    if (heldOpen || batchPick || weighProduct) return;
+    if (heldOpen || batchPick || weighProduct || shiftDialogOpen) return;
     const actions: Record<string, () => void> = {
       F2: () => { searchRef.current?.focus(); searchRef.current?.select(); },
       F4: () => { if (!holding) holdBill(); },
@@ -1035,22 +1042,26 @@ const Billing: React.FC = () => {
       <PageHeader
         title="Billing / POS"
         actions={
-          <Tooltip
-            title={
-              <Box sx={{ py: 0.5 }}>
-                {SHORTCUTS.map((s) => (
-                  <Box key={s.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}>
-                    <span>{s.label}</span>
-                    <b>{s.key}</b>
-                  </Box>
-                ))}
-              </Box>
-            }
-          >
-            <IconButton size="small" aria-label="Keyboard shortcuts">
-              <Keyboard fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <ShiftControl onChange={(shift, required) => setShiftMissing(required && !shift)}
+              onDialogOpenChange={setShiftDialogOpen} />
+            <Tooltip
+              title={
+                <Box sx={{ py: 0.5 }}>
+                  {SHORTCUTS.map((s) => (
+                    <Box key={s.key} sx={{ display: 'flex', justifyContent: 'space-between', gap: 3 }}>
+                      <span>{s.label}</span>
+                      <b>{s.key}</b>
+                    </Box>
+                  ))}
+                </Box>
+              }
+            >
+              <IconButton size="small" aria-label="Keyboard shortcuts">
+                <Keyboard fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
         }
       />
 

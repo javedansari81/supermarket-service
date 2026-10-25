@@ -50,6 +50,9 @@ class Sale(Base, TimestampMixin):
     voided_at = Column(DateTime)
     voided_by = Column(Integer, ForeignKey('users.id'))
     void_reason = Column(Text)
+    # Cash drawer shift the bill was made in, and the shift its void took the cash out of
+    shift_id = Column(Integer, ForeignKey('cashier_shifts.id'), index=True)
+    void_shift_id = Column(Integer, ForeignKey('cashier_shifts.id'), index=True)
 
     # Relationships
     tenant = relationship("Tenant", back_populates="sales")

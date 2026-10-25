@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches
 from app.core.loyalty import reverse_for_sale, POINTS_MODE
+from app.core.shifts import shift_for_cash
 from app.models.audit_log import AuditLog
 from app.models.product_batch import ProductBatch
 from app.models.sale import Sale, SaleItem
@@ -323,6 +324,7 @@ async def create_return(
     block = return_block(sale, context, days)
     if block:
         raise HTTPException(status_code=block[0], detail=block[1])
+    shift = shift_for_cash(db, context.tenant_id)
 
     items_by_id = {i.id: i for i in sale.items}
     requested_ids = [i.sale_item_id for i in return_data.items]
@@ -346,6 +348,7 @@ async def create_return(
         ),
         reason=return_data.reason,
         window_override=days > RETURN_WINDOW_DAYS,
+        shift_id=shift.id if shift else None,
         created_by=context.user_id
     )
     db.add(sale_return)
@@ -476,6 +479,7 @@ async def void_sale(
     block = void_block(sale, context, days, has_returns)
     if block:
         raise HTTPException(status_code=block[0], detail=block[1])
+    shift = shift_for_cash(db, context.tenant_id)
 
     old_value = snapshot(sale)
     products = lock_products(db, context.tenant_id, [i.product_id for i in sale.items])
@@ -491,6 +495,7 @@ async def void_sale(
     sale.voided_at = datetime.utcnow()
     sale.voided_by = context.user_id
     sale.void_reason = void_data.reason
+    sale.void_shift_id = shift.id if shift else None
     reverse_for_sale(db, sale, sale.total_amount, sale.total_amount, context.user_id,
                      remarks=f"Void of sale {sale.sale_no}")
     db.flush()

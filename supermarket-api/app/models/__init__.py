@@ -20,6 +20,7 @@ from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.loyalty_transaction import LoyaltyTransaction
 from app.models.held_bill import HeldBill
+from app.models.cashier_shift import CashierShift, ShiftCashMovement
 from app.models.invoice import Invoice
 from app.models.audit_log import AuditLog
 from app.models.barcode_config import BarcodeConfig
@@ -51,6 +52,8 @@ __all__ = [
     "SaleReturnItem",
     "LoyaltyTransaction",
     "HeldBill",
+    "CashierShift",
+    "ShiftCashMovement",
     "Invoice",
     "AuditLog",
     "BarcodeConfig",
