@@ -1,4 +1,4 @@
-# SuperMart customer shop
+# MFMart customer shop
 
 Mobile-first website where customers log in with a mobile OTP and order online (one login for all
 stores). Uses the customer API under `/api/v1/shop` of `supermarket-api`. See `ONLINE_ORDERING.md`.

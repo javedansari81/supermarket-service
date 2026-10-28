@@ -698,3 +698,33 @@ def test_shop_loose_markdown_search_sort_and_paging(client, db, online, product)
     page = products(page=2, page_size=3)
     assert page["total"] == 4 and len(page["items"]) == 1
     assert client.get(f"{SHOP}/storea/products", params={"sort": "cost"}).status_code == 422
+
+
+def test_shop_products_on_offer_and_by_ids(client, db, online, product):
+    from datetime import datetime, timedelta
+    from app.core.clearance import today_ist
+    from app.models import Offer, OfferItem
+    tenant = online["tenant_a"]
+    tomato = add_product(db, tenant, "P0002", "Tomato Loose", product_type="loose", is_loose=True,
+                         unit_type="kg", markdown_percent=20,
+                         markdown_until=datetime.utcnow() + timedelta(hours=2))
+    add_product(db, tenant, "P0003", "Onion Loose", product_type="loose", is_loose=True, unit_type="kg",
+                markdown_percent=20, markdown_until=datetime.utcnow() - timedelta(hours=1))
+    sugar = add_product(db, tenant, "P0004", "Sugar 1kg")
+    today = today_ist()
+    offer = Offer(tenant_id=tenant.id, name="Diwali Sale", start_date=today, end_date=today)
+    ended = Offer(tenant_id=tenant.id, name="Old Sale", start_date=today - timedelta(days=9),
+                  end_date=today - timedelta(days=1))
+    db.add_all([offer, ended])
+    db.flush()
+    db.add_all([OfferItem(offer_id=offer.id, product_id=sugar.id, discount_type="percent", discount_value=10),
+                OfferItem(offer_id=ended.id, product_id=product.id, discount_type="percent", discount_value=10)])
+    db.commit()
+    names = lambda **p: sorted(i["product_name"] for i in
+                               client.get(f"{SHOP}/storea/products", params=p).json()["items"])
+
+    # Running offer or a markdown still valid; ended offers and lapsed markdowns are not offers
+    assert names(on_offer=True) == ["Sugar 1kg", "Tomato Loose"]
+    assert names(ids=f"{tomato.id},{product.id}") == ["Rice 1kg", "Tomato Loose"]
+    assert names(ids="999999") == []
+    assert client.get(f"{SHOP}/storea/products", params={"ids": "1,abc"}).status_code == 422

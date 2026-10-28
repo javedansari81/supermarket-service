@@ -3,16 +3,18 @@ Online shop catalogue: public, read-only, no login. Only stores with online orde
 on and only active, priced products are shown. Prices follow billing (offers, near-expiry and
 loose markdowns) for the stock that would be sold first; exact stock and costs are never shown.
 """
+from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.batches import fefo_key, uses_batches
 from app.core.clearance import ClearanceResolver, today_ist
 from app.core.database import get_db
 from app.core.offers import OfferResolver, SOURCE_OFFER, CENTS, resolve_line_discount
 from app.models.category import Category
+from app.models.offer import Offer, OfferItem
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
 from app.models.tenant import Tenant
@@ -139,13 +141,27 @@ async def list_products(
     category_id: Optional[int] = None,
     search: Optional[str] = Query(None, max_length=100),
     sort: str = Query("name", pattern="^(name|price_asc|price_desc)$"),
+    on_offer: bool = False,
+    ids: Optional[str] = Query(None, pattern=r"^[0-9]+(,[0-9]+){0,49}$"),
     db: Session = Depends(get_db),
     tenant: Tenant = Depends(get_shop_tenant)
 ):
-    """Products to browse or search; in-stock products come first"""
+    """Products to browse or search; in-stock products come first. on_offer = in a running
+    offer or with a loose markdown today; ids = only these products (e.g. recently viewed)."""
     query = _sellable(db, tenant.id).options(joinedload(Product.category))
     if category_id:
         query = query.filter(Product.category_id == category_id)
+    if ids:
+        query = query.filter(Product.id.in_({int(i) for i in ids.split(",")}))
+    if on_offer:
+        today = today_ist()
+        running = db.query(OfferItem.product_id).join(Offer).filter(
+            Offer.tenant_id == tenant.id, Offer.is_active.is_(True),
+            Offer.start_date <= today, Offer.end_date >= today)
+        query = query.filter(or_(
+            Product.id.in_(running),
+            and_(Product.markdown_percent > 0, Product.markdown_until > datetime.utcnow()),
+        ))
     words = search.split() if search else []
     for word in words:
         pattern = f"%{word}%"
