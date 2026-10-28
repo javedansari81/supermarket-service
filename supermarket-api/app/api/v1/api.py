@@ -27,6 +27,8 @@ from app.api.v1.endpoints import (
     gst_reports,
     settings,
     audit,
+    customer_auth,
+    shop,
 )
 
 api_router = APIRouter()
@@ -103,4 +105,10 @@ api_router.include_router(settings.router, prefix="/settings", tags=["Settings"]
 
 # Audit logs
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit Logs"])
+
+# Online shop: customer login by mobile OTP (one login for all stores)
+api_router.include_router(customer_auth.router, prefix="/shop/auth", tags=["Shop - Customer Login"])
+
+# Online shop: public catalogue (stores, categories, products)
+api_router.include_router(shop.router, prefix="/shop", tags=["Shop - Catalogue"])
 

@@ -42,6 +42,7 @@ DEFAULT_SETTINGS = {
     "loyalty_min_redeem_points": {"value": "100", "category": "loyalty", "description": "Minimum points per redemption"},
     "loyalty_max_redeem_percent": {"value": "50", "category": "loyalty", "description": "Max % of a bill paid by points"},
     "loyalty_expiry_days": {"value": "365", "category": "loyalty", "description": "Days without activity before points expire (0 = never)"},
+    "online_ordering_enabled": {"value": "false", "category": "online", "description": "Customers can order online"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }

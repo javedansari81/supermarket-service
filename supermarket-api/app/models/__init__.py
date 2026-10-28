@@ -16,6 +16,7 @@ from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
 from app.models.customer import Customer
+from app.models.customer_auth import CustomerAccount, CustomerOtp, CustomerRefreshToken
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
 from app.models.loyalty_transaction import LoyaltyTransaction
@@ -45,6 +46,9 @@ __all__ = [
     "PurchaseItem",
     "StockMovement",
     "Customer",
+    "CustomerAccount",
+    "CustomerOtp",
+    "CustomerRefreshToken",
     "Sale",
     "SaleItem",
     "SalePayment",

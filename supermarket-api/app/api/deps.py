@@ -4,15 +4,22 @@ API dependencies for authentication and authorization
 from typing import Generator, Optional
 from urllib.parse import urlparse
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
+from app.models.customer_auth import CustomerAccount
+from app.models.tenant_setting import TenantSetting
 from app.models.user import User
 from app.models.tenant import Tenant
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+customer_bearer = HTTPBearer(auto_error=False)
+
+CUSTOMER_TOKEN_TYPE = "customer"
+ONLINE_ORDERING_KEY = "online_ordering_enabled"
 
 
 def _request_hostname(request: Request) -> str:
@@ -57,19 +64,19 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     payload = decode_access_token(token)
-    if payload is None:
+    if payload is None or payload.get("type") == CUSTOMER_TOKEN_TYPE:
         raise credentials_exception
-    
+
     user_id: int = payload.get("user_id")
     if user_id is None:
         raise credentials_exception
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
         raise credentials_exception
-    
+
     if user.status != "active":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -165,3 +172,47 @@ def get_tenant_context(
         role=current_user.role.role_name
     )
 
+
+def online_store_ids(db: Session):
+    """Subquery of stores with online ordering switched on"""
+    return db.query(TenantSetting.tenant_id).filter(
+        TenantSetting.setting_key == ONLINE_ORDERING_KEY,
+        func.lower(TenantSetting.setting_value) == "true"
+    )
+
+
+def get_shop_tenant(store: str, db: Session = Depends(get_db)) -> Tenant:
+    """
+    Store in the shop URL (/shop/stores/{store}/...), matched on the store's subdomain label.
+    Only active stores with online ordering switched on are found.
+    """
+    tenant = db.query(Tenant).filter(
+        Tenant.subdomain == store.strip().lower(), Tenant.status == "active",
+        Tenant.id.in_(online_store_ids(db))
+    ).first()
+    if tenant is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Store not found")
+    return tenant
+
+
+def get_current_account(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(customer_bearer),
+    db: Session = Depends(get_db)
+) -> CustomerAccount:
+    """
+    Logged-in online customer (one login for all stores); staff tokens are rejected
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Please log in again",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    payload = decode_access_token(credentials.credentials) if credentials else None
+    if not payload or payload.get("type") != CUSTOMER_TOKEN_TYPE:
+        raise credentials_exception
+    account = db.query(CustomerAccount).filter(CustomerAccount.id == payload.get("account_id")).first()
+    if account is None:
+        raise credentials_exception
+    if account.status != "active":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled")
+    return account

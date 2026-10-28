@@ -86,6 +86,13 @@ def make_user(db, tenant, role, username, password_hash, status="active"):
     return user
 
 
+def enable_online(db, tenant):
+    """Switch online ordering on for a store"""
+    from app.models import TenantSetting
+    db.add(TenantSetting(tenant_id=tenant.id, setting_key="online_ordering_enabled", setting_value="true"))
+    db.commit()
+
+
 def auth_headers(user):
     token = create_access_token({"user_id": user.id, "username": user.username,
                                  "tenant_id": user.tenant_id, "role": user.role.role_name})

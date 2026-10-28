@@ -5,7 +5,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.security import create_access_token, get_password_hash
-from tests.conftest import PASSWORD, make_user
+from tests.conftest import PASSWORD, enable_online, make_user
 
 
 def login(client, username, password=PASSWORD):
@@ -208,3 +208,184 @@ def test_unknown_subdomain_not_found(client, subdomains, admin_headers):
 def test_non_store_host_has_no_restriction(client, subdomains, admin_b_headers):
     headers = {**admin_b_headers, "Host": "warsi-family-mart-lbo9k.ondigitalocean.app"}
     assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+
+
+# ---------- Customer login (online shop, mobile OTP) ----------
+
+MOBILE = "9876543210"
+
+
+@pytest.fixture()
+def shop(db, seed, monkeypatch):
+    """Tenant A sells online (storea); tenant B (storeb) has online ordering off"""
+    from app.core import otp
+    seed["tenant_a"].subdomain = "storea"
+    seed["tenant_b"].subdomain = "storeb"
+    enable_online(db, seed["tenant_a"])
+    sent = []
+    monkeypatch.setattr(settings, "OTP_PROVIDER", "console")
+    monkeypatch.setitem(otp.SENDERS, "console", lambda mobile, code: sent.append(code))
+    return {**seed, "sent": sent}
+
+
+def shop_url(path):
+    return f"/api/v1/shop/auth{path}"
+
+
+def customer_login(client, shop, mobile=MOBILE):
+    assert client.post(shop_url("/otp/request"), json={"mobile": mobile}).status_code == 200
+    res = client.post(shop_url("/otp/verify"), json={"mobile": mobile, "code": shop["sent"][-1]})
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_first_otp_login_creates_account_but_no_store_record(client, db, shop):
+    from app.models import Customer, CustomerAccount
+    body = customer_login(client, shop, mobile="+91 98765 43210")
+    assert body["needs_name"] is True
+    assert body["account"]["mobile"] == MOBILE and body["refresh_token"]
+    assert db.query(CustomerAccount).filter(CustomerAccount.mobile == MOBILE).one().last_login
+    assert db.query(Customer).filter(Customer.mobile == MOBILE).count() == 0
+
+    headers = bearer(body["access_token"])
+    assert client.put(shop_url("/me"), json={"customer_name": "  Asha  "},
+                      headers=headers).json()["customer_name"] == "Asha"
+    assert client.get(shop_url("/me"), headers=headers).json()["customer_name"] == "Asha"
+    assert client.get(shop_url("/my-stores"), headers=headers).json()["items"] == []
+
+
+def test_login_uses_name_from_stores_and_fills_missing_names(client, db, shop):
+    from app.models import Customer
+    named = Customer(tenant_id=shop["tenant_a"].id, mobile=MOBILE, customer_name="Ravi")
+    unnamed = Customer(tenant_id=shop["tenant_b"].id, mobile=MOBILE)
+    db.add_all([named, unnamed])
+    db.commit()
+    body = customer_login(client, shop)
+    assert body["needs_name"] is False
+    assert body["account"]["customer_name"] == "Ravi"
+
+    client.put(shop_url("/me"), json={"customer_name": "Ravi Kumar"}, headers=bearer(body["access_token"]))
+    db.expire_all()
+    assert named.customer_name == "Ravi" and unnamed.customer_name == "Ravi Kumar"
+
+
+def test_my_stores_lists_own_online_stores_only(client, db, shop):
+    from datetime import datetime
+    from app.models import Customer, TenantSetting
+    db.add_all([
+        Customer(tenant_id=shop["tenant_a"].id, mobile=MOBILE, points_balance=120,
+                 loyalty_last_activity=datetime.utcnow()),
+        Customer(tenant_id=shop["tenant_b"].id, mobile=MOBILE),
+        Customer(tenant_id=shop["tenant_b"].id, mobile="9123456780"),
+        TenantSetting(tenant_id=shop["tenant_a"].id, setting_key="loyalty_enabled", setting_value="true"),
+    ])
+    db.commit()
+    headers = bearer(customer_login(client, shop)["access_token"])
+
+    stores = client.get(shop_url("/my-stores"), headers=headers).json()["items"]
+    assert stores == [{"store": "storea", "store_name": "Tenant A", "points_balance": 120}]
+
+    enable_online(db, shop["tenant_b"])
+    stores = client.get(shop_url("/my-stores"), headers=headers).json()["items"]
+    assert [(s["store"], s["points_balance"]) for s in stores] == [("storea", 120), ("storeb", 0)]
+
+    db.query(Customer).filter(Customer.tenant_id == shop["tenant_b"].id,
+                              Customer.mobile == MOBILE).update({"status": "inactive"})
+    db.commit()
+    assert [s["store"] for s in client.get(shop_url("/my-stores"), headers=headers).json()["items"]] == ["storea"]
+
+
+def test_wrong_code_attempts_are_limited(client, shop, monkeypatch):
+    monkeypatch.setattr(settings, "OTP_MAX_ATTEMPTS", 2)
+    client.post(shop_url("/otp/request"), json={"mobile": MOBILE})
+    code = shop["sent"][-1]
+    wrong = "000000" if code != "000000" else "111111"
+    for _ in range(2):
+        res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": wrong})
+        assert res.status_code == 400 and res.json()["detail"] == "Incorrect code"
+    res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": code})
+    assert res.status_code == 429
+
+
+def test_code_works_once_and_expires(client, db, shop):
+    from app.models import CustomerOtp
+    customer_login(client, shop)
+    res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": shop["sent"][-1]})
+    assert res.status_code == 400
+
+    record = db.query(CustomerOtp).filter(CustomerOtp.mobile == MOBILE).one()
+    record.consumed_at = None
+    record.expires_at = record.created_at - timedelta(seconds=1)
+    db.commit()
+    res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": shop["sent"][-1]})
+    assert res.status_code == 400 and "expired" in res.json()["detail"]
+
+
+def test_otp_request_limits(client, shop, monkeypatch):
+    def ask(mobile, ip="203.0.113.5"):
+        return client.post(shop_url("/otp/request"), json={"mobile": mobile},
+                           headers={"X-Forwarded-For": ip})
+
+    assert ask(MOBILE).status_code == 200
+    res = ask(MOBILE)
+    assert res.status_code == 429 and "Retry-After" in res.headers
+
+    monkeypatch.setattr(settings, "OTP_RESEND_SECONDS", 0)
+    monkeypatch.setattr(settings, "OTP_MAX_PER_MOBILE_PER_HOUR", 2)
+    assert ask(MOBILE).status_code == 200
+    assert ask(MOBILE, "198.51.100.7").status_code == 429
+
+    monkeypatch.setattr(settings, "OTP_MAX_PER_IP_PER_HOUR", 2)
+    assert ask("9123456780").status_code == 429
+    assert ask("9123456780", "198.51.100.7").status_code == 200
+
+
+def test_otp_request_rejects_bad_input_and_disabled_login(client, shop, monkeypatch):
+    assert client.post(shop_url("/otp/request"), json={"mobile": "12345"}).status_code == 422
+    monkeypatch.setattr(settings, "OTP_PROVIDER", "")
+    assert client.post(shop_url("/otp/request"), json={"mobile": MOBILE}).status_code == 503
+    assert shop["sent"] == []
+
+
+def test_customer_and_staff_tokens_are_separate(client, shop, admin_headers):
+    customer_headers = bearer(customer_login(client, shop)["access_token"])
+    assert client.get("/api/v1/auth/me", headers=customer_headers).status_code == 401
+    assert client.get("/api/v1/products", headers=customer_headers).status_code == 401
+    assert client.get(shop_url("/me"), headers=admin_headers).status_code == 401
+    assert client.get(shop_url("/me")).status_code == 401
+
+
+def test_refresh_rotates_and_detects_reuse(client, shop):
+    first = customer_login(client, shop)
+    res = client.post(shop_url("/refresh"), json={"refresh_token": first["refresh_token"]})
+    assert res.status_code == 200
+    second = res.json()
+    assert client.get(shop_url("/me"), headers=bearer(second["access_token"])).status_code == 200
+
+    # The old token coming back ends every session, including the new one
+    assert client.post(shop_url("/refresh"), json={"refresh_token": first["refresh_token"]}).status_code == 401
+    assert client.post(shop_url("/refresh"), json={"refresh_token": second["refresh_token"]}).status_code == 401
+
+
+def test_logout_revokes_refresh_token(client, shop):
+    body = customer_login(client, shop)
+    assert client.post(shop_url("/logout"), json={"refresh_token": body["refresh_token"]}).status_code == 200
+    assert client.post(shop_url("/refresh"), json={"refresh_token": body["refresh_token"]}).status_code == 401
+
+
+def test_disabled_account_cannot_log_in(client, db, shop, monkeypatch):
+    from app.models import CustomerAccount
+    body = customer_login(client, shop)
+    db.query(CustomerAccount).filter(CustomerAccount.mobile == MOBILE).update({"status": "inactive"})
+    db.commit()
+    assert client.get(shop_url("/me"), headers=bearer(body["access_token"])).status_code == 403
+    assert client.post(shop_url("/refresh"), json={"refresh_token": body["refresh_token"]}).status_code == 403
+
+    monkeypatch.setattr(settings, "OTP_RESEND_SECONDS", 0)
+    client.post(shop_url("/otp/request"), json={"mobile": MOBILE})
+    res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": shop["sent"][-1]})
+    assert res.status_code == 403
