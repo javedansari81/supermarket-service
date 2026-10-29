@@ -98,7 +98,8 @@ class SaleItem(Base):
     igst_amount = Column(Numeric(10, 2), default=0)
     discount_percent = Column(Numeric(5, 2), default=0)
     discount_amount = Column(Numeric(10, 2), default=0)
-    # 'manual' (older bills), 'clearance' (near-expiry / markdown), 'offer' or 'coupon'; None without a discount
+    # 'manual' (older bills), 'clearance' (near-expiry / markdown), 'offer', 'coupon' or
+    # 'online' (kept to the online order price); None without a discount
     discount_source = Column(String(20))
     offer_id = Column(Integer, ForeignKey('offers.id', ondelete='SET NULL'))
     offer_name = Column(String(100))

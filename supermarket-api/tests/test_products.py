@@ -848,3 +848,87 @@ def test_store_can_block_a_customer_from_ordering(client, db, online, product):
     db.commit()
     res = place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85)
     assert res.status_code == 403
+
+
+# ---------- Online orders handled by store staff ----------
+
+STAFF = "/api/v1/online-orders"
+
+
+def placed_order(client, db, online, product):
+    """Rice x3 (Rs 55) and 1 kg loose tomato (Rs 40): 205 + Rs 30 delivery"""
+    tomato = add_product(db, online["tenant_a"], "P0002", "Tomato Loose", product_type="loose",
+                         is_loose=True, unit_type="kg", mrp=40, selling_price=40, stock_quantity=5)
+    headers = customer_headers(db)
+    address = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).json()
+    items = [{"product_id": product.id, "quantity": 3}, {"product_id": tomato.id, "quantity": 1}]
+    order = place(client, headers, address["id"], items, 235)
+    assert order.status_code == 201, order.text
+    return order.json(), tomato, headers
+
+
+def test_staff_confirm_pack_and_deliver_bills_a_sale(client, db, online, product, cashier_headers):
+    from app.core.online_orders import new_order_signal, reserved_quantities
+    from app.models import Sale
+    order, tomato, customer = placed_order(client, db, online, product)
+    url = f"{STAFF}/{order['id']}"
+    assert new_order_signal(db, online["tenant_a"].id) == {"latest_id": order["id"], "waiting": 1}
+    listing = client.get(STAFF, headers=cashier_headers).json()
+    assert listing["counts"] == {"placed": 1} and listing["items"][0]["customer_mobile"] == "9876543210"
+    assert client.get(STAFF, params={"search": "98765"}, headers=cashier_headers).json()["total"] == 1
+
+    rice_item, tomato_item = client.get(url, headers=cashier_headers).json()["items"]
+    pack = lambda rice, tom: client.post(f"{url}/pack", headers=cashier_headers, json={"items": [
+        {"item_id": rice_item["id"], "packed_quantity": rice},
+        {"item_id": tomato_item["id"], "packed_quantity": tom}]})
+    assert pack(2, 1.05).status_code == 400  # not confirmed yet
+    assert client.post(f"{url}/confirm", headers=cashier_headers).json()["status"] == "confirmed"
+    assert client.get(f"{ORDERS}/orders/{order['id']}", headers=customer).json()["status"] == "confirmed"
+
+    assert pack(4, 1).status_code == 400  # more than ordered
+    assert pack(2, 1.2).status_code == 400  # loose more than 10% over
+    assert client.post(f"{url}/pack", headers=cashier_headers,
+                       json={"items": [{"item_id": rice_item["id"], "packed_quantity": 2}]}).status_code == 400
+    packed = pack(2, 1.05).json()
+    assert packed["status"] == "packed"
+    assert (float(packed["items_total"]), float(packed["total_amount"])) == (152, 182)
+    assert reserved_quantities(db, online["tenant_a"].id, [product.id]) == {product.id: 2}
+
+    # The customer pays the order price even after the shelf price went up
+    product.selling_price = 70
+    db.commit()
+    assert client.post(f"{url}/dispatch", headers=cashier_headers).json()["status"] == "out_for_delivery"
+    res = client.post(f"{url}/deliver", headers=cashier_headers, json={"payment_mode": "cash"})
+    assert res.status_code == 200, res.text
+    delivered = res.json()
+    assert delivered["status"] == "delivered" and delivered["invoice_no"] and delivered["sale_no"]
+    sale = db.query(Sale).filter(Sale.id == delivered["sale_id"]).one()
+    assert float(sale.total_amount) == 182 and sale.payments[0].mode == "cash"
+    lines = {i.product_name: i for i in sale.items}
+    assert (float(lines["Rice 1kg"].line_total), lines["Rice 1kg"].discount_source) == (110, "online")
+    assert float(lines["Tomato Loose"].quantity) == 1.05
+    delivery = lines["Delivery charge (online order)"]
+    assert (float(delivery.line_total), delivery.hsn_code, float(delivery.tax_percent)) == (30, "996813", 18)
+    db.refresh(product)
+    db.refresh(tomato)
+    assert (float(product.stock_quantity), float(tomato.stock_quantity)) == (98, 3.95)
+    assert reserved_quantities(db, online["tenant_a"].id, [product.id]) == {}
+    mine = client.get(f"{ORDERS}/orders/{order['id']}", headers=customer).json()
+    assert mine["status"] == "delivered" and mine["items"][0]["packed_quantity"] == "2.000"
+    assert client.post(f"{url}/deliver", headers=cashier_headers, json={}).status_code == 400
+
+
+def test_only_supervisors_cancel_and_stores_see_their_own_orders(client, db, online, product, cashier_headers,
+                                                                 supervisor_headers, admin_b_headers):
+    order, _, customer = placed_order(client, db, online, product)
+    url = f"{STAFF}/{order['id']}"
+    assert client.get(url, headers=admin_b_headers).status_code == 404
+    assert client.get(STAFF, headers=admin_b_headers).json()["total"] == 0
+    assert client.post(f"{url}/cancel", json={"reason": "Out of stock"}, headers=cashier_headers).status_code == 403
+    assert client.post(f"{url}/cancel", json={"reason": " "}, headers=supervisor_headers).status_code == 422
+
+    res = client.post(f"{url}/cancel", json={"reason": "Shop closed today"}, headers=supervisor_headers).json()
+    assert (res["status"], res["cancelled_by"], res["cancel_reason"]) == ("cancelled", "store", "Shop closed today")
+    mine = client.get(f"{ORDERS}/orders/{order['id']}", headers=customer).json()
+    assert (mine["status"], mine["cancelled_by"]) == ("cancelled", "store")
+    assert client.post(f"{url}/confirm", headers=cashier_headers).status_code == 400

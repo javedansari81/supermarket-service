@@ -32,7 +32,7 @@ On success you land on **Dashboard**. Invalid credentials show an error. Your se
 | Avatar menu | **Logout** — ends the session and returns to login. |
 | Floating button (bottom-right) | Main add action on list pages — **Add Product**, **Add Category**, **Add Location**, **Add Supplier**, **New Purchase**, **Add User**. |
 
-Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisors also see **Products**, **Locations** and **Barcode**. Admins see the full menu. The menu is grouped into sections — **Sales**, **Catalog**, **Stock & Purchasing**, **Promotions**, **Insights** and **Administration** — and each role sees only the sections that contain pages it can open (shown as divider lines when the sidebar is collapsed).
+Cashiers only see **Dashboard**, **Billing / POS**, **Online Orders**, **Invoices** and **Customers**. Supervisors also see **Products**, **Locations** and **Barcode**. Admins see the full menu. The menu is grouped into sections — **Sales**, **Catalog**, **Stock & Purchasing**, **Promotions**, **Insights** and **Administration** — and each role sees only the sections that contain pages it can open (shown as divider lines when the sidebar is collapsed).
 
 ---
 
@@ -52,6 +52,8 @@ Cashiers only see **Dashboard**, **Billing / POS**, and **Invoices**. Supervisor
 | Void a sale | Yes (any sale without returns) | Any sale within 7 days | Own same-day sales only |
 | Cash drawer shift: open, cash in, close | Yes | Yes | Yes |
 | Cash drawer shift: cash out, X report, approve a difference, Shifts page | Yes | Yes | No |
+| Online orders: confirm, pack, out for delivery, delivered | Yes | Yes | Yes |
+| Online orders: cancel | Yes | Yes | No |
 | Reports, users, audit logs, settings | Yes | No | No |
 
 ---
@@ -417,7 +419,35 @@ Remove a line with trash before printing.
 
 ---
 
-## 12. Invoices
+## 12. Online Orders
+
+Home delivery orders placed on the shop website (`shop.mfmart.co.in`), for stores with online ordering switched on.
+
+### New order alerts
+
+- The **Online Orders** menu item shows the number of new orders waiting to be confirmed.
+- While the staff app is open (any page, any tab), a new order plays a chime and shows a message within a few seconds.
+- Click **Turn on** on the Online Orders page to also get desktop notifications when the tab is in the background. Clicking the notification opens Online Orders.
+
+### Handle an order
+
+The tabs are **New**, **To pack**, **Packed**, **Out for delivery**, **Delivered**, **Cancelled** and **All**; open orders show their count. Search by order number or mobile. Click an order to open it.
+
+1. **Confirm** — accept a new order. The customer sees **Confirmed**.
+2. **Pack** — enter what goes in the bag for each item: the weighed quantity for loose items (up to 10% over the ordered weight), or a lower number / **0** when an item is short. The bill is worked out again at the order's prices. Use **Edit packing** to correct it before delivery.
+3. **Packing slip** — prints the address, items and the amount to collect.
+4. **Out for delivery** — the order has left the store.
+5. **Delivered** — choose how the customer paid (**Cash** or **UPI**, with an optional UPI reference) and confirm. The order is billed as a normal sale: tax invoice, loyalty points, stock taken off, and the payment goes into the **open cash drawer shift** (open one first if the store requires shifts). The delivery charge is billed as a separate line (SAC 996813, GST 18%). The customer is never charged more than the price shown when they ordered.
+
+Stock is held for open orders, so other online customers cannot order it, but counter billing is not blocked. Customers can cancel their order themselves until it is packed.
+
+### Cancel an order (Supervisor, Admin)
+
+Click **Cancel order**, type a reason (shown to the customer) and confirm. The held stock is released. Delivered orders cannot be cancelled; use a return on **Invoices** instead.
+
+---
+
+## 13. Invoices
 
 Sales history for Admin and Cashier.
 
@@ -457,7 +487,7 @@ Use this for billing mistakes. Click the void icon (or **Void** in the detail di
 
 ---
 
-## 13. Reports (Admin)
+## 14. Reports (Admin)
 
 Analytics for a date range (default: start of month → today). The summary cards and the open tab load for the chosen dates; other tabs load when you open them. GST returns have their own page (see **GST Returns** below).
 
@@ -495,7 +525,7 @@ Use this for purchasing, staffing, and daily/monthly review.
 
 ---
 
-## 14. GST Returns (Admin)
+## 15. GST Returns (Admin)
 
 Helps prepare the GST returns. Open **GST Returns** under **Insights** in the sidebar.
 
@@ -511,7 +541,7 @@ Helps prepare the GST returns. Open **GST Returns** under **Insights** in the si
 
 ---
 
-## 15. Users (Admin)
+## 16. Users (Admin)
 
 Staff accounts. Roles: **admin**, **supervisor** or **cashier**.
 
@@ -532,7 +562,7 @@ Inactive users should not sign in. Give cashiers **cashier**, floor supervisors 
 
 ---
 
-## 16. Audit Logs (Admin)
+## 17. Audit Logs (Admin)
 
 Who did what, and when. Default range: last 7 days.
 
@@ -544,7 +574,7 @@ Use after unexpected stock, price, or user changes.
 
 ---
 
-## 17. Settings (Admin)
+## 18. Settings (Admin)
 
 ### Store Settings
 
@@ -563,7 +593,7 @@ Save after changes. Currency in the UI is **₹**.
 
 ---
 
-## 18. Recommended workflows
+## 19. Recommended workflows
 
 ### First-time setup (Admin)
 
@@ -583,12 +613,13 @@ Save after changes. Currency in the UI is **₹**.
 | Who | Tasks |
 |-----|--------|
 | Cashier | First cashier of the day: **Open Shift** with the opening float. Login → Billing → scan → checkout (cash/card/UPI) → next customer. Reprint from Invoices. At closing: **Close Shift** with the note-by-note count and print the Z report. Logout at shift end. |
-| Supervisor | Record cash taken out (**Cash Out**), check the **X Report** during the day, approve shift differences on **Shifts**. |
+| Cashier / packer | Keep **Online Orders** open: confirm new orders, pack, print the packing slip, send out, and mark **Delivered** when the payment is collected. |
+| Supervisor | Record cash taken out (**Cash Out**), check the **X Report** during the day, approve shift differences on **Shifts**, cancel online orders that cannot be fulfilled. |
 | Admin | Dashboard for sales and stock alerts → receive goods on Purchases → put goods away using the Put-away List → adjust exceptions in Inventory → print labels → Reports and Audit as needed. |
 
 ---
 
-## 19. Troubleshooting
+## 20. Troubleshooting
 
 | Problem | What to try |
 |---------|-------------|
@@ -606,10 +637,12 @@ Save after changes. Currency in the UI is **₹**.
 | Session lost | Sign in again. Logout, or 30 minutes without activity, clears the stored token. |
 | Location missing in product form | Only active locations are listed. Create or reactivate it on **Locations**. |
 | Put-away List shows **Unassigned** | Assign a location to that product on **Products**. |
+| No sound or notification for online orders | Keep the staff app open in a browser tab, click anywhere on the page once (browsers block sound until then), and click **Turn on** on Online Orders. If notifications were blocked, allow them in the browser's site settings. |
+| "Packed more than ordered" | Packed quantity cannot exceed the order (loose items: up to 10% over). |
 
 ---
 
-## 20. Quick menu map
+## 21. Quick menu map
 
 | Menu | Path | Who |
 |------|------|-----|
@@ -622,6 +655,7 @@ Save after changes. Currency in the UI is **₹**.
 | Purchases | `/purchases` | Admin |
 | Inventory | `/inventory` | Admin |
 | Barcode | `/barcode` | Admin, Supervisor |
+| Online Orders | `/online-orders` | All (cancel: Admin, Supervisor) |
 | Invoices | `/invoices` | All |
 | Shifts | `/shifts` | Admin, Supervisor |
 | Reports | `/reports` | Admin |

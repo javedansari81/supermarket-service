@@ -7,6 +7,7 @@ import { Box, Toolbar, useMediaQuery, useTheme } from '@mui/material';
 import Sidebar, { COLLAPSED_DRAWER_WIDTH, DRAWER_WIDTH } from './Sidebar';
 import Header from './Header';
 import { PageHeaderSlotProvider } from './PageHeader';
+import { OrderAlertsProvider } from '../../context/OrderAlertsContext';
 
 const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
 
@@ -42,6 +43,7 @@ const MainLayout: React.FC = () => {
   const drawerWidth = isMobile ? 0 : collapsed ? COLLAPSED_DRAWER_WIDTH : DRAWER_WIDTH;
 
   return (
+    <OrderAlertsProvider>
     <PageHeaderSlotProvider value={pageHeaderSlot}>
       <Box sx={{ display: 'flex', minHeight: '100vh' }}>
         <Sidebar
@@ -73,6 +75,7 @@ const MainLayout: React.FC = () => {
         </Box>
       </Box>
     </PageHeaderSlotProvider>
+    </OrderAlertsProvider>
   );
 };
 

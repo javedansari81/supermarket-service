@@ -3,7 +3,7 @@ Online order schemas: delivery addresses, checkout quote, orders
 """
 from datetime import datetime
 from decimal import Decimal
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 from app.schemas.customer import normalize_mobile
 
@@ -90,6 +90,8 @@ class QuoteLine(BaseModel):
     discount_source: Optional[str] = None
     offer_name: Optional[str] = None
     line_total: Decimal
+    # Set once the store packs the order (weighed quantity, or less when short)
+    packed_quantity: Optional[Decimal] = None
 
     model_config = {"from_attributes": True}
 
@@ -149,3 +151,77 @@ class OrderListResponse(BaseModel):
 
 class OrderCancel(BaseModel):
     reason: Optional[str] = Field(None, max_length=300)
+
+
+# ---------- Store staff ----------
+
+class StaffOrderItem(QuoteLine):
+    id: int
+
+
+class StaffOrderSummary(Totals):
+    id: int
+    order_no: str
+    status: str
+    payment_method: str
+    payment_status: str
+    customer_name: Optional[str] = None
+    customer_mobile: str
+    delivery_pincode: str
+    item_count: int
+    created_at: datetime
+
+
+class StaffOrder(StaffOrderSummary):
+    items: List[StaffOrderItem]
+    delivery_name: str
+    delivery_mobile: str
+    delivery_address: str
+    notes: Optional[str] = None
+    cancel_reason: Optional[str] = None
+    cancelled_by: Optional[str] = None
+    confirmed_at: Optional[datetime] = None
+    packed_at: Optional[datetime] = None
+    dispatched_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    sale_id: Optional[int] = None
+    sale_no: Optional[str] = None
+    invoice_no: Optional[str] = None
+
+
+class StaffOrderListResponse(BaseModel):
+    items: List[StaffOrderSummary]
+    total: int
+    page: int
+    page_size: int
+    # Orders per status, for the tabs
+    counts: Dict[str, int]
+
+
+class PackItem(BaseModel):
+    item_id: int
+    # 0 = not sent (out of stock); loose items: the weighed quantity
+    packed_quantity: Decimal = Field(..., ge=0, max_digits=8, decimal_places=3)
+
+
+class PackRequest(BaseModel):
+    items: List[PackItem] = Field(..., min_length=1)
+
+
+class DeliverRequest(BaseModel):
+    """How the customer paid the delivery person"""
+    payment_mode: Literal["cash", "upi"] = "cash"
+    reference: Optional[str] = Field(None, max_length=50)
+
+
+class StoreCancel(BaseModel):
+    reason: str = Field(..., min_length=3, max_length=300)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 3:
+            raise ValueError("Please give a reason")
+        return v

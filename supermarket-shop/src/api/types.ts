@@ -119,6 +119,8 @@ export interface OrderLine {
   discount_source: 'offer' | 'clearance' | null;
   offer_name: string | null;
   line_total: string;
+  /** Set once the store packs the order (weighed quantity, or less when short) */
+  packed_quantity?: string | null;
 }
 
 /** A cart line that cannot be ordered: no longer sold, or less stock than asked (available) */

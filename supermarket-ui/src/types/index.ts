@@ -498,4 +498,64 @@ export interface ShiftReport extends CashierShift {
   variance_limit: number;
 }
 
+// Online orders (from the customer shop)
+export type OnlineOrderStatus = 'placed' | 'confirmed' | 'packed' | 'out_for_delivery' | 'delivered' | 'cancelled';
+
+export interface OnlineOrderItem {
+  id: number;
+  product_id: number;
+  product_name: string;
+  is_loose: boolean;
+  unit_type?: string | null;
+  quantity: number;
+  packed_quantity?: number | null;
+  mrp?: number | null;
+  unit_price: number;
+  offer_price: number;
+  discount_source?: string | null;
+  offer_name?: string | null;
+  line_total: number;
+}
+
+export interface OnlineOrderSummary {
+  id: number;
+  order_no: string;
+  status: OnlineOrderStatus;
+  payment_method: 'cod' | 'online';
+  payment_status: string;
+  customer_name?: string | null;
+  customer_mobile: string;
+  delivery_pincode: string;
+  item_count: number;
+  created_at: string;
+  mrp_total: number;
+  discount_amount: number;
+  items_total: number;
+  delivery_charge: number;
+  total_amount: number;
+}
+
+export interface OnlineOrder extends OnlineOrderSummary {
+  items: OnlineOrderItem[];
+  delivery_name: string;
+  delivery_mobile: string;
+  delivery_address: string;
+  notes?: string | null;
+  cancel_reason?: string | null;
+  cancelled_by?: 'customer' | 'store' | null;
+  confirmed_at?: string | null;
+  packed_at?: string | null;
+  dispatched_at?: string | null;
+  delivered_at?: string | null;
+  cancelled_at?: string | null;
+  sale_id?: number | null;
+  sale_no?: string | null;
+  invoice_no?: string | null;
+}
+
+export interface OnlineOrderListResponse extends PaginatedResponse<OnlineOrderSummary> {
+  counts: Partial<Record<OnlineOrderStatus, number>>;
+}
+
+
 

@@ -62,6 +62,10 @@ export const API_ENDPOINTS = {
   SALE_RETURNS: '/sale-returns',
   HELD_BILLS: '/held-bills',
 
+  // Online orders from the customer shop
+  ONLINE_ORDERS: '/online-orders',
+  ONLINE_ORDERS_STREAM: '/online-orders/stream',
+
   // Cashier shifts (cash drawer)
   SHIFTS: '/shifts',
   SHIFT_CURRENT: '/shifts/current',

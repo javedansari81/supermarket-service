@@ -2,7 +2,7 @@
 CustomerAddress, Order and OrderItem models for online orders (home delivery)
 """
 from sqlalchemy import (Column, Integer, String, Text, Boolean, Numeric, ForeignKey, CheckConstraint,
-                        UniqueConstraint, Index)
+                        UniqueConstraint, Index, DateTime)
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from app.models.base import TimestampMixin
@@ -46,6 +46,8 @@ class Order(Base, TimestampMixin):
     OPEN_STATUSES = (STATUS_PLACED, STATUS_CONFIRMED, STATUS_PACKED, STATUS_OUT_FOR_DELIVERY)
     # The customer can cancel until the order is packed
     CUSTOMER_CANCELLABLE = (STATUS_PLACED, STATUS_CONFIRMED)
+    # Staff hand over and take payment once packed
+    DELIVERABLE = (STATUS_PACKED, STATUS_OUT_FOR_DELIVERY)
 
     PAYMENT_COD = 'cod'
     PAYMENT_ONLINE = 'online'
@@ -71,8 +73,16 @@ class Order(Base, TimestampMixin):
     cancel_reason = Column(String(300))
     cancelled_by = Column(String(20))
     sale_id = Column(Integer, ForeignKey('sales.id'))
+    confirmed_at = Column(DateTime)
+    packed_at = Column(DateTime)
+    dispatched_at = Column(DateTime)
+    delivered_at = Column(DateTime)
+    cancelled_at = Column(DateTime)
+    updated_by = Column(Integer, ForeignKey('users.id'))
 
     tenant = relationship("Tenant")
+    customer = relationship("Customer")
+    sale = relationship("Sale")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan",
                          order_by="OrderItem.id")
 
@@ -98,6 +108,8 @@ class OrderItem(Base):
     is_loose = Column(Boolean, nullable=False, default=False)
     unit_type = Column(String(50))
     quantity = Column(Numeric(12, 3), nullable=False)
+    # Set when packed: weighed quantity for loose items, lower or 0 when short
+    packed_quantity = Column(Numeric(12, 3))
     mrp = Column(Numeric(10, 2))
     unit_price = Column(Numeric(10, 2), nullable=False)
     offer_price = Column(Numeric(10, 2), nullable=False)

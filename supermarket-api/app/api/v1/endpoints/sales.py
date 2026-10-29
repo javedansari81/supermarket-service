@@ -62,10 +62,10 @@ def get_setting(db: Session, tenant_id: int, key: str, default: str = "") -> str
     return setting.setting_value if setting else default
 
 
-def pick_batches(db: Session, product: Product, item_data):
+def pick_batches(db: Session, product: Product, item_data, any_mrp: bool = False):
     """[(batch, quantity)] a sale line is taken from; [(None, quantity)] for loose items.
     A chosen batch must cover the quantity; otherwise stock is taken first expiry first,
-    which needs every in-stock batch to have the same MRP."""
+    which needs every in-stock batch to have the same MRP (unless any_mrp)."""
     if not uses_batches(product):
         return [(None, item_data.quantity)]
     batches = sync_batches(db, product)
@@ -78,7 +78,7 @@ def pick_batches(db: Session, product: Product, item_data):
                        f"only {batch.quantity_left.normalize():f} left in this batch"
             )
         return [(batch, item_data.quantity)]
-    if len(distinct_mrps(batches)) > 1:
+    if not any_mrp and len(distinct_mrps(batches)) > 1:
         raise HTTPException(
             status_code=409,
             detail=f"{product.product_name} is in stock at different MRPs; select the MRP batch"
@@ -101,11 +101,14 @@ class PricedLine:
     gross: Decimal
     discount: LineDiscount
     unit_cost: Optional[Decimal]
+    # False for a service line (delivery charge): no stock movement
+    stock: bool = True
 
 
-def price_lines(db: Session, tenant_id: int, items) -> List[PricedLine]:
+def price_lines(db: Session, tenant_id: int, items, any_mrp: bool = False) -> List[PricedLine]:
     """Checks products and stock, picks batches and takes the stock off (callers that don't
-    sell roll back), and gives each line its near-expiry or offer discount"""
+    sell roll back), and gives each line its near-expiry or offer discount.
+    any_mrp = take stock first expiry first even across batches with different MRPs."""
     clearance = ClearanceResolver(db, tenant_id)
     offers = OfferResolver(db, tenant_id)
     lines = []
@@ -135,7 +138,7 @@ def price_lines(db: Session, tenant_id: int, items) -> List[PricedLine]:
             )
 
         # One sale line per batch the quantity is taken from
-        for batch, quantity in pick_batches(db, product, item_data):
+        for batch, quantity in pick_batches(db, product, item_data, any_mrp):
             clearance_percent = Decimal("0") if item_data.skip_clearance \
                 else clearance.percent(product, batch)
             if batch:
@@ -321,7 +324,36 @@ async def create_sale(
         raise HTTPException(status_code=400, detail="Sale must have at least one item")
 
     shift = shift_for_cash(db, context.tenant_id)
+    if sale_data.customer_gstin and not sale_data.customer_name:
+        raise HTTPException(status_code=400, detail="Customer name is required for a B2B (GSTIN) invoice")
 
+    lines = price_lines(db, context.tenant_id, sale_data.items)
+    coupon = None
+    coupon_result = None
+    if sale_data.coupon_code:
+        coupon, coupon_result = apply_coupon(db, context.tenant_id, sale_data.coupon_code,
+                                             sale_data.customer_phone, lines, lock=True)
+
+    sale, customer = record_sale(db, request, context, sale_data, lines, shift, coupon, coupon_result)
+
+    # A recalled held bill is done once it is sold
+    if sale_data.held_bill_id:
+        held = held_bill_query(db, context).filter(HeldBill.id == sale_data.held_bill_id).first()
+        if held:
+            db.delete(held)
+    db.commit()
+    db.refresh(sale)
+
+    response = to_sale_response(sale)
+    if customer:
+        response.points_balance = customer.points_balance
+    return response
+
+
+def record_sale(db: Session, request: Request, context: TenantContext, sale_data: SaleCreate,
+                lines: List[PricedLine], shift, coupon=None, coupon_result=None):
+    """Saves priced lines as a sale: GST, stock movements, payments, loyalty points, tax
+    invoice and audit entries. Returns (sale, customer); the caller commits."""
     # Generate sale number
     sale_no = generate_sale_no(db, context.tenant_id)
 
@@ -333,15 +365,6 @@ async def create_sale(
     store_state_code = store.store_state_code or ""
     place_code = sale_data.place_of_supply_code or store_state_code
     is_interstate = bool(store_state_code and place_code and place_code != store_state_code)
-    if sale_data.customer_gstin and not sale_data.customer_name:
-        raise HTTPException(status_code=400, detail="Customer name is required for a B2B (GSTIN) invoice")
-
-    lines = price_lines(db, context.tenant_id, sale_data.items)
-    coupon = None
-    coupon_result = None
-    if sale_data.coupon_code:
-        coupon, coupon_result = apply_coupon(db, context.tenant_id, sale_data.coupon_code,
-                                             sale_data.customer_phone, lines, lock=True)
 
     customer = None
     if sale_data.customer_phone:
@@ -443,17 +466,18 @@ async def create_sale(
         total_igst += igst_amount
 
         # Create stock movement
-        movement = StockMovement(
-            tenant_id=context.tenant_id,
-            product_id=product.id,
-            batch_id=batch.id if batch else None,
-            movement_type="sale_out",
-            quantity=quantity,
-            reference_type="sale",
-            reference_id=sale.id,
-            created_by=context.user_id
-        )
-        db.add(movement)
+        if line.stock:
+            movement = StockMovement(
+                tenant_id=context.tenant_id,
+                product_id=product.id,
+                batch_id=batch.id if batch else None,
+                movement_type="sale_out",
+                quantity=quantity,
+                reference_type="sale",
+                reference_id=sale.id,
+                created_by=context.user_id
+            )
+            db.add(movement)
 
     # Update sale totals
     sale.subtotal = subtotal
@@ -501,17 +525,5 @@ async def create_sale(
                             "payments": [snapshot(p) for p in payments]})
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_CREATE,
                  "invoice", invoice.id, new_value={**snapshot(invoice), "sale_no": sale.sale_no})
-
-    # A recalled held bill is done once it is sold
-    if sale_data.held_bill_id:
-        held = held_bill_query(db, context).filter(HeldBill.id == sale_data.held_bill_id).first()
-        if held:
-            db.delete(held)
-    db.commit()
-    db.refresh(sale)
-
-    response = to_sale_response(sale)
-    if customer:
-        response.points_balance = customer.points_balance
-    return response
+    return sale, customer
 

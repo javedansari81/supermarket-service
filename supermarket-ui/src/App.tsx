@@ -35,6 +35,7 @@ import NearExpiry from './pages/NearExpiry';
 import Offers from './pages/Offers';
 import Coupons from './pages/Coupons';
 import Shifts from './pages/Shifts';
+import OnlineOrders from './pages/OnlineOrders';
 
 function App() {
   return (
@@ -73,6 +74,7 @@ function App() {
                 <Route path="offers" element={<ProtectedRoute requireAdmin><Offers /></ProtectedRoute>} />
                 <Route path="coupons" element={<ProtectedRoute requireAdmin><Coupons /></ProtectedRoute>} />
                 <Route path="barcode" element={<ProtectedRoute requireSupervisor><Barcode /></ProtectedRoute>} />
+                <Route path="online-orders" element={<OnlineOrders />} />
                 <Route path="invoices" element={<Invoices />} />
                 <Route path="shifts" element={<ProtectedRoute requireSupervisor><Shifts /></ProtectedRoute>} />
                 <Route path="customers" element={<Customers />} />

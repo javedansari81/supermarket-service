@@ -5,7 +5,7 @@ Requirements for letting customers log in and order online. Living document; ext
 - **Status:** `Open`, `In progress`, `Done`, `Won't do`
 - **Phase:** `MVP` first release (login, browse, cart, pickup / cash on delivery), `Full` later releases, `Future` after the website (mobile app)
 
-Last reviewed: 2026-10-28
+Last reviewed: 2026-10-29
 
 ---
 
@@ -18,6 +18,10 @@ Last reviewed: 2026-10-28
 - **No separate signup:** mobile OTP login only; the name is asked after the first login.
 - **One login for all stores, data per store:** the login is a `customer_accounts` row (verified mobile). Each store keeps its own `customers` row for that mobile (name on invoices, loyalty points, orders), already there from in-store billing or created at the first order at that store. Switching stores needs no new OTP. A store never sees which other stores the customer uses; "Your stores" (stores with a record) is shown only to the customer, first in the store picker. A store disabling its customer row blocks ordering at that store only.
 - **Browsing needs no login**; login is asked at checkout, order history and profile. The cart is kept per store.
+- **OTP SMS via StartMessaging** on its DLT-free route: no DLT registration of our own (ONL-02).
+- **Home delivery only** (no store pickup). Payment: **cash on delivery** and **prepaid online** (UPI / card); online payment waits for the payment gateway (ONL-07), so launch is cash on delivery.
+- **Delivery charge:** ₹30 below an items total of ₹300, free from ₹300 (per-store settings `delivery_charge`, `free_delivery_min`). No minimum order value.
+- **Coupons** are not used online in the first release; online prices follow in-store prices and offers.
 - **Online ordering is switched on per store** (`online_ordering_enabled` setting); Demo Store (`SFM001`) is the pilot.
 - **Customer website:** separate `supermarket-shop/` app (Vite, React, TypeScript, MUI), mobile-first and installable (PWA), static site on DigitalOcean App Platform.
 - **Stock:** online stock shown = on hand − reserved by open orders − safety buffer; reservations do not block in-store billing (staff remove or substitute short items while picking).
@@ -40,14 +44,14 @@ Last reviewed: 2026-10-28
 | ID | Requirement | Area | Phase | Status |
 |----|-------------|------|-------|--------|
 | ONL-01 | Customer login by mobile OTP | Auth | MVP | In progress |
-| ONL-02 | SMS / WhatsApp OTP provider | Auth | MVP | Open |
+| ONL-02 | SMS / WhatsApp OTP provider | Auth | MVP | In progress |
 | ONL-03 | Public catalogue API | API | MVP | In progress |
 | ONL-04 | Customer shopping site | UI | MVP | In progress |
-| ONL-05 | Online orders and stock reservation | Orders | MVP | Open |
-| ONL-06 | Staff order queue | Orders | MVP | Open |
+| ONL-05 | Online orders and stock reservation | Orders | MVP | In progress |
+| ONL-06 | Staff order queue | Orders | MVP | Done |
 | ONL-07 | Online payments | Payments | Full | Open |
-| ONL-08 | Delivery addresses, area, charges and slots | Delivery | Full | Open |
-| ONL-09 | Order notifications | Notifications | Full | Open |
+| ONL-08 | Delivery addresses, area, charges and slots | Delivery | MVP (addresses, charge) / Full | In progress |
+| ONL-09 | Order notifications | Notifications | Full | In progress |
 | ONL-10 | Security, legal pages and tests | Operations | MVP | Open |
 | ONL-11 | Customer mobile app (Android and iOS) | UI | Future | Open |
 
@@ -58,12 +62,14 @@ Last reviewed: 2026-10-28
 **ONL-01 Customer login by mobile OTP**
 Customers log in with their 10-digit mobile number and a one-time code; no password. One login works at every store (see Decisions). Customer tokens are a separate token type from staff tokens (`type: customer`) so they can never reach staff endpoints. Needs: OTP expiry, resend cooldown, limits on attempts per number and per IP.
 - **Built (backend):** migration `030_customer_auth.sql` (`customer_accounts`, `customer_otps`, `customer_refresh_tokens`, `online_ordering_enabled` setting); endpoints under `/api/v1/shop/auth`: `otp/request`, `otp/verify`, `refresh`, `logout`, `GET/PUT me`, `GET my-stores`. 6-digit code, only its hash stored; 5-minute expiry, 60-second resend wait, 5 wrong attempts, 5 codes per number and 20 per IP per hour (all in `.env`). Access token 30 minutes; refresh token 60 days, stored hashed, replaced on every refresh, and reuse of an old one ends all the account's sessions. A new account takes the name the stores already have; setting the name fills it on store records without one. Logins are written to the application log and `customer_accounts.last_login` (not the store audit log, as a login belongs to no store).
-- **Remaining:** real SMS provider (ONL-02; `OTP_PROVIDER=console` only logs the code for development), Settings toggle for `online_ordering_enabled`, creating the store record at the first order and blocking customers disabled by that store (ONL-05), per-IP limit using the proxy's own client IP header.
+- **OTP providers (`OTP_PROVIDER`):** empty = customer login off; `console` = code written to the log (development); `fixed` = every number logs in with `OTP_FIXED_CODE`, nothing sent (testing only, never in production).
+- **Remaining:** StartMessaging sender (ONL-02), Settings toggle for `online_ordering_enabled`, creating the store record at the first order and blocking customers disabled by that store (ONL-05), per-IP limit using the proxy's own client IP header.
 
 **ONL-02 SMS / WhatsApp OTP provider**
-Any provider with an OTP API works; Meta or Twilio is not required.
-- **DLT registration (India, mandatory):** TRAI requires the business, sender ID (e.g. `MFMART`) and each message template to be registered on a DLT platform. Applies to every provider, Twilio included. Takes days to a couple of weeks — start early.
-- **Options:**
+- **Decision:** [StartMessaging](https://startmessaging.com/docs/sms/non-dlt), DLT-free OTP route. StartMessaging is itself DLT-registered and sends through its own approved sender ID and templates, so we do **not** set up DLT. One-time KYC (company document or personal government ID), prepaid wallet, about ₹0.25 per OTP. Trade-offs: shared sender ID (not `MFMART`) and fixed message text.
+- **How it fits:** our app keeps generating, hashing and checking the code (ONL-01); StartMessaging only delivers it. `POST https://api.startmessaging.com/otp/send` with `phoneNumber` in E.164 (`+91` + 10 digits), `variables.otp` = our code (`variables.appName` = `MFMart`), API key in the `X-API-Key` header. Their `/otp/verify` is not used.
+- **Remaining:** `startmessaging` sender in `app/core/otp.py` (registered in `SENDERS`), `STARTMESSAGING_API_KEY` in `.env` (secret, never committed), request timeout and a clear error when sending fails, low-balance alert, test with a real number. If a branded sender ID is wanted later, StartMessaging's DLT route (own DLT registration, about ₹0.18 per SMS) needs no code change.
+- **Options considered:** DLT registration (TRAI: business, sender ID and each template on a DLT platform) is needed for every provider below except where the provider uses its own registration.
 
 | Option | Pros | Cons |
 |---|---|---|
@@ -72,34 +78,57 @@ Any provider with an OTP API works; Meta or Twilio is not required.
 | Meta (WhatsApp Cloud API) | OTP in WhatsApp; no SMS DLT templates | Customer needs WhatsApp; Meta Business verification and approved templates |
 | Firebase Phone Auth | Quickest to set up; free allowance | Login depends on Firebase; less control over sender ID and cost |
 | AWS SNS | Fits if already on AWS | Sending only, no OTP verify; DLT still needed |
+| StartMessaging (DLT-free OTP) — **chosen** | No DLT setup; ready in minutes; low price | Shared sender ID; fixed message text |
 
-- **Recommendation:** an Indian provider (e.g. MSG91) as the main channel; WhatsApp OTP later as an option. Put the provider behind a small interface (`send_otp` / `verify_otp`) so it can be switched without changing login code. Compare current per-message rates from two or three providers before choosing.
+- The provider sits behind `send_otp` in `app/core/otp.py`, so it can be switched (or WhatsApp OTP added later) without changing login code.
 
 **ONL-03 Public catalogue API**
 Read-only endpoints, no staff login, scoped to the store subdomain: categories, product list and search, product detail, price after offers / clearance, in-stock flag (not exact quantity). Only `active` products. Needs product images (not stored today) and caching.
-- **Built (backend):** `app/api/v1/endpoints/shop.py`, no login: `GET /shop/stores` (store picker), `GET /shop/stores/{store}` (name, address, phone, GSTIN, FSSAI licence), `.../categories` (active categories with product counts), `.../products` (search by name or brand, category filter, sort by name or price, pages of up to 100, in-stock first), `.../products/{id}` (with description). Only stores with online ordering on, and only active products with a price. Price = what billing would charge for one unit (one pack, or one kg / L when loose) from the stock sold first: earliest-expiry batch that is not expired, then the better of offer and near-expiry / loose markdown, as in billing. Expired batches are never priced or counted as in stock. Purchase price, barcode and exact stock are never returned. Responses can be cached for 60 seconds.
-- **Remaining:** product images (storage in Cloudflare R2, upload on the staff Products page, `image_url` in responses), subtracting stock reserved by open orders and a safety buffer from the in-stock flag (ONL-05), rate limiting of public endpoints (ONL-10).
+- **Built (backend):** `app/api/v1/endpoints/shop.py`, no login: `GET /shop/stores` (store picker), `GET /shop/stores/{store}` (name, address, phone, GSTIN, FSSAI licence), `.../categories` (active categories with product counts), `.../products` (search by name or brand, category filter, `on_offer` = running offer or loose markdown, `ids` = up to 50 given products, sort by name or price, pages of up to 100, in-stock first), `.../products/{id}` (with description). Only stores with online ordering on, and only active products with a price. Price = what billing would charge for one unit (one pack, or one kg / L when loose) from the stock sold first: earliest-expiry batch that is not expired, then the better of offer and near-expiry / loose markdown, as in billing. Expired batches are never priced or counted as in stock. Purchase price, barcode and exact stock are never returned. Responses can be cached for 60 seconds.
+- **Built (ONL-05):** in-stock flag = sellable stock − quantity held by open online orders; `GET /shop/stores/{store}` also returns `delivery_charge` and `free_delivery_min`.
+- **Remaining:** product images (storage in Cloudflare R2, upload on the staff Products page, `image_url` in responses), safety buffer on the in-stock flag, rate limiting of public endpoints (ONL-10).
 
 **ONL-04 Customer shopping site**
 Separate public app or route group, mobile-first: browse, search, cart, checkout, order history and order status, profile. Not part of the staff dashboard layout. Cart can live in the browser until checkout.
-- **Built:** `supermarket-shop/` (Vite, React, TypeScript, MUI 9, React Router), runs on port 3001. Login page (mobile number → 6-digit code with resend countdown → name on first login), account page (name, mobile, "Your stores" with points, log out), home page store picker ("Your stores" first, then all stores). Session tokens are kept in `localStorage` and shared by all tabs; the access token is renewed a minute before it expires and once more on a 401, and tabs take turns renewing (Web Locks) so a single-use refresh token is never sent twice.
-- **Remaining:** store pages with product browsing and search (using ONL-03), cart, checkout, order history and status, installable web app (PWA), deployment as a static site on App Platform, legal pages. Consider moving the refresh token to an httpOnly cookie before launch (a token in `localStorage` can be read by any script injected into the page).
+- **Built:** `supermarket-shop/` (Vite, React, TypeScript, MUI 9, React Router), runs on port 3001. Branded MFMart. Products first: `/` opens the customer's store directly (last store on this device, else a store they shop at, else the only online store); the store list `/stores` is shown only when several stores are online and there is no history. Store page `/<store>`: greeting, sticky search with recent searches, category icons, "Today's offers" row, "Recently viewed" row (history kept on the device), all products with sort and "Show more", store details (address, phone, FSSAI, GSTIN) at the bottom. Store dropdown in the header to switch stores. Product page `/<store>/p/<id>`. Login page (mobile number → 6-digit code in six boxes → name on first login), account page (profile, "Your stores" with points, log out). After login the customer returns to the page they came from. Cart: kept per store on the device (`CartContext`, product id → quantity in `localStorage`, same in every tab), up to 50 products. "Add" button on product cards and the product page turns into a − quantity + stepper (1 pack steps up to 20; loose items 0.5 kg / L steps up to 10). Cart button with item count in the header opens the cart page `/<store>/cart`: today's prices, out-of-stock items flagged and left out of the total, products no longer sold online removed, bill summary (MRP total, savings, to pay; loose items charged at exact weight). Bill summary includes the delivery charge and "add ₹X more for free delivery". Checkout `/<store>/checkout` (login required): server-priced order summary, items that changed (short or no longer sold) listed with an "Update cart" button, delivery address picker with add / edit address dialog, cash on delivery (online payment shown as coming soon), delivery instructions, "Place order · ₹total". Order page `/orders/<id>`: confirmation after placing, delivery progress (placed → confirmed → packed → out for delivery → delivered), items, bill, address, cancel with optional reason until packed. My orders `/orders` (all stores, newest first), linked from the account menu and account page. Fresh green / amber theme, phone-friendly header and product rows. Session tokens are kept in `localStorage` and shared by all tabs; the access token is renewed a minute before it expires and once more on a 401, and tabs take turns renewing (Web Locks) so a single-use refresh token is never sent twice.
+- **Remaining:** nearest store for new customers (needs store latitude / longitude and the browser's location permission, or a pincode), suggestions from past orders and "order again", product images (ONL-03), online payment at checkout (ONL-07), installable web app (PWA), deployment as a static site on App Platform, legal pages. Consider moving the refresh token to an httpOnly cookie before launch (a token in `localStorage` can be read by any script injected into the page).
 
 **ONL-05 Online orders and stock reservation**
-New `orders` / `order_items` tables. Statuses: `placed` → `confirmed` → `packed` → `ready` / `out_for_delivery` → `completed`, plus `cancelled`. Prices, offers, coupons and GST are worked out on the server with the existing pricing code. Stock is reserved when the order is placed, released on cancel, and deducted when the order is completed by turning it into a `Sale` with its invoice and loyalty points. Must stay correct when the same item is sold in-store and online at the same time (row locks on stock).
-Fulfilment modes: store pickup and cash on delivery in MVP.
+New `orders` / `order_items` tables. Statuses: `placed` → `confirmed` → `packed` → `out_for_delivery` → `delivered`, plus `cancelled`. Prices, offers and GST are worked out on the server with the existing pricing code. Stock is reserved when the order is placed, released on cancel, and deducted when the order is delivered by turning it into a `Sale` with its invoice and loyalty points. Must stay correct when the same item is sold in-store and online at the same time (row locks on stock).
+Fulfilment: home delivery only; cash on delivery at launch, prepaid online after ONL-07.
+- **Built (backend):** migration `031_online_orders.sql` (`customer_addresses`, `orders`, `order_items`, `delivery_charge` / `free_delivery_min` settings); `app/api/v1/endpoints/shop_orders.py`, `app/core/online_orders.py`.
+  - `POST /shop/stores/{store}/checkout/quote` (no login): prices the cart as the catalogue does and lists lines that cannot be ordered (`unavailable`, or `short` with the quantity still available); MRP total, savings, items total, delivery charge, total.
+  - `POST /shop/stores/{store}/orders` (login): cash on delivery only (`online` answers 503 until ONL-07). Locks the cart's products, prices again and refuses (409) if any line changed or the total differs from `expected_total`, so the customer always pays what they saw. Creates the store's `customers` row at the first order (name from the login) and refuses customers that store has disabled. Copies the delivery address onto the order. Order number `ON<date><0001>` per store. Audited (no staff user).
+  - Reservation: open orders (placed to out for delivery) hold their quantities; the catalogue and later orders see only the rest. In-store stock and billing are not touched until delivery.
+  - `GET /shop/orders` (all stores or `?store=`), `GET /shop/orders/{id}`, `POST /shop/orders/{id}/cancel` (customer, until packed; frees the stock). Customers only see their own orders.
+  - Tests in `tests/test_products.py` (addresses, quote, placing, reservation, cancel, blocked customer).
+- **Built (staff side):** see ONL-06. Packing replaces the held quantity with the packed quantity; delivery bills the sale and takes the stock off.
+- **Remaining:** online payment (ONL-07); loyalty points redemption online (decide later).
 
 **ONL-06 Staff order queue**
-New staff page listing online orders by status: accept / reject, pick and pack (with substitution or item removal), mark ready / out for delivery, complete (creates the sale and invoice), cancel with reason. Role rules to be decided (e.g. cashiers and supervisors can fulfil, admins can cancel paid orders). All actions audited.
+New staff page listing online orders by status: accept / reject, pick and pack (with substitution or item removal), mark out for delivery, mark delivered (creates the sale and invoice), cancel with reason. All actions audited.
+- **Decisions:** all staff (cashier, supervisor, admin) confirm, pack, send out and mark delivered; only supervisors and admins cancel. Packing can only lower quantities or remove items (no substitutes); loose items are entered at the weighed quantity, up to 10% over the ordered weight. Cash collected on delivery counts in the open shift of the staff member who marks the order delivered. Staff are alerted as soon as an order is placed.
+- **Built (backend):** migration `032_online_order_fulfilment.sql` (`order_items.packed_quantity`, step times and `updated_by` on `orders`); `app/api/v1/endpoints/online_orders.py` under `/api/v1/online-orders`, staff login, own store only:
+  - `GET` (tabs by status with counts; search by order no. or mobile), `GET /{id}`, `POST /{id}/confirm`, `/pack` (packed quantity of every item; checks shelf stock; bill worked out again at the order's prices), `/dispatch`, `/deliver` (cash or UPI with optional reference), `/cancel` (supervisor / admin, reason required, shown to the customer).
+  - Delivered = a normal sale through the billing code (`record_sale`, split out of `POST /sales`): GST, tax invoice, loyalty points, stock movements, payment in the open shift (`shift_required` applies). Stock is taken first-expiry-first across MRPs. The customer never pays more than the order price: if today's bill is higher, the difference is a discount marked `online`. The delivery charge is a line of an inactive store product `DELIVERY` (SAC 996813, GST 18%), created on first use, with no stock movement.
+  - `GET /stream`: server-sent events with the latest order id and the number waiting, sent on change (checked every 2 seconds); the connection renews every 5 minutes.
+  - Tests in `tests/test_products.py` (full flow to invoice, price cap, stock, roles, other store).
+- **Built (staff app):** **Online Orders** page under *Sales* (sidebar badge = new orders), tabs New / To pack / Packed / Out for delivery / Delivered / Cancelled / All, order dialog with the next step, packing form, delivery payment, cancel (supervisor / admin), printable packing slip. New-order alert on every page while the app is open: chime, message, and a desktop notification once staff click **Turn on** (opens Online Orders when clicked). The stream is read with `fetch` so the login token stays in a header. User guide section 12.
+- **Customer site:** order page shows packed quantities ("You ordered 3", "Out of stock, not charged") and the final total.
+- **Remaining:** notifications when the staff app is closed (Web Push with a service worker; needs the `pywebpush` package and VAPID keys) or a mobile app for staff; substitutions; delivery staff assignment (ONL-08).
 
 **ONL-07 Online payments**
 Payment gateway (e.g. Razorpay) for UPI, cards and net banking: create payment, verify the gateway callback (webhook) signature, handle failed and abandoned payments, refunds on cancel or item removal. Gateway reference stored on `sale_payments`. Payment-mode reports must include online payments.
 
 **ONL-08 Delivery addresses, area, charges and slots**
 Saved customer addresses; serviceable area (pincodes or distance); delivery charge and free-delivery minimum; minimum order value; delivery time slots with a limit per slot; delivery staff assignment.
+- **Built:** saved addresses on the login (usable at every store, up to 10, one default): `GET/POST /shop/addresses`, `PUT/DELETE /shop/addresses/{id}`; contact name and mobile, house / street, area, landmark, city, 6-digit pincode, label (Home / Work / Other). Delivery charge ₹30 below ₹300, free from ₹300, per store. No minimum order value (decided).
+- **Remaining:** serviceable pincodes per store (today any address is accepted), editing the charge settings on the staff Settings page, delivery slots, delivery staff assignment.
 
 **ONL-09 Order notifications**
-Tell the customer when the order is confirmed, ready, out for delivery, completed or cancelled (SMS / WhatsApp, using ONL-02 templates). Alert staff to new orders on the order queue page.
+Tell the customer when the order is confirmed, out for delivery, delivered or cancelled (SMS / WhatsApp, using ONL-02 templates). Alert staff to new orders on the order queue page.
+- **Built:** staff alert as soon as an order is placed (ONL-06): sidebar count, chime, message and desktop notification while the staff app is open.
+- **Remaining:** customer messages; staff push when the app is closed.
 
 **ONL-10 Security, legal pages and tests**
 Rate limiting on public and OTP endpoints; CORS for the shopping site origin; no staff data exposed through public APIs. Terms, privacy and refund policy pages (needed by payment gateways). API tests for login, ordering, stock reservation and cancellation.
@@ -120,16 +149,17 @@ One app for all stores, built after the website on the same customer API (no app
 
 | Scope | Estimate (one developer) |
 |---|---|
-| MVP: ONL-01 to ONL-06 and ONL-10, pickup / cash on delivery | 4–6 weeks |
+| MVP: ONL-01 to ONL-06 and ONL-10, home delivery with cash on delivery | 4–6 weeks |
 | Full: adds ONL-07 to ONL-09 | 2–3 months total |
 
-Hardest parts: keeping stock correct across in-store and online sales, and payment callbacks and refunds. DLT registration is the likely launch blocker, not coding.
+Hardest parts: keeping stock correct across in-store and online sales, and payment callbacks and refunds. DLT registration is no longer a launch blocker (StartMessaging, ONL-02).
 
 ---
 
 ## Open questions
 
-- Pickup only, delivery only, or both in the first release?
-- Which SMS provider, and is WhatsApp OTP wanted?
-- Payment gateway choice, or cash on delivery only at launch?
-- Can online prices or offers differ from in-store?
+- Is WhatsApp OTP wanted later (SMS provider decided: StartMessaging)?
+- Payment gateway choice for prepaid orders (e.g. Razorpay)?
+- Which pincodes does each store deliver to?
+- Can customers redeem loyalty points on online orders?
+- Can online prices or offers differ from in-store later?

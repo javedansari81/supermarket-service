@@ -1,5 +1,6 @@
 """
-Online orders: stock held by open orders, delivery charge and order numbers
+Online orders: stock held by open orders, delivery charge, order numbers and the
+new-order signal the staff app listens to
 """
 from datetime import datetime
 from decimal import Decimal
@@ -8,6 +9,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.offers import CENTS
 from app.models.order import Order, OrderItem
+from app.models.product import Product
 from app.models.tenant_setting import TenantSetting
 
 DELIVERY_CHARGE_KEY = "delivery_charge"
@@ -15,13 +17,22 @@ FREE_DELIVERY_MIN_KEY = "free_delivery_min"
 DEFAULT_DELIVERY_CHARGE = Decimal("30")
 DEFAULT_FREE_DELIVERY_MIN = Decimal("300")
 
+# Delivery charge is billed as a line of this store product: SAC 996813 (local delivery
+# services), GST 18%. Kept inactive so it is never sold at the counter or online.
+DELIVERY_PRODUCT_NO = "DELIVERY"
+DELIVERY_PRODUCT_NAME = "Delivery charge (online order)"
+DELIVERY_SAC = "996813"
+DELIVERY_GST_PERCENT = Decimal("18")
+
+HELD_QUANTITY = func.coalesce(OrderItem.packed_quantity, OrderItem.quantity)
+
 
 def reserved_quantities(db: Session, tenant_id: int, product_ids: Iterable[int]) -> Dict[int, Decimal]:
-    """Quantity of each product held by the store's open orders"""
+    """Quantity of each product held by the store's open orders (the packed quantity once packed)"""
     ids = list(product_ids)
     if not ids:
         return {}
-    rows = db.query(OrderItem.product_id, func.sum(OrderItem.quantity)).join(Order).filter(
+    rows = db.query(OrderItem.product_id, func.sum(HELD_QUANTITY)).join(Order).filter(
         Order.tenant_id == tenant_id, Order.status.in_(Order.OPEN_STATUSES),
         OrderItem.product_id.in_(ids)
     ).group_by(OrderItem.product_id).all()
@@ -58,3 +69,28 @@ def generate_order_no(db: Session, tenant_id: int) -> str:
     ).order_by(Order.id.desc()).first()
     seq = int(last.order_no[-4:]) + 1 if last else 1
     return f"ON{today}{seq:04d}"
+
+
+def delivery_product(db: Session, tenant_id: int) -> Product:
+    """The store's delivery charge product, created the first time it is billed"""
+    product = db.query(Product).filter(Product.tenant_id == tenant_id,
+                                       Product.product_no == DELIVERY_PRODUCT_NO).first()
+    if product is None:
+        product = Product(tenant_id=tenant_id, product_no=DELIVERY_PRODUCT_NO,
+                          product_name=DELIVERY_PRODUCT_NAME, item_name=DELIVERY_PRODUCT_NAME,
+                          name_is_custom=True, hsn_code=DELIVERY_SAC, gst_overridden=True,
+                          tax_percent=DELIVERY_GST_PERCENT, unit_type="pcs", is_loose=False,
+                          product_type=Product.TYPE_OWN_PACKED, stock_quantity=0, status="inactive",
+                          description="Billed on delivered online orders; not for sale")
+        db.add(product)
+        db.flush()
+    return product
+
+
+def new_order_signal(db: Session, tenant_id: int) -> dict:
+    """Latest order id and number of orders waiting to be confirmed, for staff alerts"""
+    latest_id, waiting = db.query(
+        func.max(Order.id),
+        func.count(Order.id).filter(Order.status == Order.STATUS_PLACED),
+    ).filter(Order.tenant_id == tenant_id).one()
+    return {"latest_id": latest_id or 0, "waiting": waiting or 0}

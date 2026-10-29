@@ -17,6 +17,7 @@ import {
   Typography,
   IconButton,
   Tooltip,
+  Badge,
 } from '@mui/material';
 import {
   Dashboard,
@@ -41,8 +42,10 @@ import {
   ConfirmationNumber,
   RequestQuote,
   LockClock,
+  DeliveryDining,
 } from '@mui/icons-material';
 import { useAuth } from '../../context/AuthContext';
+import { useOrderAlerts } from '../../context/OrderAlertsContext';
 
 export const DRAWER_WIDTH = 240;
 export const COLLAPSED_DRAWER_WIDTH = 64;
@@ -84,6 +87,7 @@ const navItems: NavItem[] = [
   { title: 'Offers', path: '/offers', icon: <LocalOffer />, adminOnly: true, group: 'Promotions' },
   { title: 'Coupons', path: '/coupons', icon: <ConfirmationNumber />, adminOnly: true, group: 'Promotions' },
   { title: 'Barcode', path: '/barcode', icon: <QrCode />, adminOnly: true, supervisor: true, group: 'Catalog' },
+  { title: 'Online Orders', path: '/online-orders', icon: <DeliveryDining />, group: 'Sales' },
   { title: 'Invoices', path: '/invoices', icon: <Receipt />, group: 'Sales' },
   { title: 'Shifts', path: '/shifts', icon: <LockClock />, adminOnly: true, supervisor: true, group: 'Sales' },
   { title: 'Customers', path: '/customers', icon: <Contacts />, group: 'Sales' },
@@ -104,6 +108,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   const navigate = useNavigate();
   const location = useLocation();
   const { isAdmin, isSupervisor, user } = useAuth();
+  const { waiting } = useOrderAlerts();
 
   const filteredNavItems = navItems.filter(
     (item) => !item.adminOnly || isAdmin || (item.supervisor && isSupervisor)
@@ -245,7 +250,9 @@ const Sidebar: React.FC<SidebarProps> = ({
                     }}
                   >
                     <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 40 }}>
-                      {item.icon}
+                      {item.path === '/online-orders'
+                        ? <Badge badgeContent={waiting} color="error" max={99}>{item.icon}</Badge>
+                        : item.icon}
                     </ListItemIcon>
                     {!collapsed && <ListItemText primary={item.title} />}
                   </ListItemButton>

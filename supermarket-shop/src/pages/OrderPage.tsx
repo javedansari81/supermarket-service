@@ -91,8 +91,15 @@ export default function OrderPage() {
                 <Box sx={{ minWidth: 0 }}>
                   <Typography variant="body2" sx={{ fontWeight: 600 }}>{i.product_name}</Typography>
                   <Typography variant="caption" color="text.secondary">
-                    {Number(i.quantity)}{i.is_loose ? ` ${i.unit_type || 'kg'}` : ''} × {formatPrice(i.offer_price)}
+                    {Number(i.packed_quantity ?? i.quantity)}{i.is_loose ? ` ${i.unit_type || 'kg'}` : ''} × {formatPrice(i.offer_price)}
                   </Typography>
+                  {i.packed_quantity != null && Number(i.packed_quantity) !== Number(i.quantity) && (
+                    <Typography variant="caption" component="div" sx={{ color: 'secondary.dark', fontWeight: 600 }}>
+                      {Number(i.packed_quantity) === 0
+                        ? 'Out of stock, not charged'
+                        : `You ordered ${Number(i.quantity)}${i.is_loose ? ` ${i.unit_type || 'kg'}` : ''}`}
+                    </Typography>
+                  )}
                 </Box>
                 <Typography sx={{ fontWeight: 700, flexShrink: 0 }}>{formatPrice(i.line_total)}</Typography>
               </Box>
