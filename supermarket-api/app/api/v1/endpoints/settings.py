@@ -7,14 +7,18 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.loyalty import get_loyalty_settings, loyalty_settings_values
+from app.core.online_orders import (DELIVERY_CHARGE_KEY, DELIVERY_PINCODES_KEY,
+                                    FREE_DELIVERY_MIN_KEY, delivery_pincodes, delivery_settings)
 from app.models.audit_log import AuditLog
 from app.models.tenant_setting import TenantSetting
 from app.models.tenant import Tenant
 from app.schemas.settings import (
     SettingCreate, SettingUpdate, SettingResponse, 
-    SettingsListResponse, StoreSettings, BillingSettings, LoyaltySettings, state_code_for
+    SettingsListResponse, StoreSettings, BillingSettings, LoyaltySettings, OnlineSettings,
+    state_code_for
 )
-from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
+from app.api.deps import (ONLINE_ORDERING_KEY, get_current_admin_user, get_tenant_context,
+                          TenantContext)
 
 router = APIRouter()
 
@@ -45,6 +49,7 @@ DEFAULT_SETTINGS = {
     "online_ordering_enabled": {"value": "false", "category": "online", "description": "Customers can order online"},
     "delivery_charge": {"value": "30", "category": "online", "description": "Delivery charge for online orders (Rs)"},
     "free_delivery_min": {"value": "300", "category": "online", "description": "Online order amount for free delivery (Rs)"},
+    "delivery_pincodes": {"value": "", "category": "online", "description": "Pincodes for online delivery (comma-separated)"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }
@@ -238,4 +243,55 @@ async def update_loyalty(
                  "setting", old_value=old_value, new_value=new_value)
     db.commit()
     return get_loyalty_settings(db, context.tenant_id)
+
+
+def build_online_settings(db: Session, tenant_id: int) -> OnlineSettings:
+    enabled = get_settings_dict(db, tenant_id, [ONLINE_ORDERING_KEY]).get(ONLINE_ORDERING_KEY, "")
+    charge, free_min = delivery_settings(db, tenant_id)
+    return OnlineSettings(enabled=enabled.lower() == "true", delivery_charge=charge,
+                          free_delivery_min=free_min,
+                          delivery_pincodes=delivery_pincodes(db, tenant_id))
+
+
+def _online_values(online: OnlineSettings) -> dict:
+    return {
+        ONLINE_ORDERING_KEY: str(online.enabled).lower(),
+        DELIVERY_CHARGE_KEY: str(online.delivery_charge),
+        FREE_DELIVERY_MIN_KEY: str(online.free_delivery_min),
+        DELIVERY_PINCODES_KEY: ",".join(online.delivery_pincodes),
+    }
+
+
+@router.get("/online", response_model=OnlineSettings)
+async def get_online_settings(
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    Get online ordering settings
+    """
+    return build_online_settings(db, context.tenant_id)
+
+
+@router.put("/online", response_model=OnlineSettings)
+async def update_online_settings(
+    online_settings: OnlineSettings,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Update online ordering settings (admin only)
+    """
+    if online_settings.enabled and not online_settings.delivery_pincodes:
+        raise HTTPException(status_code=400,
+                            detail="Add at least one delivery pincode before switching online ordering on")
+    old_value = _online_values(build_online_settings(db, context.tenant_id))
+    new_value = _online_values(online_settings)
+    upsert_settings(db, context.tenant_id, new_value)
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "setting", old_value=old_value, new_value=new_value)
+    db.commit()
+    return build_online_settings(db, context.tenant_id)
 

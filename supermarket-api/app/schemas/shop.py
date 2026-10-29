@@ -24,6 +24,8 @@ class ShopStoreDetail(ShopStore):
     # Online orders below free_delivery_min pay delivery_charge
     delivery_charge: Decimal = Decimal("0")
     free_delivery_min: Decimal = Decimal("0")
+    # Pincodes the store delivers to; empty = not delivering yet
+    delivery_pincodes: List[str] = []
 
 
 class ShopCategory(BaseModel):
@@ -56,6 +58,9 @@ class ShopProduct(BaseModel):
     discount_source: Optional[str] = None
     offer_name: Optional[str] = None
     in_stock: bool
+    # 800 px and 320 px pictures (absolute, or a path under the API base address); None = no picture
+    image_url: Optional[str] = None
+    thumb_url: Optional[str] = None
 
 
 class ShopProductDetail(ShopProduct):

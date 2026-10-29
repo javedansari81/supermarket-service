@@ -4,7 +4,7 @@ new-order signal the staff app listens to
 """
 from datetime import datetime
 from decimal import Decimal
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.offers import CENTS
@@ -14,6 +14,7 @@ from app.models.tenant_setting import TenantSetting
 
 DELIVERY_CHARGE_KEY = "delivery_charge"
 FREE_DELIVERY_MIN_KEY = "free_delivery_min"
+DELIVERY_PINCODES_KEY = "delivery_pincodes"
 DEFAULT_DELIVERY_CHARGE = Decimal("30")
 DEFAULT_FREE_DELIVERY_MIN = Decimal("300")
 
@@ -54,6 +55,23 @@ def delivery_settings(db: Session, tenant_id: int):
     ).all())
     return (_decimal_setting(values, DELIVERY_CHARGE_KEY, DEFAULT_DELIVERY_CHARGE),
             _decimal_setting(values, FREE_DELIVERY_MIN_KEY, DEFAULT_FREE_DELIVERY_MIN))
+
+
+def parse_pincodes(value: str) -> List[str]:
+    """Valid 6-digit pincodes from a comma / space separated list, in order, without repeats"""
+    seen: List[str] = []
+    for part in (value or "").replace(",", " ").split():
+        if len(part) == 6 and part.isdigit() and part[0] != "0" and part not in seen:
+            seen.append(part)
+    return seen
+
+
+def delivery_pincodes(db: Session, tenant_id: int) -> List[str]:
+    """Pincodes the store delivers to; empty = not delivering yet"""
+    value = db.query(TenantSetting.setting_value).filter(
+        TenantSetting.tenant_id == tenant_id, TenantSetting.setting_key == DELIVERY_PINCODES_KEY
+    ).scalar()
+    return parse_pincodes(value or "")
 
 
 def delivery_charge_for(db: Session, tenant_id: int, items_total: Decimal) -> Decimal:

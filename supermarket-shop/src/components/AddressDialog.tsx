@@ -15,11 +15,13 @@ interface Props {
   address?: Address | null;
   onClose: () => void;
   onSaved: (address: Address) => void;
+  /** The store's delivery pincodes, to warn about an address outside the area */
+  pincodes?: string[];
 }
 
 const LABELS = ['Home', 'Work', 'Other'];
 
-export default function AddressDialog({ open, address, onClose, onSaved }: Props) {
+export default function AddressDialog({ open, address, onClose, onSaved, pincodes }: Props) {
   const { account } = useAuth();
   const fullScreen = useMediaQuery((theme) => theme.breakpoints.down('sm'));
   const [form, setForm] = useState<AddressInput>(() => address ?? {
@@ -33,6 +35,7 @@ export default function AddressDialog({ open, address, onClose, onSaved }: Props
     setForm((f) => ({ ...f, [key]: e.target.value }));
 
   const pincodeOk = /^[1-9][0-9]{5}$/.test(form.pincode);
+  const outsideArea = pincodeOk && !!pincodes?.length && !pincodes.includes(form.pincode);
   const mobileOk = /^[6-9][0-9]{9}$/.test(form.contact_mobile);
   const ready = form.contact_name.trim() && mobileOk && form.address_line.trim().length >= 3
     && form.area.trim().length >= 2 && form.city.trim().length >= 2 && pincodeOk;
@@ -79,7 +82,8 @@ export default function AddressDialog({ open, address, onClose, onSaved }: Props
               <TextField label="Pincode" value={form.pincode} required autoComplete="postal-code"
                 onChange={(e) => setForm((f) => ({ ...f, pincode: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
                 error={form.pincode.length === 6 && !pincodeOk}
-                slotProps={{ htmlInput: { inputMode: 'numeric' } }} />
+                helperText={outsideArea ? `We deliver only to ${pincodes!.join(', ')} for now` : undefined}
+                slotProps={{ htmlInput: { inputMode: 'numeric' }, formHelperText: { sx: { color: 'warning.dark' } } }} />
             </Box>
             <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
               {LABELS.map((label) => (

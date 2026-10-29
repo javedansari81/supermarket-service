@@ -34,6 +34,14 @@ def delete_file(key: str) -> None:
     get_client().delete_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
 
 
+def get_file(key: str) -> bytes:
+    """File content; raises KeyError when there is no such file"""
+    try:
+        return get_client().get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)["Body"].read()
+    except get_client().exceptions.NoSuchKey:
+        raise KeyError(key)
+
+
 def presigned_url(key: str, file_name: str, content_type: str) -> str:
     """Temporary link that opens the file inline in the browser"""
     return get_client().generate_presigned_url(

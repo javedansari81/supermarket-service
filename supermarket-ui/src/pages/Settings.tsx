@@ -25,6 +25,12 @@ interface BillingSettings {
   invoice_prefix: string; invoice_footer: string;
   shift_required: boolean; shift_variance_limit: number;
 }
+interface OnlineSettings {
+  enabled: boolean; delivery_charge: number; free_delivery_min: number; delivery_pincodes: string[];
+}
+
+const PINCODE_REGEX = /^[1-9][0-9]{5}$/;
+const splitPincodes = (text: string) => text.split(/[\s,]+/).map((p) => p.trim()).filter(Boolean);
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
@@ -44,6 +50,11 @@ const Settings: React.FC = () => {
     enabled: false, earn_points_per_100: 1, point_value: 1, min_redeem_points: 100,
     max_redeem_percent: 50, expiry_days: 365
   });
+  const [onlineSettings, setOnlineSettings] = useState<OnlineSettings>({
+    enabled: false, delivery_charge: 30, free_delivery_min: 300, delivery_pincodes: [],
+  });
+  const [pincodeText, setPincodeText] = useState('');
+  const badPincodes = splitPincodes(pincodeText).filter((p) => !PINCODE_REGEX.test(p));
   const gstinError = !!storeSettings.gstin && !GSTIN_REGEX.test(storeSettings.gstin);
   const gstinStateMismatch = !gstinError && !!storeSettings.gstin && !!storeSettings.store_state
     && stateNameFromCode(storeSettings.gstin.slice(0, 2)) !== storeSettings.store_state;
@@ -57,11 +68,17 @@ const Settings: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const [store, billing, loyalty] = await Promise.all([
+        const [store, billing, loyalty, online] = await Promise.all([
           api.get(API_ENDPOINTS.SETTINGS_STORE),
           api.get(API_ENDPOINTS.SETTINGS_BILLING),
           api.get(API_ENDPOINTS.SETTINGS_LOYALTY),
+          api.get<OnlineSettings>(API_ENDPOINTS.SETTINGS_ONLINE),
         ]);
+        if (online.data) {
+          setOnlineSettings({ ...online.data, delivery_charge: Number(online.data.delivery_charge),
+            free_delivery_min: Number(online.data.free_delivery_min) });
+          setPincodeText(online.data.delivery_pincodes.join(', '));
+        }
         if (store.data) setStoreSettings((prev) => ({ ...prev, ...store.data }));
         if (billing.data) setBillingSettings((prev) => ({
           ...prev, ...billing.data, shift_variance_limit: Number(billing.data.shift_variance_limit ?? 100),
@@ -71,6 +88,31 @@ const Settings: React.FC = () => {
     };
     fetchSettings();
   }, []);
+
+  const applyOnline = (data: OnlineSettings) => {
+    setOnlineSettings({ ...data, delivery_charge: Number(data.delivery_charge),
+      free_delivery_min: Number(data.free_delivery_min) });
+    setPincodeText(data.delivery_pincodes.join(', '));
+  };
+
+  const saveOnlineSettings = async () => {
+    const delivery_pincodes = splitPincodes(pincodeText);
+    if (badPincodes.length) { toast.error(`Invalid pincode: ${badPincodes[0]}`); return; }
+    if (onlineSettings.enabled && !delivery_pincodes.length) {
+      toast.error('Add at least one delivery pincode'); return;
+    }
+    setLoading(true);
+    try {
+      const response = await api.put<OnlineSettings>(API_ENDPOINTS.SETTINGS_ONLINE,
+        { ...onlineSettings, delivery_pincodes });
+      applyOnline(response.data);
+      toast.success('Online ordering settings saved');
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(Array.isArray(detail) ? detail[0]?.msg : detail || 'Failed to save settings');
+    }
+    finally { setLoading(false); }
+  };
 
   const saveStoreSettings = async () => {
     if (!storeSettings.store_name.trim()) { toast.error('Store name is required'); return; }
@@ -120,6 +162,7 @@ const Settings: React.FC = () => {
           <Tab label="Store" />
           <Tab label="Billing" />
           <Tab label="Loyalty Points" />
+          <Tab label="Online Ordering" />
         </Tabs>
       {tab === 0 && (
           <CardContent sx={{ p: 3 }}>
@@ -253,6 +296,44 @@ const Settings: React.FC = () => {
               </Grid>
               <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveLoyaltySettings} disabled={loading}>
+                  Save Settings
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+      )}
+      {tab === 3 && (
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Home delivery orders from the shop website. Customers can only order to the pincodes listed here.
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid size={12}>
+                <FormControlLabel
+                  control={<Switch checked={onlineSettings.enabled}
+                    onChange={(e) => setOnlineSettings({ ...onlineSettings, enabled: e.target.checked })} />}
+                  label="Show this store on the shop website and take online orders" />
+              </Grid>
+              <Grid size={12}>
+                <TextField fullWidth label="Delivery pincodes" value={pincodeText} error={badPincodes.length > 0}
+                  placeholder="e.g. 210431, 210432"
+                  helperText={badPincodes.length ? `Not a valid pincode: ${badPincodes.join(', ')}`
+                    : '6-digit pincodes separated by commas. Orders to other pincodes are refused.'}
+                  onChange={(e) => setPincodeText(e.target.value.replace(/[^0-9,\s]/g, ''))} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label="Delivery charge (₹)" type="number" value={onlineSettings.delivery_charge}
+                  inputProps={{ min: 0, step: '1' }}
+                  onChange={(e) => setOnlineSettings({ ...onlineSettings, delivery_charge: Math.max(0, Number(e.target.value) || 0) })} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label="Free delivery from (₹)" type="number" value={onlineSettings.free_delivery_min}
+                  helperText="Orders with items worth this much or more are delivered free"
+                  inputProps={{ min: 0, step: '1' }}
+                  onChange={(e) => setOnlineSettings({ ...onlineSettings, free_delivery_min: Math.max(0, Number(e.target.value) || 0) })} />
+              </Grid>
+              <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button variant="contained" startIcon={<Save />} onClick={saveOnlineSettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>

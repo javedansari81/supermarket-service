@@ -127,3 +127,23 @@ class LoyaltySettings(BaseModel):
     max_redeem_percent: int = Field(50, ge=1, le=100)
     expiry_days: int = Field(365, ge=0, le=3650)
 
+
+class OnlineSettings(BaseModel):
+    """Online ordering (customer shop): delivery_charge below free_delivery_min; orders are
+    delivered only to delivery_pincodes (empty = the store takes no delivery orders)"""
+    enabled: bool = False
+    delivery_charge: Decimal = Field(Decimal("30"), ge=0, le=1000, max_digits=6, decimal_places=2)
+    free_delivery_min: Decimal = Field(Decimal("300"), ge=0, le=100000, max_digits=8, decimal_places=2)
+    delivery_pincodes: List[str] = Field(default_factory=list, max_length=200)
+
+    @field_validator("delivery_pincodes")
+    @classmethod
+    def validate_pincodes(cls, v: List[str]) -> List[str]:
+        cleaned: List[str] = []
+        for code in (c.strip() for c in v):
+            if not re.fullmatch(r"[1-9][0-9]{5}", code):
+                raise ValueError(f"Invalid pincode: {code or '(blank)'}")
+            if code not in cleaned:
+                cleaned.append(code)
+        return cleaned
+

@@ -44,6 +44,8 @@ export interface ShopStoreDetail extends ShopStore {
   /** Orders below free_delivery_min pay delivery_charge */
   delivery_charge: string;
   free_delivery_min: string;
+  /** Pincodes the store delivers to; empty = not taking delivery orders */
+  delivery_pincodes: string[];
 }
 
 export interface ShopCategory {
@@ -70,6 +72,9 @@ export interface ShopProduct {
   discount_source: 'offer' | 'clearance' | null;
   offer_name: string | null;
   in_stock: boolean;
+  /** 800 px and 320 px pictures: absolute, or a path under the API base address (see imageSrc) */
+  image_url: string | null;
+  thumb_url: string | null;
 }
 
 export interface ShopProductDetail extends ShopProduct {

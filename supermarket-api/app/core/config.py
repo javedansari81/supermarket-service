@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     R2_ENDPOINT_URL: str = ""
     BILL_MAX_SIZE_MB: int = 10
     BILL_URL_EXPIRE_SECONDS: int = 600
+    # Product images (same R2 bucket). PRODUCT_IMAGE_PUBLIC_URL = public address of the bucket
+    # (R2 public domain, e.g. https://images.mfmart.co.in); empty = images are served by the API
+    PRODUCT_IMAGE_MAX_MB: int = 5
+    PRODUCT_IMAGE_PUBLIC_URL: str = ""
 
     class Config:
         env_file = ".env"

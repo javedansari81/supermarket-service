@@ -62,6 +62,14 @@ export default function CheckoutPage() {
 
   const current = quote?.key === cartKey ? quote : null;
   const data = current?.data;
+  // Only addresses in the store's delivery area can be chosen
+  const pincodes = detail?.delivery_pincodes ?? null;
+  const deliverable = (a: Address) => !pincodes || pincodes.includes(a.pincode);
+  const chosen = addresses?.find((a) => a.id === addressId && deliverable(a))
+    ?? addresses?.find(deliverable) ?? null;
+  const chosenId = chosen?.id ?? null;
+  const areaText = pincodes && pincodes.length
+    ? `We deliver to pincode${pincodes.length > 1 ? 's' : ''} ${pincodes.join(', ')}.` : '';
 
   const fixCart = () => {
     data?.problems.forEach((p) => cart.setQuantity(store, p.product_id,
@@ -69,14 +77,14 @@ export default function CheckoutPage() {
   };
 
   const placeOrder = async () => {
-    if (!data || !addressId) return;
+    if (!data || !chosenId) return;
     setPlacing(true);
     setError('');
     try {
       const order = await api<Order>(`/shop/stores/${encodeURIComponent(store)}/orders`, {
         method: 'POST', auth: true,
         body: { items: data.items.map((i) => ({ product_id: i.product_id, quantity: Number(i.quantity) })),
-          address_id: addressId, payment_method: 'cod', notes: notes.trim() || null,
+          address_id: chosenId, payment_method: 'cod', notes: notes.trim() || null,
           expected_total: data.total_amount },
       });
       cart.clear(store);
@@ -110,6 +118,9 @@ export default function CheckoutPage() {
       </Box>
 
       {current?.error && <Alert severity="warning">{current.error}</Alert>}
+      {pincodes && pincodes.length === 0 && (
+        <Alert severity="warning">This store is not taking delivery orders right now.</Alert>
+      )}
       {data && data.problems.length > 0 && (
         <Alert severity="warning" action={<Button color="inherit" size="small" onClick={fixCart}>Update cart</Button>}>
           Some items have changed:{' '}
@@ -123,11 +134,13 @@ export default function CheckoutPage() {
         <Stack spacing={2.5}>
           <Card sx={{ p: 2.5 }}>
             {section(<LocalShipping color="primary" />, 'Deliver to')}
+            {areaText && <Typography variant="body2" color="text.secondary" sx={{ mt: -1, mb: 1 }}>{areaText}</Typography>}
             {addresses === null ? <Skeleton variant="rounded" height={72} /> : (
-              <RadioGroup value={addressId ?? ''} onChange={(e) => setAddressId(Number(e.target.value))}>
+              <RadioGroup value={chosenId ?? ''} onChange={(e) => setAddressId(Number(e.target.value))}>
                 {addresses.map((a) => (
                   <Box key={a.id} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, py: 0.5 }}>
-                    <FormControlLabel value={a.id} control={<Radio />} sx={{ flexGrow: 1, alignItems: 'flex-start', mr: 0 }}
+                    <FormControlLabel value={a.id} control={<Radio />} disabled={!deliverable(a)}
+                      sx={{ flexGrow: 1, alignItems: 'flex-start', mr: 0 }}
                       label={
                         <Box sx={{ pt: 1 }}>
                           <Typography sx={{ fontWeight: 600 }}>{a.contact_name}{a.label && ` · ${a.label}`}</Typography>
@@ -135,6 +148,11 @@ export default function CheckoutPage() {
                             {[a.address_line, a.area, a.landmark && `Near ${a.landmark}`, a.city].filter(Boolean).join(', ')}
                             {` - ${a.pincode}`} · +91 {a.contact_mobile}
                           </Typography>
+                          {!deliverable(a) && (
+                            <Typography variant="caption" sx={{ color: 'warning.dark', fontWeight: 600 }}>
+                              We don't deliver to {a.pincode} yet
+                            </Typography>
+                          )}
                         </Box>
                       } />
                     <Button size="small" sx={{ mt: 0.75 }} onClick={() => setDialog({ open: true, address: a })}>Edit</Button>
@@ -182,7 +200,7 @@ export default function CheckoutPage() {
           )}
           {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
           <Button variant="contained" size="large" fullWidth sx={{ mt: 2 }} onClick={placeOrder}
-            disabled={placing || !data || data.items.length === 0 || data.problems.length > 0 || !addressId}
+            disabled={placing || !data || data.items.length === 0 || data.problems.length > 0 || !chosenId}
             startIcon={placing ? <CircularProgress size={18} color="inherit" /> : undefined}>
             {data ? `Place order · ${formatPrice(data.total_amount)}` : 'Place order'}
           </Button>
@@ -191,7 +209,7 @@ export default function CheckoutPage() {
       </Box>
 
       {dialog.open && (
-        <AddressDialog open address={dialog.address} onSaved={onAddressSaved}
+        <AddressDialog open address={dialog.address} onSaved={onAddressSaved} pincodes={pincodes ?? undefined}
           onClose={() => setDialog({ open: false, address: null })} />
       )}
     </Stack>

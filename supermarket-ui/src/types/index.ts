@@ -150,6 +150,9 @@ export interface Product {
   unit_type: string;
   status: string;
   locations?: ProductLocation[];
+  // 800 px and 320 px pictures: absolute, or a path under the API base address (see imageSrc)
+  image_url?: string | null;
+  thumb_url?: string | null;
 }
 
 // Stock batch of a packed product (one per MRP / price / expiry)

@@ -1,9 +1,11 @@
 /**
- * Product tile in the store's product list. Images are not stored yet, so a category icon on the
- * category's colour stands in for the picture.
+ * Product tile in the store's product list. Shows the product picture (small size on cards),
+ * or a category icon on the category's colour when there is none or it fails to load.
  */
+import { useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
 import { Box, Card, CardActionArea, Typography } from '@mui/material';
+import { imageSrc } from '../api/client';
 import type { ShopProduct } from '../api/types';
 import { HOVER_SHADOW } from '../theme';
 import { categoryStyle } from '../utils/categoryStyle';
@@ -13,10 +15,20 @@ import PriceTag from './PriceTag';
 
 export function ProductPicture({ product, height = 132 }: { product: ShopProduct; height?: number }) {
   const { Icon, color, background } = categoryStyle(product.category_name);
+  // Large picture only where it is shown large (product page)
+  const src = imageSrc(height > 200 ? product.image_url : product.thumb_url);
+  const [failed, setFailed] = useState<string | null>(null);
+  const showImage = Boolean(src) && failed !== src;
   return (
-    <Box sx={{ height, borderRadius: 3, display: 'grid', placeItems: 'center', position: 'relative',
-      background: `radial-gradient(circle at 30% 25%, #ffffff 0%, ${background} 70%)`, color }}>
-      <Icon sx={{ fontSize: height * 0.42, opacity: 0.85 }} />
+    <Box sx={{ height, borderRadius: 3, display: 'grid', placeItems: 'center', position: 'relative', overflow: 'hidden',
+      background: showImage ? '#fff' : `radial-gradient(circle at 30% 25%, #ffffff 0%, ${background} 70%)`, color }}>
+      {showImage ? (
+        <Box component="img" src={src} alt={product.product_name} loading="lazy" decoding="async"
+          onError={() => setFailed(src ?? null)}
+          sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+      ) : (
+        <Icon sx={{ fontSize: height * 0.42, opacity: 0.85 }} />
+      )}
       {hasDiscount(product) && (
         <Box sx={{ position: 'absolute', top: 8, left: 8, px: 1, py: 0.25, borderRadius: 1.5, maxWidth: '85%',
           bgcolor: 'secondary.main', color: '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.02em',

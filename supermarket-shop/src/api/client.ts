@@ -12,6 +12,10 @@ export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:80
 
 const REFRESH_BEFORE_MS = 60_000;
 
+/** Product picture address: absolute URLs as they are, API paths joined to the API base */
+export const imageSrc = (url: string | null | undefined) =>
+  !url ? undefined : /^https?:\/\//.test(url) ? url : `${API_BASE_URL}${url}`;
+
 export class ApiError extends Error {
   status: number;
   retryAfter: number | null;

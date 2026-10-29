@@ -7,13 +7,15 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.batches import fefo_key, uses_batches
 from app.core.clearance import ClearanceResolver, today_ist
 from app.core.database import get_db
 from app.core.offers import OfferResolver, SOURCE_OFFER, CENTS, resolve_line_discount
-from app.core.online_orders import delivery_settings, reserved_quantities
+from app.core.online_orders import delivery_pincodes, delivery_settings, reserved_quantities
+from app.core import product_images, storage
 from app.models.category import Category
 from app.models.offer import Offer, OfferItem
 from app.models.product import Product
@@ -90,8 +92,23 @@ def price_products(db: Session, tenant_id: int, products: List[Product]) -> List
             "offer_name": discount.offer.offer.name
             if discount.amount and discount.source == SOURCE_OFFER else None,
             "in_stock": available > 0, "available": available, "description": product.description,
+            "image_url": product.image_url, "thumb_url": product.thumb_url,
         })
     return priced
+
+
+@router.get("/images/{key:path}")
+async def get_image(key: str):
+    """A product picture from object storage (when PRODUCT_IMAGE_PUBLIC_URL is not set).
+    Only product image files can be read; each upload has a new name, so they cache for good."""
+    if not product_images.KEY_PATTERN.match(key) or not storage.is_configured():
+        raise HTTPException(status_code=404, detail="Image not found")
+    try:
+        content = await run_in_threadpool(storage.get_file, key)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return Response(content, media_type=product_images.CONTENT_TYPE,
+                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @router.get("/stores", response_model=ShopStoreListResponse)
@@ -117,7 +134,8 @@ async def get_store(response: Response, db: Session = Depends(get_db),
     delivery_charge, free_delivery_min = delivery_settings(db, tenant.id)
     _cache(response)
     return ShopStoreDetail(store=tenant.subdomain, delivery_charge=delivery_charge,
-                           free_delivery_min=free_delivery_min, **store.model_dump(
+                           free_delivery_min=free_delivery_min,
+                           delivery_pincodes=delivery_pincodes(db, tenant.id), **store.model_dump(
         include={"store_name", "store_address", "store_phone", "store_email", "gstin", "fssai_license"}
     ))
 

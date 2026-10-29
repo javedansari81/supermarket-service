@@ -578,6 +578,101 @@ def test_edit_manufacturer_without_barcode(client, admin_headers):
     assert put({"barcode": ""}).json()["barcode"] == "8901725000011"
 
 
+# ---------- Product images ----------
+
+def picture(fmt="JPEG", size=(1600, 1200), exif_rotate=False):
+    import io
+    from PIL import Image
+    image = Image.new("RGB", size, (200, 30, 30))
+    out = io.BytesIO()
+    if exif_rotate:
+        exif = Image.Exif()
+        exif[0x0112] = 6  # taken sideways: turn 90 degrees
+        image.save(out, fmt, exif=exif)
+    else:
+        image.save(out, fmt)
+    return out.getvalue()
+
+
+@pytest.fixture()
+def image_store(monkeypatch):
+    from app.core import storage
+    files = {}
+    monkeypatch.setattr(storage, "is_configured", lambda: True)
+    monkeypatch.setattr(storage, "upload_file", lambda key, content, ct: files.__setitem__(key, content))
+    monkeypatch.setattr(storage, "delete_file", lambda key: files.pop(key, None))
+
+    def get_file(key):
+        if key not in files:
+            raise KeyError(key)
+        return files[key]
+
+    monkeypatch.setattr(storage, "get_file", get_file)
+    return files
+
+
+def upload_image(client, product_id, headers, content, name="photo.jpg"):
+    return client.post(f"{URL}/{product_id}/image", files={"file": (name, content, "image/jpeg")},
+                       headers=headers)
+
+
+def test_product_image_upload_resizes_replaces_and_removes(client, product, supervisor_headers,
+                                                           image_store):
+    import io
+    from PIL import Image
+    res = upload_image(client, product.id, supervisor_headers, picture(exif_rotate=True))
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["image_url"].startswith("/shop/images/products/tenant_")
+    assert body["thumb_url"].endswith("_thumb.webp")
+    assert len(image_store) == 2
+    large = Image.open(io.BytesIO(image_store[body["image_url"][len("/shop/images/"):]]))
+    thumb = Image.open(io.BytesIO(image_store[body["thumb_url"][len("/shop/images/"):]]))
+    # Turned upright from the camera's sideways photo, then fitted into 800 / 320 px
+    assert (large.format, large.size, thumb.size) == ("WEBP", (600, 800), (240, 320))
+    assert client.get(f"{URL}/{product.id}", headers=supervisor_headers).json()["image_url"] == body["image_url"]
+
+    replaced = upload_image(client, product.id, supervisor_headers, picture("PNG", (300, 200)), "p.png").json()
+    assert replaced["image_url"] != body["image_url"] and len(image_store) == 2
+
+    removed = client.delete(f"{URL}/{product.id}/image", headers=supervisor_headers).json()
+    assert removed["image_url"] is None and image_store == {}
+
+
+def test_product_image_rejects_bad_files_and_other_users(client, product, cashier_headers, admin_headers,
+                                                         admin_b_headers, image_store, monkeypatch):
+    from app.core import storage
+    assert upload_image(client, product.id, cashier_headers, picture()).status_code == 403
+    assert upload_image(client, product.id, admin_b_headers, picture()).status_code == 404
+    assert upload_image(client, product.id, admin_headers, b"").status_code == 400
+    assert upload_image(client, product.id, admin_headers, b"%PDF-1.4 not a picture").status_code == 400
+    assert upload_image(client, product.id, admin_headers, picture("GIF")).status_code == 400
+    monkeypatch.setattr("app.core.config.settings.PRODUCT_IMAGE_MAX_MB", 0)
+    assert upload_image(client, product.id, admin_headers, picture()).status_code == 413
+    assert image_store == {}
+    monkeypatch.setattr(storage, "is_configured", lambda: False)
+    assert upload_image(client, product.id, admin_headers, picture()).status_code == 503
+
+
+def test_shop_shows_and_serves_product_images(client, db, online, product, admin_headers, image_store,
+                                              monkeypatch):
+    body = upload_image(client, product.id, admin_headers, picture()).json()
+    item = client.get(f"{SHOP}/storea/products/{product.id}").json()
+    assert (item["image_url"], item["thumb_url"]) == (body["image_url"], body["thumb_url"])
+
+    res = client.get(f"/api/v1{item['thumb_url']}")
+    assert res.status_code == 200 and res.headers["content-type"] == "image/webp"
+    assert "immutable" in res.headers["Cache-Control"] and res.content.startswith(b"RIFF")
+    # Only product image files: never bills or other stored files, never missing files
+    image_store["bills/tenant_1/purchase_1/abc.pdf"] = b"%PDF"
+    assert client.get("/api/v1/shop/images/bills/tenant_1/purchase_1/abc.pdf").status_code == 404
+    assert client.get(f"/api/v1/shop/images/products/tenant_1/product_1/{'0' * 32}.webp").status_code == 404
+
+    monkeypatch.setattr("app.core.config.settings.PRODUCT_IMAGE_PUBLIC_URL", "https://images.example.in/")
+    item = client.get(f"{SHOP}/storea/products/{product.id}").json()
+    assert item["image_url"] == "https://images.example.in" + body["image_url"][len("/shop/images"):]
+
+
 # ---------- Online shop catalogue (public) ----------
 
 SHOP = "/api/v1/shop/stores"
@@ -585,9 +680,12 @@ SHOP = "/api/v1/shop/stores"
 
 @pytest.fixture()
 def online(db, seed, product):
-    """Tenant A (storea) sells online; tenant B (storeb) does not"""
+    """Tenant A (storea) sells online and delivers to 560038 and 560001; tenant B (storeb) does not"""
+    from app.models import TenantSetting
     seed["tenant_a"].subdomain = "storea"
     seed["tenant_b"].subdomain = "storeb"
+    db.add(TenantSetting(tenant_id=seed["tenant_a"].id, setting_key="delivery_pincodes",
+                         setting_value="560038, 560001"))
     enable_online(db, seed["tenant_a"])
     return seed
 
@@ -848,6 +946,35 @@ def test_store_can_block_a_customer_from_ordering(client, db, online, product):
     db.commit()
     res = place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85)
     assert res.status_code == 403
+
+
+def test_orders_only_to_the_stores_delivery_pincodes(client, db, online, product, admin_headers,
+                                                     cashier_headers):
+    from app.models import TenantSetting
+    assert client.get(f"{SHOP}/storea").json()["delivery_pincodes"] == ["560038", "560001"]
+    headers = customer_headers(db)
+    far = client.post(f"{ORDERS}/addresses", json={**ADDRESS, "pincode": "110001"}, headers=headers).json()
+    res = place(client, headers, far["id"], [{"product_id": product.id, "quantity": 1}], 85)
+    assert res.status_code == 400 and "110001" in res.json()["detail"] and "560038" in res.json()["detail"]
+
+    db.query(TenantSetting).filter(TenantSetting.setting_key == "delivery_pincodes").update({"setting_value": ""})
+    db.commit()
+    near = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).json()
+    res = place(client, headers, near["id"], [{"product_id": product.id, "quantity": 1}], 85)
+    assert res.status_code == 400 and "not taking delivery orders" in res.json()["detail"]
+
+    # Admins set the delivery area on the Settings page
+    url = "/api/v1/settings/online"
+    body = {"enabled": True, "delivery_charge": 25, "free_delivery_min": 250, "delivery_pincodes": ["210431", " 210431"]}
+    assert client.put(url, json=body, headers=cashier_headers).status_code == 403
+    assert client.put(url, json={**body, "delivery_pincodes": ["21043"]}, headers=admin_headers).status_code == 422
+    assert client.put(url, json={**body, "delivery_pincodes": []}, headers=admin_headers).status_code == 400
+    saved = client.put(url, json=body, headers=admin_headers).json()
+    assert saved["delivery_pincodes"] == ["210431"] and float(saved["delivery_charge"]) == 25
+    assert client.get(url, headers=cashier_headers).json()["enabled"] is True
+    store = client.get(f"{SHOP}/storea").json()
+    assert (store["delivery_pincodes"], float(store["free_delivery_min"])) == (["210431"], 250)
+    assert place(client, headers, near["id"], [{"product_id": product.id, "quantity": 1}], 80).status_code == 400
 
 
 # ---------- Online orders handled by store staff ----------

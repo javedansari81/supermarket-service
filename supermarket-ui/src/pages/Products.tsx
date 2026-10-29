@@ -19,7 +19,8 @@ import PageHeader from '../components/layout/PageHeader';
 import PageFab from '../components/layout/PageFab';
 import SearchableSelect from '../components/common/SearchableSelect';
 import { ListToolbar, RowAction, StatusChip } from '../components/common/ListParts';
-import { API_ENDPOINTS } from '../config/api';
+import ProductImageField, { ProductThumb } from '../components/products/ProductImageField';
+import { API_ENDPOINTS, imageSrc } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { Product, Category, GstItem, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
@@ -437,7 +438,17 @@ const Products: React.FC = () => {
     }
   };
 
+  const onImageChange = (updated: Product) => {
+    setEditProduct(updated);
+    setProducts((rows) => rows.map((p) => (p.id === updated.id
+      ? { ...p, image_url: updated.image_url, thumb_url: updated.thumb_url } : p)));
+  };
+
   const columns: GridColDef[] = [
+    { field: 'thumb_url', headerName: '', width: 56, sortable: false,
+      renderCell: (params: GridRenderCellParams) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', height: '100%' }}><ProductThumb product={params.row} /></Box>
+      ) },
     { field: 'product_name', headerName: 'Name', flex: 1, minWidth: 260,
       renderCell: (params: GridRenderCellParams) => <span title={params.value}>{params.value}</span> },
     { field: 'barcode', headerName: 'Barcode', width: 140 },
@@ -574,6 +585,13 @@ const Products: React.FC = () => {
                   {formData.product_type ? TYPE_META[formData.product_type].description : 'Select a type to fill in the product details'}
                 </FormHelperText>
               </FormControl>
+            </Grid>
+            <Grid size={{ xs: 12, md: 6 }}>
+              {editProduct ? <ProductImageField product={editProduct} onChange={onImageChange} /> : (
+                <Typography variant="caption" color="text.secondary">
+                  Save the product first, then edit it to add a picture.
+                </Typography>
+              )}
             </Grid>
           </Grid>
           <Collapse in={!!formData.product_type} unmountOnExit>
@@ -781,6 +799,12 @@ const Products: React.FC = () => {
         <DialogContent>
           {viewProduct && (
             <Grid container spacing={2} sx={{ pt: 1 }}>
+              {viewProduct.image_url && (
+                <Grid size={12}>
+                  <Box component="img" src={imageSrc(viewProduct.image_url)} alt={viewProduct.product_name}
+                    sx={{ maxHeight: 220, maxWidth: '100%', objectFit: 'contain', borderRadius: 2, border: 1, borderColor: 'divider' }} />
+                </Grid>
+              )}
               {[
                 ['Product No', viewProduct.product_no],
                 ['Name', viewProduct.product_name],

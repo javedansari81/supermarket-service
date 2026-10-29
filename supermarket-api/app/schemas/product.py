@@ -95,6 +95,9 @@ class ProductResponse(ProductBase, TimestampSchema):
     status: str
     category: Optional[CategoryResponse] = None
     locations: List[ProductLocationResponse] = []
+    # 800 px and 320 px pictures (absolute, or a path under the API base address)
+    image_url: Optional[str] = None
+    thumb_url: Optional[str] = None
 
 
 class ProductListResponse(BaseModel):

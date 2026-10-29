@@ -4,6 +4,10 @@
 
 export const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api/v1';
 
+/** Product picture address: absolute URLs as they are, API paths joined to the API base */
+export const imageSrc = (url?: string | null) =>
+  !url ? undefined : /^https?:\/\//.test(url) ? url : `${API_BASE_URL}${url}`;
+
 export const API_ENDPOINTS = {
   // Auth
   LOGIN: '/auth/login',
@@ -108,6 +112,7 @@ export const API_ENDPOINTS = {
   SETTINGS_STORE: '/settings/store',
   SETTINGS_BILLING: '/settings/billing',
   SETTINGS_LOYALTY: '/settings/loyalty',
+  SETTINGS_ONLINE: '/settings/online',
   
   // Audit
   AUDIT_LOGS: '/audit',

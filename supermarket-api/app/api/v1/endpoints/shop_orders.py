@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core.audit import record_audit, snapshot
 from app.core.database import get_db
 from app.core.offers import CENTS
-from app.core.online_orders import delivery_charge_for, delivery_settings, generate_order_no
+from app.core.online_orders import (delivery_charge_for, delivery_pincodes, delivery_settings,
+                                    generate_order_no)
 from app.models.audit_log import AuditLog
 from app.models.customer import Customer
 from app.models.customer_auth import CustomerAccount
@@ -245,6 +246,12 @@ async def place_order(data: OrderCreate, request: Request, db: Session = Depends
                             detail="Online payment is not available yet. "
                                    "Please choose cash on delivery.")
     address = _get_address(db, account, data.address_id)
+    pincodes = delivery_pincodes(db, tenant.id)
+    if address.pincode not in pincodes:
+        raise HTTPException(status_code=400, detail=(
+            f"Sorry, we do not deliver to pincode {address.pincode} yet. "
+            f"We deliver to {', '.join(pincodes)}." if pincodes
+            else "This store is not taking delivery orders right now."))
     customer = _store_customer(db, tenant.id, account)
     cart = _price_cart(db, tenant.id, data.items, lock=True)
     if cart.problems:

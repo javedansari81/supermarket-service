@@ -45,6 +45,9 @@ class Product(Base, TimestampMixin, StatusMixin):
     markdown_percent = Column(Numeric(5, 2))
     markdown_until = Column(DateTime)
     description = Column(Text)
+    # Picture in object storage (see app.core.product_images); None = no picture
+    image_key = Column(String(300))
+    image_updated_at = Column(DateTime)
     created_by = Column(Integer, ForeignKey('users.id'))
     updated_by = Column(Integer, ForeignKey('users.id'))
     
@@ -77,6 +80,16 @@ class Product(Base, TimestampMixin, StatusMixin):
         if self.markdown_percent and self.markdown_until and self.markdown_until > datetime.utcnow():
             return self.markdown_percent
         return None
+
+    @property
+    def image_url(self):
+        from app.core.product_images import image_url
+        return image_url(self.image_key)
+
+    @property
+    def thumb_url(self):
+        from app.core.product_images import image_url
+        return image_url(self.image_key, thumb=True)
 
     def __repr__(self):
         return f"<Product(id={self.id}, no={self.product_no}, name={self.product_name})>"

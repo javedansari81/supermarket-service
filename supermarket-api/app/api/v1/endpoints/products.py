@@ -1,14 +1,18 @@
 """
 Product management endpoints
 """
+import logging
 from typing import Optional, List
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
+from app.core import product_images, storage
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import (
@@ -39,6 +43,7 @@ from app.core.product_import import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("app.products")
 
 LOOSE_UNITS = ("kg", "g", "L", "ml")
 # Packed items are sold per piece; the pack size holds what is inside
@@ -824,4 +829,91 @@ async def delete_product(
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_DELETE,
                  "product", product.id, old_value=old_value, new_value=snapshot(product))
     db.commit()
+
+
+def _delete_image_files(key: Optional[str], product_id: int) -> None:
+    """Remove an image's files from storage; a failure only leaves unused files behind"""
+    if not key:
+        return
+    for name in product_images.file_keys(key):
+        try:
+            storage.delete_file(name)
+        except Exception:
+            logger.warning("Could not delete image %s of product %s", name, product_id,
+                           exc_info=True)
+
+
+def _set_image(db: Session, request: Request, context: TenantContext, product: Product,
+               key: Optional[str]) -> Product:
+    old_key = product.image_key
+    product.image_key = key
+    product.image_updated_at = datetime.utcnow() if key else None
+    product.updated_by = context.user_id
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "product", product.id, old_value={"image_key": old_key},
+                 new_value={"image_key": key})
+    db.commit()
+    _delete_image_files(old_key, product.id)
+    return db.query(Product).options(joinedload(Product.category), with_locations()).filter(
+        Product.id == product.id).one()
+
+
+@router.post("/{product_id}/image", response_model=ProductResponse)
+async def upload_product_image(
+    product_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_supervisor_user)
+):
+    """
+    Upload or replace the product picture: JPG, PNG or WEBP, saved as 800 px and 320 px WebP
+    (admin or supervisor)
+    """
+    product = db.query(Product).filter(Product.id == product_id,
+                                       Product.tenant_id == context.tenant_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not storage.is_configured():
+        raise HTTPException(status_code=503, detail="Image storage is not configured")
+    max_bytes = settings.PRODUCT_IMAGE_MAX_MB * 1024 * 1024
+    content = await file.read(max_bytes + 1)
+    if not content:
+        raise HTTPException(status_code=400, detail="The picture file is empty")
+    if len(content) > max_bytes:
+        raise HTTPException(status_code=413, detail=f"The picture must be "
+                                                    f"{settings.PRODUCT_IMAGE_MAX_MB} MB or smaller")
+    large, thumb = await run_in_threadpool(product_images.process, content)
+
+    key = product_images.new_key(context.tenant_id, product.id)
+    large_key, thumb_key = product_images.file_keys(key)
+    try:
+        storage.upload_file(large_key, large, product_images.CONTENT_TYPE)
+        storage.upload_file(thumb_key, thumb, product_images.CONTENT_TYPE)
+    except Exception:
+        logger.exception("Image upload failed for product %s (key %s)", product.id, key)
+        _delete_image_files(key, product.id)
+        raise HTTPException(status_code=502, detail="Could not save the picture to storage")
+    return ProductResponse.model_validate(_set_image(db, request, context, product, key))
+
+
+@router.delete("/{product_id}/image", response_model=ProductResponse)
+async def delete_product_image(
+    product_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_supervisor_user)
+):
+    """
+    Remove the product picture (admin or supervisor)
+    """
+    product = db.query(Product).filter(Product.id == product_id,
+                                       Product.tenant_id == context.tenant_id).first()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    if not product.image_key:
+        return ProductResponse.model_validate(product)
+    return ProductResponse.model_validate(_set_image(db, request, context, product, None))
 
