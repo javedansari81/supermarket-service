@@ -8,3 +8,11 @@ export const getLastStore = () => localStorage.getItem(LAST_STORE_KEY);
 export const setLastStore = (store: string) => localStorage.setItem(LAST_STORE_KEY, store);
 
 export const clearLastStore = () => localStorage.removeItem(LAST_STORE_KEY);
+
+const NON_STORE_PATHS = new Set(['', 'login', 'account', 'stores']);
+
+/** Store in the URL (/<store> or /<store>/p/<id>), if any */
+export const storeFromPath = (pathname: string) => {
+  const first = decodeURIComponent(pathname.split('/')[1] || '');
+  return NON_STORE_PATHS.has(first) ? null : first;
+};

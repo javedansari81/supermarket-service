@@ -49,16 +49,16 @@ export default function StoreHomeSections({ store, onSeeAllOffers }: Props) {
 
   return (
     <>
-      <Box sx={{ borderRadius: 4, p: { xs: 2, sm: 2.5 }, background: 'linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%)',
+      <Box sx={{ borderRadius: 4, p: { xs: 2, sm: 2.5 }, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
         display: offerItems.length ? 'block' : 'none' }}>
         <ProductRow store={store} products={offerItems}
           title="Today's offers" subtitle={`${offers?.total ?? 0} products on offer`}
-          icon={rowIcon(<LocalOffer fontSize="small" />, '#fff', '#f97316')}
+          icon={rowIcon(<LocalOffer fontSize="small" />, '#fff', '#f59e0b')}
           onSeeAll={onSeeAllOffers} />
       </Box>
 
       <ProductRow store={store} products={viewedItems} title="Recently viewed" subtitle="Pick up where you left off"
-        icon={rowIcon(<Visibility fontSize="small" />, '#0f766e', 'rgba(15,118,110,0.1)')} />
+        icon={rowIcon(<Visibility fontSize="small" />, '#15803d', 'rgba(21,128,61,0.1)')} />
     </>
   );
 }

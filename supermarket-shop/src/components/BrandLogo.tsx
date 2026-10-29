@@ -16,7 +16,7 @@ export default function BrandLogo({ light = false }: { light?: boolean }) {
       </Box>
       <Typography variant="h6" sx={{ fontWeight: 800, letterSpacing: '-0.02em',
         color: light ? '#fff' : 'text.primary' }}>
-        MF<Box component="span" sx={{ color: light ? '#99f6e4' : 'primary.main' }}>Mart</Box>
+        MF<Box component="span" sx={{ color: light ? '#bbf7d0' : 'primary.main' }}>Mart</Box>
       </Typography>
     </Box>
   );

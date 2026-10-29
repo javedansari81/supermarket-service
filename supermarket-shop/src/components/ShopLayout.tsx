@@ -1,16 +1,19 @@
 /**
- * Page frame: frosted top bar with the logo, the store dropdown (on store pages) and the login button or
- * the customer's menu, and a footer
+ * Page frame: green top bar with the logo, the store dropdown and search (on store pages, passed to the
+ * page as the outlet context) and the login button or the customer's menu, and a green footer with the store's details on store pages
  */
 import { useState } from 'react';
-import { Link as RouterLink, Outlet, useNavigate } from 'react-router-dom';
+import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
-  AppBar, Avatar, Box, Button, ButtonBase, Container, Divider, ListItemIcon, Menu, MenuItem, Toolbar, Typography,
+  AppBar, Avatar, Box, ButtonBase, Container, Divider, IconButton, ListItemIcon, Menu, MenuItem, Toolbar, Tooltip,
+  Typography,
 } from '@mui/material';
-import { KeyboardArrowDown, Login, Logout, Person } from '@mui/icons-material';
+import { Login, Logout, Person } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
-import { BRAND_GRADIENT } from '../theme';
+import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
+import { storeFromPath } from '../utils/lastStore';
 import BrandLogo from './BrandLogo';
+import StoreInfo from './StoreInfo';
 import StoreSwitcher from './StoreSwitcher';
 
 const YEAR = new Date().getFullYear();
@@ -18,7 +21,9 @@ const YEAR = new Date().getFullYear();
 export default function ShopLayout() {
   const { account, loading, logout } = useAuth();
   const navigate = useNavigate();
+  const store = storeFromPath(useLocation().pathname);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+  const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
 
   const go = (path: string) => {
     setMenuAnchor(null);
@@ -35,27 +40,25 @@ export default function ShopLayout() {
 
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', bgcolor: 'background.default' }}>
-      <AppBar position="sticky" color="inherit" elevation={0}
-        sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'rgba(255,255,255,0.85)',
-          backdropFilter: 'saturate(180%) blur(12px)' }}>
+      <AppBar position="sticky" elevation={0}
+        sx={{ background: BAND_GRADIENT, color: '#fff', boxShadow: '0 4px 14px rgba(21,128,61,0.2)' }}>
         <Container maxWidth="lg" disableGutters>
-          <Toolbar sx={{ gap: { xs: 1, sm: 2 }, minHeight: { xs: 60, sm: 68 } }}>
-            <BrandLogo />
-            <Box sx={{ flexGrow: 1, minWidth: 0, display: 'flex' }}><StoreSwitcher /></Box>
+          <Toolbar sx={{ columnGap: { xs: 1, sm: 2 }, rowGap: 0, flexWrap: 'wrap', minHeight: { xs: 60, sm: 68 } }}>
+            <BrandLogo light />
+            <Box sx={{ minWidth: 0, display: 'flex' }}><StoreSwitcher /></Box>
+            <Box ref={setSearchSlot} sx={{ flexGrow: 1, minWidth: 0, order: { xs: 9, md: 0 },
+              flexBasis: { xs: '100%', md: 0 }, pb: { xs: 1.5, md: 0 }, '&:empty': { display: 'none' } }} />
             {!loading && (account ? (
               <>
-                <ButtonBase onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="Account menu"
-                  sx={{ borderRadius: 99, pl: 0.5, pr: 1, py: 0.5, gap: 1, border: 1, borderColor: 'divider',
-                    '&:hover': { bgcolor: 'action.hover' } }}>
-                  <Avatar sx={{ width: 32, height: 32, background: BRAND_GRADIENT, fontSize: 15, fontWeight: 700 }}>
-                    {initial}
-                  </Avatar>
-                  <Typography variant="body2" sx={{ fontWeight: 600, display: { xs: 'none', sm: 'block' },
-                    maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {account.customer_name || 'My account'}
-                  </Typography>
-                  <KeyboardArrowDown fontSize="small" color="action" />
-                </ButtonBase>
+                <Tooltip title={account.customer_name || 'My account'}>
+                  <ButtonBase onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="Account menu"
+                    sx={{ ml: 'auto', borderRadius: '50%', p: 0.25, border: '1px solid rgba(255,255,255,0.4)',
+                      '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
+                    <Avatar sx={{ width: 36, height: 36, bgcolor: '#fff', color: 'primary.main', fontSize: 16, fontWeight: 700 }}>
+                      {initial}
+                    </Avatar>
+                  </ButtonBase>
+                </Tooltip>
                 <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={() => setMenuAnchor(null)}
                   anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
                   transformOrigin={{ vertical: 'top', horizontal: 'right' }}>
@@ -77,20 +80,26 @@ export default function ShopLayout() {
                 </Menu>
               </>
             ) : (
-              <Button component={RouterLink} to="/login" variant="contained" startIcon={<Login />}>Log in</Button>
+              <Tooltip title="Log in">
+                <IconButton component={RouterLink} to="/login" aria-label="Log in"
+                  sx={{ ml: 'auto', width: 42, height: 42, bgcolor: '#fff', color: 'primary.dark',
+                    '&:hover': { bgcolor: '#f0fdf4' } }}>
+                  <Login />
+                </IconButton>
+              </Tooltip>
             ))}
           </Toolbar>
         </Container>
       </AppBar>
       <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 }, flexGrow: 1 }}>
-        <Outlet />
+        <Outlet context={searchSlot} />
       </Container>
-      <Box component="footer" sx={{ borderTop: 1, borderColor: 'divider', bgcolor: 'background.paper', py: 3 }}>
-        <Container maxWidth="lg" sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, justifyContent: 'space-between' }}>
-          <Typography variant="body2" color="text.secondary">
+      <Box component="footer" sx={{ background: BAND_GRADIENT, color: '#fff', py: 3 }}>
+        <Container maxWidth="lg">
+          {store && <StoreInfo key={store} store={store} />}
+          <Typography variant="body2" sx={{ opacity: 0.85 }}>
             © {YEAR} MFMart · Groceries from your neighbourhood store
           </Typography>
-          <Typography variant="body2" color="text.secondary">Same prices as in store</Typography>
         </Container>
       </Box>
     </Box>

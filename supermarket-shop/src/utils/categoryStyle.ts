@@ -30,7 +30,7 @@ const STYLES: [string[], SvgIconComponent, string, string][] = [
   [['stationery', 'office'], EditNote, '#4338ca', '#e0e7ff'],
 ];
 
-const DEFAULT_STYLE: CategoryStyle = { Icon: LocalGroceryStore, color: '#0f766e', background: '#ccfbf1' };
+const DEFAULT_STYLE: CategoryStyle = { Icon: LocalGroceryStore, color: '#15803d', background: '#dcfce7' };
 
 export const categoryStyle = (categoryName?: string | null): CategoryStyle => {
   const name = (categoryName || '').toLowerCase();

@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MFMart theme preview</title>
+<style>
+  :root { --main:#0f766e; --dark:#115e59; --offer:#f97316; --bg:#f5f7f6; --grad:linear-gradient(135deg,#0f766e,#14b8a6);
+    --radius:16px; --btn-radius:10px; --shadow:0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.06); --hw:800; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif; color:#0f172a; background:#e9edf1; }
+  .controls { position:sticky; top:0; z-index:5; background:#0f172a; color:#fff; padding:12px 20px; display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+  .controls b { font-size:13px; opacity:.7; margin-right:4px; }
+  .controls button { border:1px solid #334155; background:#1e293b; color:#fff; padding:6px 12px; border-radius:8px; cursor:pointer; font:inherit; font-size:13px; }
+  .controls button.on { background:#fff; color:#0f172a; }
+  .swatch { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+  .app { max-width:1100px; margin:20px auto; background:var(--bg); border-radius:20px; overflow:hidden; box-shadow:0 10px 40px rgba(0,0,0,.12); transition:background .3s; }
+  header { display:flex; align-items:center; justify-content:space-between; padding:12px 24px; background:#fff; border-bottom:1px solid #e5e9ee; }
+  .logo { display:flex; align-items:center; gap:10px; font-weight:800; font-size:20px; color:var(--dark); }
+  .logo i { width:36px; height:36px; border-radius:50%; background:var(--grad); display:grid; place-items:center; color:#fff; font-style:normal; }
+  .store small { display:block; font-size:11px; color:#64748b; } .store { font-weight:700; font-size:14px; margin-left:20px; }
+  .user { display:flex; align-items:center; gap:8px; border:1px solid #e5e9ee; border-radius:999px; padding:4px 12px 4px 4px; font-weight:600; font-size:14px; }
+  .user i { width:28px; height:28px; border-radius:50%; background:var(--main); color:#fff; display:grid; place-items:center; font-style:normal; }
+  main { padding:20px 24px 28px; }
+  .banner { background:var(--grad); color:#fff; border-radius:var(--radius); padding:22px 26px; display:flex; justify-content:space-between; align-items:center; gap:16px; }
+  .banner h2 { margin:0 0 4px; font-weight:var(--hw); letter-spacing:-.02em; } .banner p { margin:0; opacity:.9; }
+  .btn { border:0; border-radius:var(--btn-radius); padding:10px 18px; font-weight:600; font:inherit; font-weight:600; cursor:pointer; }
+  .btn.white { background:#fff; color:var(--dark); } .btn.main { background:var(--main); color:#fff; } .btn.offer { background:var(--offer); color:#fff; }
+  .btn.outline { background:transparent; color:var(--main); border:1.5px solid var(--main); }
+  .search { display:flex; gap:10px; margin:18px 0; }
+  .search div { flex:1; background:#fff; border:1px solid #e5e9ee; border-radius:var(--btn-radius); padding:14px 16px; color:#94a3b8; }
+  .search div.focus { border-color:var(--main); box-shadow:0 0 0 4px color-mix(in srgb,var(--main) 14%,transparent); }
+  .search span { background:#fff; border:1px solid #e5e9ee; border-radius:var(--btn-radius); padding:14px 20px; min-width:160px; }
+  .cats { display:flex; gap:14px; overflow:auto; padding-bottom:6px; }
+  .cat { min-width:84px; text-align:center; font-size:12px; font-weight:600; padding:10px 6px; border-radius:var(--radius); border:1.5px solid transparent; }
+  .cat.on { border-color:var(--main); background:color-mix(in srgb,var(--main) 8%,#fff); color:var(--dark); }
+  .cat b { display:grid; place-items:center; width:42px; height:42px; margin:0 auto 6px; border-radius:50%; font-size:20px; }
+  .row { display:flex; justify-content:space-between; align-items:center; margin:22px 0 12px; }
+  .row h3 { margin:0; font-size:20px; font-weight:var(--hw); } .row a { color:var(--main); font-weight:600; font-size:14px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:16px; }
+  .card { background:#fff; border:1px solid #e5e9ee; border-radius:var(--radius); box-shadow:var(--shadow); padding:8px; position:relative; transition:transform .2s,box-shadow .2s; }
+  .card:hover { transform:translateY(-3px); box-shadow:0 8px 28px rgba(15,23,42,.12); }
+  .card .img { height:120px; border-radius:calc(var(--radius) - 4px); display:grid; place-items:center; font-size:44px; }
+  .card .tag { position:absolute; top:14px; left:14px; background:var(--offer); color:#fff; font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; }
+  .card .body { padding:10px 6px 4px; } .brand { font-size:11px; font-weight:700; color:#64748b; }
+  .name { font-weight:600; margin:2px 0 6px; font-size:14px; } .unit { font-size:12px; color:#64748b; }
+  .price { display:flex; justify-content:space-between; align-items:center; margin-top:10px; }
+  .price b { font-size:16px; } .price s { font-size:12px; color:#94a3b8; margin-left:4px; }
+  .add { border:1.5px solid var(--main); color:var(--main); background:color-mix(in srgb,var(--main) 6%,#fff); border-radius:var(--btn-radius); padding:5px 14px; font-weight:700; font-size:13px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; margin-top:22px; align-items:center; }
+  .chip { padding:5px 12px; border-radius:999px; font-size:12px; font-weight:600; }
+  .info { margin-top:22px; display:flex; gap:10px; flex-wrap:wrap; font-size:13px; color:#475569; }
+  .info code { background:#fff; border:1px solid #e5e9ee; border-radius:6px; padding:3px 8px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <div id="themes"><b>Theme</b></div>
+  <div id="corners"><b>Corners</b></div>
+  <div id="shadows"><b>Shadow</b></div>
+  <div id="weights"><b>Headings</b></div>
+</div>
+
+<div class="app">
+  <header>
+    <div style="display:flex;align-items:center">
+      <div class="logo"><i>🛒</i>MFMart</div>
+      <div class="store"><small>Shopping at</small>Demo Store ▾</div>
+    </div>
+    <div class="user"><i>J</i>Javed Ansari ▾</div>
+  </header>
+  <main>
+    <div class="banner">
+      <div><h2>Today's offers</h2><p>Up to 30% off on daily essentials</p></div>
+      <button class="btn white">See all offers →</button>
+    </div>
+    <div class="search"><div class="focus">🔍 Search for atta, milk, chips...</div><span>⇅ Name ▾</span></div>
+    <div class="cats" id="cats"></div>
+    <div class="row"><h3>All products</h3><a>57 items</a></div>
+    <div class="grid" id="grid"></div>
+    <div class="chips">
+      <button class="btn main">Primary button</button>
+      <button class="btn outline">Outline button</button>
+      <button class="btn offer">Offer button</button>
+      <span class="chip" style="background:color-mix(in srgb,var(--main) 12%,#fff);color:var(--dark)">Main chip</span>
+      <span class="chip" style="background:color-mix(in srgb,var(--offer) 14%,#fff);color:var(--offer)">20% OFF</span>
+    </div>
+    <div class="info" id="info"></div>
+  </main>
+</div>
+
+<script>
+const THEMES = {
+  'Current': { main:'#0f766e', dark:'#115e59', offer:'#f97316', bg:'#f5f7f6', grad:['#0f766e','#14b8a6'] },
+  '1 Fresh Green': { main:'#15803d', dark:'#166534', offer:'#f59e0b', bg:'#f6f8f4', grad:['#15803d','#22c55e'] },
+  '2 Ocean Blue': { main:'#1d4ed8', dark:'#1e3a8a', offer:'#f97316', bg:'#f5f7fb', grad:['#1e3a8a','#3b82f6'] },
+  '3 Berry': { main:'#be185d', dark:'#9d174d', offer:'#7c3aed', bg:'#fbf7f9', grad:['#9d174d','#ec4899'] },
+  '4 Warm Saffron': { main:'#c2410c', dark:'#9a3412', offer:'#16a34a', bg:'#fdf9f4', grad:['#9a3412','#f97316'] },
+  '5 Midnight Teal': { main:'#0f766e', dark:'#0f172a', offer:'#e11d48', bg:'#f3f5f7', grad:['#0f172a','#0f766e'] },
+};
+const CORNERS = { Sharp:['8px','6px'], Default:['16px','10px'], Soft:['20px','999px'] };
+const SHADOWS = { Flat:'none', Default:'0 1px 2px rgba(15,23,42,.04),0 4px 16px rgba(15,23,42,.06)', Raised:'0 6px 24px rgba(15,23,42,.12)' };
+const WEIGHTS = { Light:600, Bold:800 };
+const CATS = [['▦','All','#0f766e','#ccfbf1'],['🍼','Baby','#7c3aed','#ede9fe'],['🥐','Bakery','#a16207','#fef9c3'],['☕','Beverages','#9a3412','#ffedd5'],
+  ['🥛','Dairy','#1d4ed8','#dbeafe'],['❄️','Frozen','#0369a1','#e0f2fe'],['🥬','Fruits & Veg','#15803d','#dcfce7'],['🍚','Groceries','#b45309','#fef3c7'],['🧴','Personal Care','#be185d','#fce7f3'],['🐾','Pet Supplies','#92400e','#fef3c7']];
+const PRODUCTS = [['🐾','#fef3c7','Adult Dog Food 1 kg','1 kg',450,520],['🧹','#cffafe','Agarbatti Pack','',40,null],['🍪','#ffedd5','Aloo Bhujia 200 g','200 g',55,60],
+  ['🍎','#dcfce7','Apple Loose','Sold by weight',180,null],['🍼','#ede9fe','Baby Diapers M 20 pcs','20 pcs',399,449]];
+const root = document.documentElement.style;
+const state = { theme:'Current', corner:'Default', shadow:'Default', weight:'Bold' };
+
+function apply() {
+  const t = THEMES[state.theme];
+  root.setProperty('--main', t.main); root.setProperty('--dark', t.dark); root.setProperty('--offer', t.offer);
+  root.setProperty('--bg', t.bg); root.setProperty('--grad', `linear-gradient(135deg, ${t.grad[0]} 0%, ${t.grad[1]} 100%)`);
+  root.setProperty('--radius', CORNERS[state.corner][0]); root.setProperty('--btn-radius', CORNERS[state.corner][1]);
+  root.setProperty('--shadow', SHADOWS[state.shadow]); root.setProperty('--hw', WEIGHTS[state.weight]);
+  document.getElementById('info').innerHTML = ['main','dark','offer','bg'].map(k => `<code>${k}: ${t[k]}</code>`).join('')
+    + `<code>gradient: ${t.grad.join(' → ')}</code>`;
+  document.querySelectorAll('.controls button').forEach(b => b.classList.toggle('on', state[b.dataset.key] === b.dataset.val));
+}
+
+function group(id, key, options, swatch) {
+  const el = document.getElementById(id);
+  Object.keys(options).forEach(name => {
+    const b = document.createElement('button');
+    b.dataset.key = key; b.dataset.val = name;
+    b.innerHTML = (swatch ? `<span class="swatch" style="background:${options[name].main}"></span>` : '') + name;
+    b.onclick = () => { state[key] = name; apply(); };
+    el.appendChild(b);
+  });
+}
+
+document.getElementById('cats').innerHTML = CATS.map(([icon, name, c, bg], i) =>
+  `<div class="cat ${i === 0 ? 'on' : ''}"><b style="color:${c};background:${bg}">${icon}</b>${name}</div>`).join('');
+document.getElementById('grid').innerHTML = PRODUCTS.map(([icon, bg, name, unit, price, mrp]) => `
+  <div class="card">${mrp ? `<span class="tag">${Math.round((1 - price / mrp) * 100)}% OFF</span>` : ''}
+    <div class="img" style="background:${bg}">${icon}</div>
+    <div class="body"><div class="brand">MF</div><div class="name">${name}</div><div class="unit">${unit || '&nbsp;'}</div>
+      <div class="price"><span><b>₹${price}</b>${mrp ? `<s>₹${mrp}</s>` : ''}</span><span class="add">ADD</span></div></div>
+  </div>`).join('');
+
+group('themes', 'theme', THEMES, true);
+group('corners', 'corner', CORNERS);
+group('shadows', 'shadow', SHADOWS);
+group('weights', 'weight', WEIGHTS);
+apply();
+</script>
+</body>
+</html>

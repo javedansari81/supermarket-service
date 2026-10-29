@@ -11,11 +11,11 @@ const DigitBox = styled('input', { shouldForwardProp: (prop) => prop !== 'filled
   invalid: boolean;
 }>(({ theme, filled, invalid }) => ({
   width: '100%', aspectRatio: '1 / 1.15', textAlign: 'center', fontSize: 24, fontWeight: 700,
-  fontFamily: 'inherit', color: theme.palette.text.primary, borderRadius: 10, outline: 'none',
+  fontFamily: 'inherit', color: theme.palette.text.primary, borderRadius: 6, outline: 'none',
   border: `1.5px solid ${invalid ? theme.palette.error.main : filled ? theme.palette.primary.main : theme.palette.divider}`,
-  backgroundColor: filled ? 'rgba(15,118,110,0.04)' : theme.palette.background.paper,
+  backgroundColor: filled ? 'rgba(21,128,61,0.04)' : theme.palette.background.paper,
   transition: 'border-color .15s, box-shadow .15s',
-  '&:focus': { borderColor: theme.palette.primary.main, boxShadow: '0 0 0 4px rgba(15,118,110,0.15)' },
+  '&:focus': { borderColor: theme.palette.primary.main, boxShadow: '0 0 0 4px rgba(21,128,61,0.15)' },
   '&:disabled': { opacity: 0.6 },
 }));
 
