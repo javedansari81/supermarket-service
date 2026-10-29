@@ -81,7 +81,7 @@ export default function OrderPage() {
 
   return (
     <Stack spacing={2.5}>
-      {placed && !cancelled && (
+      {placed && order.status === 'placed' && (
         <Alert icon={<CheckCircle />} severity="success">
           Order placed. {order.store_name} will confirm it shortly. Pay {formatPrice(order.total_amount)} on delivery.
         </Alert>
