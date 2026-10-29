@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     # Customer login (online ordering)
     CUSTOMER_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     CUSTOMER_REFRESH_TOKEN_EXPIRE_DAYS: int = 60
-    # OTP sender: "" disables customer login, "console" logs the code (development only),
-    # "fixed" accepts OTP_FIXED_CODE for every number (testing only, no SMS)
+    # OTP sender: "" disables customer login, "startmessaging" sends an SMS, "console" logs
+    # the code (development only), "fixed" accepts OTP_FIXED_CODE for every number (testing only)
     OTP_PROVIDER: str = ""
     OTP_FIXED_CODE: str = Field("123456", pattern=r"^[0-9]{6}$")
     OTP_EXPIRE_MINUTES: int = 5
@@ -36,6 +36,13 @@ class Settings(BaseSettings):
     OTP_MAX_ATTEMPTS: int = 5
     OTP_MAX_PER_MOBILE_PER_HOUR: int = 5
     OTP_MAX_PER_IP_PER_HOUR: int = 20
+    # StartMessaging SMS (OTP_PROVIDER=startmessaging); the API key is a secret, keep it in .env
+    STARTMESSAGING_API_KEY: str = ""
+    STARTMESSAGING_API_URL: str = "https://api.startmessaging.com"
+    # Only for the DLT route with an own registered template; empty uses their DLT-free route
+    STARTMESSAGING_TEMPLATE_ID: str = ""
+    STARTMESSAGING_APP_NAME: str = "MFMart"
+    STARTMESSAGING_TIMEOUT_SECONDS: int = 10
 
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]

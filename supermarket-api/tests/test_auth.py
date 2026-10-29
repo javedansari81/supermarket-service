@@ -1,4 +1,5 @@
 """Authentication endpoint and health check tests"""
+import json
 from datetime import timedelta
 
 import pytest
@@ -361,6 +362,81 @@ def test_fixed_provider_accepts_fixed_code_for_any_number(client, shop, monkeypa
         res = client.post(shop_url("/otp/verify"), json={"mobile": mobile, "code": "123456"})
         assert res.status_code == 200 and res.json()["account"]["mobile"] == mobile
     assert shop["sent"] == []
+
+
+class FakeSmsReply:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self):
+        return self.body
+
+
+@pytest.fixture()
+def startmessaging(monkeypatch):
+    """OTP_PROVIDER=startmessaging with the HTTP call captured instead of sent"""
+    import urllib.request
+    calls = []
+    monkeypatch.setattr(settings, "OTP_PROVIDER", "startmessaging")
+    monkeypatch.setattr(settings, "STARTMESSAGING_API_KEY", "test-key")
+    monkeypatch.setattr(settings, "STARTMESSAGING_TEMPLATE_ID", "")
+    reply = {"error": None}
+
+    def fake_urlopen(request, timeout):
+        calls.append({"url": request.full_url, "headers": dict(request.header_items()),
+                      "body": json.loads(request.data), "timeout": timeout})
+        if reply["error"]:
+            raise reply["error"]
+        return FakeSmsReply(b'{"success": true, "data": {"messageId": "m-1", "status": "queued"}}')
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    return {"calls": calls, "reply": reply}
+
+
+def test_startmessaging_sends_our_code_and_login_works(client, db, shop, startmessaging):
+    from app.models import CustomerOtp
+    assert client.post(shop_url("/otp/request"), json={"mobile": MOBILE}).status_code == 200
+    call = startmessaging["calls"][0]
+    assert call["url"] == "https://api.startmessaging.com/otp/send"
+    assert call["headers"]["X-api-key"] == "test-key" and call["timeout"] == 10
+    code = call["body"]["variables"]["otp"]
+    assert call["body"] == {"phoneNumber": f"+91{MOBILE}", "variables": {"otp": code, "appName": "MFMart"}}
+    assert len(code) == 6 and code.isdigit()
+    assert db.query(CustomerOtp).filter(CustomerOtp.mobile == MOBILE).count() == 1
+    res = client.post(shop_url("/otp/verify"), json={"mobile": MOBILE, "code": code})
+    assert res.status_code == 200
+
+
+def test_startmessaging_failure_saves_no_code_and_needs_api_key(client, db, shop, startmessaging, monkeypatch):
+    import io
+    import urllib.error
+    from app.models import CustomerOtp
+    url = "https://api.startmessaging.com/otp/send"
+    startmessaging["reply"]["error"] = urllib.error.HTTPError(url, 401, "Unauthorized", {}, io.BytesIO(b""))
+    res = client.post(shop_url("/otp/request"), json={"mobile": MOBILE})
+    assert res.status_code == 503 and "Could not send" in res.json()["detail"]
+    assert db.query(CustomerOtp).filter(CustomerOtp.mobile == MOBILE).count() == 0
+
+    startmessaging["reply"]["error"] = urllib.error.HTTPError(url, 429, "Too Many", {}, io.BytesIO(b""))
+    assert client.post(shop_url("/otp/request"), json={"mobile": MOBILE}).status_code == 429
+    startmessaging["reply"]["error"] = urllib.error.URLError("timed out")
+    assert client.post(shop_url("/otp/request"), json={"mobile": MOBILE}).status_code == 503
+
+    monkeypatch.setattr(settings, "STARTMESSAGING_TEMPLATE_ID", "TPL1")
+    startmessaging["reply"]["error"] = None
+    assert client.post(shop_url("/otp/request"), json={"mobile": MOBILE}).status_code == 200
+    assert startmessaging["calls"][-1]["body"]["templateId"] == "TPL1"
+
+    monkeypatch.setattr(settings, "STARTMESSAGING_API_KEY", "")
+    count = len(startmessaging["calls"])
+    assert client.post(shop_url("/otp/request"), json={"mobile": "9123456780"}).status_code == 503
+    assert len(startmessaging["calls"]) == count
 
 
 def test_customer_and_staff_tokens_are_separate(client, shop, admin_headers):
