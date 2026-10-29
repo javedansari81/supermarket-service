@@ -1,4 +1,8 @@
 """Product endpoint tests"""
+import pytest
+
+from tests.conftest import enable_online
+
 URL = "/api/v1/products"
 
 
@@ -572,3 +576,155 @@ def test_edit_manufacturer_without_barcode(client, admin_headers):
     assert res.status_code == 200 and res.json()["barcode"] == "8901725000011"
     # Once set, an empty barcode keeps the current one
     assert put({"barcode": ""}).json()["barcode"] == "8901725000011"
+
+
+# ---------- Online shop catalogue (public) ----------
+
+SHOP = "/api/v1/shop/stores"
+
+
+@pytest.fixture()
+def online(db, seed, product):
+    """Tenant A (storea) sells online; tenant B (storeb) does not"""
+    seed["tenant_a"].subdomain = "storea"
+    seed["tenant_b"].subdomain = "storeb"
+    enable_online(db, seed["tenant_a"])
+    return seed
+
+
+def add_product(db, tenant, no, name, **fields):
+    from app.models import Product
+    data = {"mrp": 50, "selling_price": 45, "tax_percent": 5, "unit_type": "pcs", "stock_quantity": 10}
+    data.update(fields)
+    prod = Product(tenant_id=tenant.id, product_no=no, product_name=name, **data)
+    db.add(prod)
+    db.commit()
+    return prod
+
+
+def test_shop_stores_and_store_details(client, db, online):
+    res = client.get(SHOP)
+    assert res.status_code == 200 and "max-age" in res.headers["Cache-Control"]
+    assert res.json()["items"] == [{"store": "storea", "store_name": "Tenant A", "store_address": ""}]
+    assert client.get(f"{SHOP}/storea").json()["store_name"] == "Tenant A"
+    assert client.get(f"{SHOP}/storeb").status_code == 404
+    assert client.get(f"{SHOP}/nostore/products").status_code == 404
+
+    online["tenant_a"].status = "inactive"
+    db.commit()
+    assert client.get(SHOP).json()["items"] == []
+    assert client.get(f"{SHOP}/storea").status_code == 404
+
+
+def test_shop_catalogue_shows_only_sellable_products_without_costs(client, db, online, product):
+    add_product(db, online["tenant_a"], "P0002", "Old Soap", status="inactive")
+    add_product(db, online["tenant_a"], "P0003", "Free Sample", mrp=None, selling_price=None)
+    other = add_product(db, online["tenant_b"], "P0001", "Other Store Rice")
+
+    cats = client.get(f"{SHOP}/storea/categories").json()["items"]
+    assert cats == [{"id": product.category_id, "category_name": "Grocery", "product_count": 1}]
+
+    body = client.get(f"{SHOP}/storea/products").json()
+    assert body["total"] == 1
+    item = body["items"][0]
+    assert item["product_name"] == "Rice 1kg" and item["category_name"] == "Grocery"
+    assert float(item["price"]) == 55 and float(item["offer_price"]) == 55 and item["in_stock"] is True
+    assert not {"purchase_price", "stock_quantity", "barcode"} & set(item)
+
+    assert client.get(f"{SHOP}/storea/products/{product.id}").json()["id"] == product.id
+    assert client.get(f"{SHOP}/storea/products/{other.id}").status_code == 404
+
+
+def test_shop_prices_follow_batches_clearance_and_offers(client, db, online, product):
+    from datetime import timedelta
+    from app.core.clearance import today_ist
+    from app.models import Offer, OfferItem, ProductBatch, TenantSetting
+    today = today_ist()
+    tenant_id = online["tenant_a"].id
+
+    def batch(mrp, price, days, qty):
+        db.add(ProductBatch(tenant_id=tenant_id, product_id=product.id, mrp=mrp, selling_price=price,
+                            expiry_date=today + timedelta(days=days), quantity_received=qty,
+                            quantity_left=qty))
+
+    batch(60, 30, -1, 4)   # expired: never priced or sold online
+    batch(60, 52, 3, 5)    # sold first
+    batch(62, 58, 90, 10)
+    db.commit()
+    detail = lambda: client.get(f"{SHOP}/storea/products/{product.id}").json()
+    item = detail()
+    assert (float(item["mrp"]), float(item["price"]), item["discount_source"]) == (60, 52, None)
+
+    db.add(TenantSetting(tenant_id=tenant_id, setting_key="clearance_enabled", setting_value="true"))
+    db.commit()
+    item = detail()
+    assert (float(item["offer_price"]), float(item["discount_percent"]), item["discount_source"]) \
+        == (36.40, 30, "clearance")
+
+    offer = Offer(tenant_id=tenant_id, name="Diwali Sale", start_date=today, end_date=today)
+    db.add(offer)
+    db.flush()
+    db.add(OfferItem(offer_id=offer.id, product_id=product.id, discount_type="percent", discount_value=50))
+    db.commit()
+    item = detail()
+    assert (float(item["offer_price"]), item["discount_source"], item["offer_name"]) \
+        == (26, "offer", "Diwali Sale")
+
+    db.query(ProductBatch).filter(ProductBatch.expiry_date >= today).update({"quantity_left": 0})
+    db.commit()
+    assert detail()["in_stock"] is False
+
+
+def test_shop_loose_markdown_search_sort_and_paging(client, db, online, product):
+    from datetime import datetime, timedelta
+    tenant = online["tenant_a"]
+    add_product(db, tenant, "P0002", "Tomato Loose", product_type="loose", is_loose=True, unit_type="kg",
+                mrp=40, selling_price=40, markdown_percent=25,
+                markdown_until=datetime.utcnow() + timedelta(hours=2))
+    add_product(db, tenant, "P0003", "Sugar 1kg", brand="Tata", selling_price=45)
+    add_product(db, tenant, "P0004", "Salt 1kg", brand="Tata", selling_price=20, stock_quantity=0)
+    products = lambda **p: client.get(f"{SHOP}/storea/products", params=p).json()
+
+    tomato = products(search="tomato")["items"][0]
+    assert tomato["is_loose"] and tomato["unit_type"] == "kg"
+    assert (float(tomato["offer_price"]), tomato["discount_source"]) == (30, "clearance")
+
+    assert [i["product_name"] for i in products(search="tata")["items"]] == ["Sugar 1kg", "Salt 1kg"]
+    # In-stock first, then by price
+    assert [i["product_name"] for i in products(sort="price_asc")["items"]] \
+        == ["Tomato Loose", "Sugar 1kg", "Rice 1kg", "Salt 1kg"]
+    assert [i["product_name"] for i in products(sort="price_desc")["items"]][0] == "Rice 1kg"
+    assert products(category_id=product.category_id)["total"] == 1
+    page = products(page=2, page_size=3)
+    assert page["total"] == 4 and len(page["items"]) == 1
+    assert client.get(f"{SHOP}/storea/products", params={"sort": "cost"}).status_code == 422
+
+
+def test_shop_products_on_offer_and_by_ids(client, db, online, product):
+    from datetime import datetime, timedelta
+    from app.core.clearance import today_ist
+    from app.models import Offer, OfferItem
+    tenant = online["tenant_a"]
+    tomato = add_product(db, tenant, "P0002", "Tomato Loose", product_type="loose", is_loose=True,
+                         unit_type="kg", markdown_percent=20,
+                         markdown_until=datetime.utcnow() + timedelta(hours=2))
+    add_product(db, tenant, "P0003", "Onion Loose", product_type="loose", is_loose=True, unit_type="kg",
+                markdown_percent=20, markdown_until=datetime.utcnow() - timedelta(hours=1))
+    sugar = add_product(db, tenant, "P0004", "Sugar 1kg")
+    today = today_ist()
+    offer = Offer(tenant_id=tenant.id, name="Diwali Sale", start_date=today, end_date=today)
+    ended = Offer(tenant_id=tenant.id, name="Old Sale", start_date=today - timedelta(days=9),
+                  end_date=today - timedelta(days=1))
+    db.add_all([offer, ended])
+    db.flush()
+    db.add_all([OfferItem(offer_id=offer.id, product_id=sugar.id, discount_type="percent", discount_value=10),
+                OfferItem(offer_id=ended.id, product_id=product.id, discount_type="percent", discount_value=10)])
+    db.commit()
+    names = lambda **p: sorted(i["product_name"] for i in
+                               client.get(f"{SHOP}/storea/products", params=p).json()["items"])
+
+    # Running offer or a markdown still valid; ended offers and lapsed markdowns are not offers
+    assert names(on_offer=True) == ["Sugar 1kg", "Tomato Loose"]
+    assert names(ids=f"{tomato.id},{product.id}") == ["Rice 1kg", "Tomato Loose"]
+    assert names(ids="999999") == []
+    assert client.get(f"{SHOP}/storea/products", params={"ids": "1,abc"}).status_code == 422

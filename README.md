@@ -132,6 +132,16 @@ npm install
 npm start
 ```
 
+### Customer Shop Setup (online ordering)
+```bash
+cd supermarket-shop
+npm install
+npm run dev   # http://localhost:3001
+```
+Customers log in with a mobile OTP. Locally, set `OTP_PROVIDER=console` in `supermarket-api/.env` and read the
+code from the API server log. Only stores with the `online_ordering_enabled` setting (Demo Store after migration 030)
+appear in the shop.
+
 ## User Roles
 
 ### Admin

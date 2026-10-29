@@ -1,6 +1,7 @@
 """
 Application configuration settings
 """
+from pydantic import Field
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -22,7 +23,20 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    
+
+    # Customer login (online ordering)
+    CUSTOMER_ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    CUSTOMER_REFRESH_TOKEN_EXPIRE_DAYS: int = 60
+    # OTP sender: "" disables customer login, "console" logs the code (development only),
+    # "fixed" accepts OTP_FIXED_CODE for every number (testing only, no SMS)
+    OTP_PROVIDER: str = ""
+    OTP_FIXED_CODE: str = Field("123456", pattern=r"^[0-9]{6}$")
+    OTP_EXPIRE_MINUTES: int = 5
+    OTP_RESEND_SECONDS: int = 60
+    OTP_MAX_ATTEMPTS: int = 5
+    OTP_MAX_PER_MOBILE_PER_HOUR: int = 5
+    OTP_MAX_PER_IP_PER_HOUR: int = 20
+
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 

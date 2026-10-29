@@ -24,6 +24,17 @@ def snapshot(obj, exclude: Iterable[str] = ()) -> Optional[dict]:
     return jsonable_encoder(data)
 
 
+def client_ip(request: Optional[Request]) -> Optional[str]:
+    """Caller's IP address (first X-Forwarded-For entry behind the proxy)"""
+    if request is None:
+        return None
+    forwarded = request.headers.get("x-forwarded-for")
+    ip_address = forwarded.split(",")[0].strip() if forwarded else (
+        request.client.host if request.client else None
+    )
+    return ip_address[:50] if ip_address else None
+
+
 def record_audit(
     db: Session,
     request: Optional[Request],
@@ -36,14 +47,8 @@ def record_audit(
     new_value: Optional[dict] = None,
 ) -> None:
     """Add an audit entry to the session; it is committed with the caller's transaction"""
-    ip_address = None
-    user_agent = None
-    if request is not None:
-        forwarded = request.headers.get("x-forwarded-for")
-        ip_address = forwarded.split(",")[0].strip() if forwarded else (
-            request.client.host if request.client else None
-        )
-        user_agent = request.headers.get("user-agent")
+    ip_address = client_ip(request)
+    user_agent = request.headers.get("user-agent") if request is not None else None
 
     db.add(AuditLog(
         tenant_id=tenant_id,
@@ -53,6 +58,6 @@ def record_audit(
         entity_id=entity_id,
         old_value=jsonable_encoder(old_value) if old_value is not None else None,
         new_value=jsonable_encoder(new_value) if new_value is not None else None,
-        ip_address=ip_address[:50] if ip_address else None,
+        ip_address=ip_address,
         user_agent=user_agent,
     ))
