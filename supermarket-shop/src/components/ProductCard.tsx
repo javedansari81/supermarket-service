@@ -25,7 +25,7 @@ export function ProductPicture({ product, height = 132 }: { product: ShopProduct
       {showImage ? (
         <Box component="img" src={src} alt={product.product_name} loading="lazy" decoding="async"
           onError={() => setFailed(src ?? null)}
-          sx={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
+          sx={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
       ) : (
         <Icon sx={{ fontSize: height * 0.42, opacity: 0.85 }} />
       )}
