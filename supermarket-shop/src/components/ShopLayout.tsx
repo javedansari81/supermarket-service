@@ -8,7 +8,7 @@ import {
   AppBar, Avatar, Badge, Box, ButtonBase, Container, Divider, IconButton, ListItemIcon, Menu, MenuItem, Toolbar,
   Tooltip, Typography,
 } from '@mui/material';
-import { Login, Logout, Person, ShoppingCartOutlined } from '@mui/icons-material';
+import { Login, Logout, Person, ReceiptLong, ShoppingCartOutlined } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { useCart } from '../cart/CartContext';
 import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
@@ -53,7 +53,8 @@ export default function ShopLayout() {
               flexBasis: { xs: '100%', md: 0 }, '&:empty': { display: 'none' } }} />
             {store && (
               <Tooltip title="Cart">
-                <IconButton aria-label={`Cart, ${cartCount} items`}
+                <IconButton component={RouterLink} to={`/${encodeURIComponent(store)}/cart`}
+                  aria-label={`Cart, ${cartCount} items`}
                   sx={{ ml: 'auto', color: '#fff', border: '1px solid rgba(255,255,255,0.4)',
                     width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
                     '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
@@ -90,6 +91,9 @@ export default function ShopLayout() {
                   <Divider sx={{ mb: 0.5 }} />
                   <MenuItem onClick={() => go('/account')}>
                     <ListItemIcon><Person fontSize="small" /></ListItemIcon>My account
+                  </MenuItem>
+                  <MenuItem onClick={() => go('/orders')}>
+                    <ListItemIcon><ReceiptLong fontSize="small" /></ListItemIcon>My orders
                   </MenuItem>
                   <Divider />
                   <MenuItem onClick={handleLogout} sx={{ color: 'error.main' }}>

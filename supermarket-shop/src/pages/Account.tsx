@@ -1,10 +1,10 @@
 /**
- * My account: name, mobile number, stores I shop at, log out
+ * My account: name, mobile number, stores I shop at, my orders, log out
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Box, Button, Card, Stack, TextField, Typography } from '@mui/material';
-import { Logout, Loyalty, PhoneIphone, Storefront } from '@mui/icons-material';
+import { Logout, Loyalty, PhoneIphone, ReceiptLong, Storefront } from '@mui/icons-material';
 import { api, ApiError } from '../api/client';
 import type { ListResponse, MyStore } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
@@ -112,6 +112,10 @@ export default function Account() {
               <Button component={RouterLink} to="/stores" variant="outlined">Browse stores</Button>
             </Card>
           )}
+          <Button component={RouterLink} to="/orders" variant="outlined" startIcon={<ReceiptLong />}
+            sx={{ alignSelf: 'flex-start' }}>
+            My orders
+          </Button>
           <Button variant="text" color="error" startIcon={<Logout />} onClick={handleLogout} sx={{ alignSelf: 'flex-start' }}>
             Log out
           </Button>

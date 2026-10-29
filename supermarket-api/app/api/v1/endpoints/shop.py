@@ -13,6 +13,7 @@ from app.core.batches import fefo_key, uses_batches
 from app.core.clearance import ClearanceResolver, today_ist
 from app.core.database import get_db
 from app.core.offers import OfferResolver, SOURCE_OFFER, CENTS, resolve_line_discount
+from app.core.online_orders import delivery_settings, reserved_quantities
 from app.models.category import Category
 from app.models.offer import Offer, OfferItem
 from app.models.product import Product
@@ -35,16 +36,18 @@ def _cache(response: Response) -> None:
     response.headers["Cache-Control"] = f"public, max-age={CACHE_SECONDS}"
 
 
-def _sellable(db: Session, tenant_id: int):
+def sellable_products(db: Session, tenant_id: int):
     """Active products with a price"""
     return db.query(Product).filter(Product.tenant_id == tenant_id, Product.status == "active",
                                     LIST_PRICE > 0)
 
 
-def _price_products(db: Session, tenant_id: int, products: List[Product]) -> List[dict]:
-    """Shop fields for each product: the price billing would charge for one unit now"""
+def price_products(db: Session, tenant_id: int, products: List[Product]) -> List[dict]:
+    """Shop fields for each product: the price billing would charge for one unit now, and
+    `available` = sellable stock not held by open online orders (never sent to customers)"""
     clearance = ClearanceResolver(db, tenant_id)
     offers = OfferResolver(db, tenant_id)
+    reserved = reserved_quantities(db, tenant_id, [p.id for p in products])
     today = today_ist()
     packed_ids = [p.id for p in products if uses_batches(p)]
     batches: Dict[int, List[ProductBatch]] = {}
@@ -63,12 +66,14 @@ def _price_products(db: Session, tenant_id: int, products: List[Product]) -> Lis
         if batch:
             unit_price = batch.selling_price or batch.mrp or product.selling_price or product.mrp
             mrp = batch.mrp
-            in_stock = True
+            stock = sum((Decimal(b.quantity_left) for b in sellable), Decimal("0"))
         else:
             unit_price = product.selling_price or product.mrp
             mrp = product.mrp
             # Packed stock not yet split into batches still counts; expired batches do not
-            in_stock = product.id not in has_batches and (product.stock_quantity or 0) > 0
+            stock = Decimal("0") if product.id in has_batches \
+                else Decimal(product.stock_quantity or 0)
+        available = max(stock - reserved.get(product.id, Decimal("0")), Decimal("0"))
         unit_price = Decimal(unit_price).quantize(CENTS)
         discount = resolve_line_discount(unit_price, Decimal("1"), unit_price,
                                          clearance.percent(product, batch),
@@ -84,7 +89,7 @@ def _price_products(db: Session, tenant_id: int, products: List[Product]) -> Lis
             "discount_source": discount.source if discount.amount else None,
             "offer_name": discount.offer.offer.name
             if discount.amount and discount.source == SOURCE_OFFER else None,
-            "in_stock": in_stock, "description": product.description,
+            "in_stock": available > 0, "available": available, "description": product.description,
         })
     return priced
 
@@ -109,8 +114,10 @@ async def get_store(response: Response, db: Session = Depends(get_db),
                     tenant: Tenant = Depends(get_shop_tenant)):
     """Store details for the shop header and footer (FSSAI licence must be shown for food)"""
     store = build_store_settings(db, tenant.id)
+    delivery_charge, free_delivery_min = delivery_settings(db, tenant.id)
     _cache(response)
-    return ShopStoreDetail(store=tenant.subdomain, **store.model_dump(
+    return ShopStoreDetail(store=tenant.subdomain, delivery_charge=delivery_charge,
+                           free_delivery_min=free_delivery_min, **store.model_dump(
         include={"store_name", "store_address", "store_phone", "store_email", "gstin", "fssai_license"}
     ))
 
@@ -119,7 +126,7 @@ async def get_store(response: Response, db: Session = Depends(get_db),
 async def list_categories(response: Response, db: Session = Depends(get_db),
                           tenant: Tenant = Depends(get_shop_tenant)):
     """Active categories that have products to sell"""
-    counts = _sellable(db, tenant.id).with_entities(
+    counts = sellable_products(db, tenant.id).with_entities(
         Product.category_id, func.count(Product.id).label("product_count")
     ).group_by(Product.category_id).subquery()
     rows = db.query(Category, counts.c.product_count).join(
@@ -148,7 +155,7 @@ async def list_products(
 ):
     """Products to browse or search; in-stock products come first. on_offer = in a running
     offer or with a loose markdown today; ids = only these products (e.g. recently viewed)."""
-    query = _sellable(db, tenant.id).options(joinedload(Product.category))
+    query = sellable_products(db, tenant.id).options(joinedload(Product.category))
     if category_id:
         query = query.filter(Product.category_id == category_id)
     if ids:
@@ -179,7 +186,7 @@ async def list_products(
     products = query.order_by(*order).offset((page - 1) * page_size).limit(page_size).all()
     _cache(response)
     return ShopProductListResponse(
-        items=[ShopProduct(**p) for p in _price_products(db, tenant.id, products)],
+        items=[ShopProduct(**p) for p in price_products(db, tenant.id, products)],
         total=total, page=page, page_size=page_size
     )
 
@@ -188,9 +195,9 @@ async def list_products(
 async def get_product(product_id: int, response: Response, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant)):
     """One product with its description"""
-    product = _sellable(db, tenant.id).options(joinedload(Product.category)).filter(
+    product = sellable_products(db, tenant.id).options(joinedload(Product.category)).filter(
         Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     _cache(response)
-    return ShopProductDetail(**_price_products(db, tenant.id, [product])[0])
+    return ShopProductDetail(**price_products(db, tenant.id, [product])[0])

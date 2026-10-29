@@ -43,6 +43,8 @@ DEFAULT_SETTINGS = {
     "loyalty_max_redeem_percent": {"value": "50", "category": "loyalty", "description": "Max % of a bill paid by points"},
     "loyalty_expiry_days": {"value": "365", "category": "loyalty", "description": "Days without activity before points expire (0 = never)"},
     "online_ordering_enabled": {"value": "false", "category": "online", "description": "Customers can order online"},
+    "delivery_charge": {"value": "30", "category": "online", "description": "Delivery charge for online orders (Rs)"},
+    "free_delivery_min": {"value": "300", "category": "online", "description": "Online order amount for free delivery (Rs)"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }

@@ -8,6 +8,7 @@ import type { ShopProduct } from '../api/types';
 import { HOVER_SHADOW } from '../theme';
 import { categoryStyle } from '../utils/categoryStyle';
 import { discountLabel, hasDiscount, packSize } from '../utils/format';
+import AddToCart from './AddToCart';
 import PriceTag from './PriceTag';
 
 export function ProductPicture({ product, height = 132 }: { product: ShopProduct; height?: number }) {
@@ -39,10 +40,10 @@ export function ProductPicture({ product, height = 132 }: { product: ShopProduct
 export default function ProductCard({ store, product }: { store: string; product: ShopProduct }) {
   const size = packSize(product);
   return (
-    <Card sx={{ height: '100%', transition: 'transform .15s, box-shadow .15s',
+    <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform .15s, box-shadow .15s',
       '@media (hover: hover)': { '&:hover': { transform: 'translateY(-3px)', boxShadow: HOVER_SHADOW } } }}>
       <CardActionArea component={RouterLink} to={`/${store}/p/${product.id}`}
-        sx={{ height: '100%', p: 1.25, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
+        sx={{ flexGrow: 1, p: 1.25, pb: 0.75, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
           justifyContent: 'flex-start' }}>
         <ProductPicture product={product} />
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', gap: 0.25, pt: 1.25, px: 0.5 }}>
@@ -59,6 +60,9 @@ export default function ProductCard({ store, product }: { store: string; product
           </Box>
         </Box>
       </CardActionArea>
+      <Box sx={{ px: 1.25, pb: 1.25 }}>
+        <AddToCart store={store} product={product} />
+      </Box>
     </Card>
   );
 }

@@ -21,6 +21,9 @@ class ShopStoreDetail(ShopStore):
     store_email: str = ""
     gstin: str = ""
     fssai_license: str = ""
+    # Online orders below free_delivery_min pay delivery_charge
+    delivery_charge: Decimal = Decimal("0")
+    free_delivery_min: Decimal = Decimal("0")
 
 
 class ShopCategory(BaseModel):

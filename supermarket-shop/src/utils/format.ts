@@ -9,6 +9,12 @@ const rupees = new Intl.NumberFormat('en-IN', {
 
 export const formatPrice = (value: string | number) => rupees.format(Number(value));
 
+/** Server times are UTC without a zone: "29 Oct 2026, 4:05 pm" in the customer's time */
+export const formatDateTime = (iso: string) =>
+  new Date(/[zZ]|[+-]\d\d:\d\d$/.test(iso) ? iso : `${iso}Z`).toLocaleString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+
 /** "1 kg", "500 g"; loose items are sold by weight; nothing for a single piece */
 export const packSize = (product: ShopProduct): string => {
   if (product.is_loose) return 'Loose, sold by weight';
@@ -30,6 +36,15 @@ export const savings = (product: ShopProduct): number => {
   const reference = Number(product.mrp ?? product.price);
   return Math.max(0, Math.round((reference - Number(product.offer_price)) * 100) / 100);
 };
+
+/** Cart steps: one pack, or half a kg / L when loose (the exact weight is billed when packed) */
+export const cartStep = (product: ShopProduct) => (product.is_loose ? 0.5 : 1);
+
+export const cartMax = (product: ShopProduct) => (product.is_loose ? 10 : 20);
+
+/** "3", or "1.5 kg" when loose */
+export const formatQuantity = (product: ShopProduct, quantity: number) =>
+  product.is_loose ? `${quantity} ${product.unit_type || 'kg'}` : String(quantity);
 
 export const discountLabel = (product: ShopProduct): string => {
   if (!hasDiscount(product)) return '';

@@ -728,3 +728,123 @@ def test_shop_products_on_offer_and_by_ids(client, db, online, product):
     assert names(ids=f"{tomato.id},{product.id}") == ["Rice 1kg", "Tomato Loose"]
     assert names(ids="999999") == []
     assert client.get(f"{SHOP}/storea/products", params={"ids": "1,abc"}).status_code == 422
+
+
+# ---------- Online orders (home delivery) ----------
+
+ORDERS = "/api/v1/shop"
+ADDRESS = {"contact_name": "Asha", "contact_mobile": "9876543210", "address_line": "12 MG Road",
+           "area": "Indiranagar", "city": "Bengaluru", "pincode": "560038"}
+
+
+def customer_headers(db, mobile="9876543210"):
+    from app.core.security import create_access_token
+    from app.models import CustomerAccount
+    account = CustomerAccount(mobile=mobile, customer_name="Asha")
+    db.add(account)
+    db.commit()
+    token = create_access_token({"type": "customer", "account_id": account.id})
+    return {"Authorization": f"Bearer {token}"}
+
+
+def place(client, headers, address_id, items, expected_total, **extra):
+    return client.post(f"{ORDERS}/stores/storea/orders", headers=headers, json={
+        "items": items, "address_id": address_id, "payment_method": "cod",
+        "expected_total": expected_total, **extra})
+
+
+def test_delivery_addresses_belong_to_the_login(client, db, online):
+    asha = customer_headers(db)
+    ravi = customer_headers(db, mobile="9123456780")
+    url = f"{ORDERS}/addresses"
+    assert client.get(url).status_code == 401
+
+    first = client.post(url, json=ADDRESS, headers=asha).json()
+    assert first["is_default"] is True
+    second = client.post(url, json={**ADDRESS, "label": "Office", "is_default": True}, headers=asha).json()
+    items = client.get(url, headers=asha).json()["items"]
+    assert [(a["id"], a["is_default"]) for a in items] == [(second["id"], True), (first["id"], False)]
+    assert client.post(url, json={**ADDRESS, "pincode": "012345"}, headers=asha).status_code == 422
+
+    assert client.get(url, headers=ravi).json()["items"] == []
+    assert client.delete(f"{url}/{first['id']}", headers=ravi).status_code == 404
+    assert client.delete(f"{url}/{second['id']}", headers=asha).status_code == 200
+    assert client.get(url, headers=asha).json()["items"][0]["is_default"] is True
+
+
+def test_checkout_quote_prices_cart_and_delivery(client, db, online, product):
+    tenant = online["tenant_a"]
+    tomato = add_product(db, tenant, "P0002", "Tomato Loose", product_type="loose", is_loose=True,
+                         unit_type="kg", mrp=40, selling_price=40, stock_quantity=5)
+    gone = add_product(db, tenant, "P0003", "Old Soap", status="inactive")
+    quote = lambda items: client.post(f"{ORDERS}/stores/storea/checkout/quote", json={"items": items})
+
+    body = quote([{"product_id": product.id, "quantity": 2}, {"product_id": tomato.id, "quantity": 1.5}]).json()
+    assert [float(i["line_total"]) for i in body["items"]] == [110, 60]
+    assert (float(body["mrp_total"]), float(body["items_total"]), float(body["discount_amount"])) == (180, 170, 10)
+    assert (float(body["delivery_charge"]), float(body["total_amount"])) == (30, 200)
+
+    body = quote([{"product_id": product.id, "quantity": 6}]).json()
+    assert (float(body["delivery_charge"]), float(body["total_amount"])) == (0, 330)
+
+    problems = quote([{"product_id": tomato.id, "quantity": 9}, {"product_id": gone.id, "quantity": 1}]).json()
+    assert problems["items"] == [] and float(problems["total_amount"]) == 0
+    assert [(p["reason"], p["available"]) for p in problems["problems"]] == [("short", "5.000"), ("unavailable", None)]
+
+    assert quote([{"product_id": product.id, "quantity": 1.5}]).status_code == 400
+    assert quote([{"product_id": product.id, "quantity": 1}, {"product_id": product.id, "quantity": 2}]).status_code == 422
+
+
+def test_place_order_holds_stock_until_cancelled(client, db, online, product):
+    from app.models import AuditLog, Customer, Order
+    headers = customer_headers(db)
+    address = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).json()
+    product.stock_quantity = 3
+    db.commit()
+    items = [{"product_id": product.id, "quantity": 3}]
+
+    assert place(client, {}, address["id"], items, 195).status_code == 401
+    assert place(client, headers, address["id"], items, 190).status_code == 409
+    assert place(client, headers, address["id"], items, 195, payment_method="online").status_code == 503
+
+    res = place(client, headers, address["id"], items, 195, notes="Ring the bell")
+    assert res.status_code == 201, res.text
+    order = res.json()
+    assert order["order_no"].startswith("ON") and order["status"] == "placed" and order["can_cancel"]
+    assert order["store"] == "storea" and float(order["total_amount"]) == 195
+    assert order["delivery_address"] == "12 MG Road, Indiranagar, Bengaluru - 560038"
+    assert db.query(Customer).filter(Customer.tenant_id == online["tenant_a"].id,
+                                     Customer.mobile == "9876543210").one().customer_name == "Asha"
+    assert db.query(AuditLog).filter(AuditLog.entity_type == "order").count() == 1
+    # In-store stock is untouched; online it is held by the order
+    db.refresh(product)
+    assert float(product.stock_quantity) == 3
+    assert client.get(f"{SHOP}/storea/products/{product.id}").json()["in_stock"] is False
+    assert place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85).status_code == 409
+
+    listing = client.get(f"{ORDERS}/orders", headers=headers).json()
+    assert listing["total"] == 1 and listing["items"][0]["item_count"] == 1
+    other = customer_headers(db, mobile="9123456780")
+    assert client.get(f"{ORDERS}/orders/{order['id']}", headers=other).status_code == 404
+    assert client.post(f"{ORDERS}/orders/{order['id']}/cancel", json={}, headers=other).status_code == 404
+
+    cancelled = client.post(f"{ORDERS}/orders/{order['id']}/cancel", json={"reason": "Ordered by mistake"},
+                            headers=headers).json()
+    assert (cancelled["status"], cancelled["cancelled_by"], cancelled["can_cancel"]) == ("cancelled", "customer", False)
+    assert client.get(f"{SHOP}/storea/products/{product.id}").json()["in_stock"] is True
+    assert client.post(f"{ORDERS}/orders/{order['id']}/cancel", json={}, headers=headers).status_code == 400
+
+    again = place(client, headers, address["id"], items, 195).json()
+    db.query(Order).filter(Order.id == again["id"]).update({"status": "packed"})
+    db.commit()
+    assert client.post(f"{ORDERS}/orders/{again['id']}/cancel", json={}, headers=headers).status_code == 400
+
+
+def test_store_can_block_a_customer_from_ordering(client, db, online, product):
+    from app.models import Customer
+    headers = customer_headers(db)
+    address = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).json()
+    db.add(Customer(tenant_id=online["tenant_a"].id, mobile="9876543210", status="inactive"))
+    db.commit()
+    res = place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85)
+    assert res.status_code == 403

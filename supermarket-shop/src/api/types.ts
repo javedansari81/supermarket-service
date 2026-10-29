@@ -41,6 +41,9 @@ export interface ShopStoreDetail extends ShopStore {
   store_email: string;
   gstin: string;
   fssai_license: string;
+  /** Orders below free_delivery_min pay delivery_charge */
+  delivery_charge: string;
+  free_delivery_min: string;
 }
 
 export interface ShopCategory {
@@ -81,4 +84,86 @@ export interface PageResponse<T> extends ListResponse<T> {
   total: number;
   page: number;
   page_size: number;
+}
+
+export interface AddressInput {
+  contact_name: string;
+  contact_mobile: string;
+  address_line: string;
+  area: string;
+  landmark: string | null;
+  city: string;
+  pincode: string;
+  label: string | null;
+  is_default: boolean;
+}
+
+export interface Address extends AddressInput {
+  id: number;
+}
+
+export interface CartItem {
+  product_id: number;
+  quantity: number;
+}
+
+export interface OrderLine {
+  product_id: number;
+  product_name: string;
+  is_loose: boolean;
+  unit_type: string | null;
+  quantity: string;
+  mrp: string | null;
+  unit_price: string;
+  offer_price: string;
+  discount_source: 'offer' | 'clearance' | null;
+  offer_name: string | null;
+  line_total: string;
+}
+
+/** A cart line that cannot be ordered: no longer sold, or less stock than asked (available) */
+export interface QuoteProblem {
+  product_id: number;
+  product_name: string | null;
+  reason: 'unavailable' | 'short';
+  available: string | null;
+}
+
+export interface Totals {
+  mrp_total: string;
+  discount_amount: string;
+  items_total: string;
+  delivery_charge: string;
+  total_amount: string;
+}
+
+export interface Quote extends Totals {
+  items: OrderLine[];
+  problems: QuoteProblem[];
+  free_delivery_min: string;
+}
+
+export type OrderStatus = 'placed' | 'confirmed' | 'packed' | 'out_for_delivery' | 'delivered' | 'cancelled';
+
+export interface OrderSummary extends Totals {
+  id: number;
+  order_no: string;
+  store: string;
+  store_name: string;
+  status: OrderStatus;
+  payment_method: 'cod' | 'online';
+  payment_status: string;
+  item_count: number;
+  created_at: string;
+}
+
+export interface Order extends OrderSummary {
+  items: OrderLine[];
+  delivery_name: string;
+  delivery_mobile: string;
+  delivery_address: string;
+  notes: string | null;
+  cancel_reason: string | null;
+  cancelled_by: 'customer' | 'store' | null;
+  can_cancel: boolean;
 }

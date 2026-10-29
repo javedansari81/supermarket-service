@@ -29,6 +29,7 @@ from app.api.v1.endpoints import (
     audit,
     customer_auth,
     shop,
+    shop_orders,
 )
 
 api_router = APIRouter()
@@ -111,4 +112,7 @@ api_router.include_router(customer_auth.router, prefix="/shop/auth", tags=["Shop
 
 # Online shop: public catalogue (stores, categories, products)
 api_router.include_router(shop.router, prefix="/shop", tags=["Shop - Catalogue"])
+
+# Online shop: delivery addresses, checkout and orders (customer login)
+api_router.include_router(shop_orders.router, prefix="/shop", tags=["Shop - Orders"])
 
