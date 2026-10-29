@@ -4,7 +4,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
-  Alert, Box, Breadcrumbs, Button, Card, Chip, Divider, Link, Skeleton, Stack, Typography,
+  Alert, Box, Breadcrumbs, Button, Card, Chip, Divider, Link, Skeleton, Stack, Typography, useMediaQuery,
 } from '@mui/material';
 import {
   CheckCircle, LocalOffer, NavigateNext, RemoveShoppingCart, Scale, ShoppingCart,
@@ -27,6 +27,7 @@ interface Loaded {
 export default function ProductPage() {
   const { store = '', productId = '' } = useParams();
   const { detail, notFound } = useShopStore(store);
+  const pictureHeight = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 360 : 240;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const key = `${store}|${productId}`;
 
@@ -53,14 +54,14 @@ export default function ProductPage() {
     <Breadcrumbs separator={<NavigateNext fontSize="small" />} sx={{ '& a': { color: 'text.secondary' } }}>
       <Link component={RouterLink} to="/stores" underline="hover">Stores</Link>
       <Link component={RouterLink} to={`/${store}`} underline="hover">{detail?.store_name || 'Store'}</Link>
-      {last && <Typography color="text.primary" noWrap sx={{ maxWidth: 220 }}>{last}</Typography>}
+      {last && <Typography color="text.primary" noWrap sx={{ maxWidth: { xs: 140, sm: 220 } }}>{last}</Typography>}
     </Breadcrumbs>
   );
 
   if (!current) {
     return (
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <Skeleton variant="rounded" height={360} sx={{ borderRadius: 4 }} />
+        <Skeleton variant="rounded" height={pictureHeight} sx={{ borderRadius: 4 }} />
         <Stack spacing={2}><Skeleton width="60%" height={48} /><Skeleton width="40%" /><Skeleton width="30%" height={56} /></Stack>
       </Box>
     );
@@ -80,7 +81,7 @@ export default function ProductPage() {
       {crumbs(product.product_name)}
       <Card sx={{ p: { xs: 2, sm: 3 }, display: 'grid', gap: { xs: 3, md: 5 },
         gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <ProductPicture product={product} height={360} />
+        <ProductPicture product={product} height={pictureHeight} />
         <Stack spacing={2.5}>
           <Box>
             {product.brand && <Typography color="primary" sx={{ fontWeight: 700 }}>{product.brand}</Typography>}

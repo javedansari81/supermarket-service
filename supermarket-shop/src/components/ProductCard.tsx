@@ -40,7 +40,7 @@ export default function ProductCard({ store, product }: { store: string; product
   const size = packSize(product);
   return (
     <Card sx={{ height: '100%', transition: 'transform .15s, box-shadow .15s',
-      '&:hover': { transform: 'translateY(-3px)', boxShadow: HOVER_SHADOW } }}>
+      '@media (hover: hover)': { '&:hover': { transform: 'translateY(-3px)', boxShadow: HOVER_SHADOW } } }}>
       <CardActionArea component={RouterLink} to={`/${store}/p/${product.id}`}
         sx={{ height: '100%', p: 1.25, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
           justifyContent: 'flex-start' }}>

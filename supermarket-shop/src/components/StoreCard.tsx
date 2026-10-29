@@ -20,7 +20,7 @@ const initials = (name: string) =>
 export default function StoreCard({ store, name, address, points, regular = false }: Props) {
   return (
     <Card sx={{ transition: 'transform .15s, box-shadow .15s',
-      '&:hover': { transform: 'translateY(-2px)', boxShadow: HOVER_SHADOW } }}>
+      '@media (hover: hover)': { '&:hover': { transform: 'translateY(-2px)', boxShadow: HOVER_SHADOW } } }}>
       <CardActionArea component={RouterLink} to={`/${store}`}
         sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-start' }}>
         <Box sx={{ width: 56, height: 56, borderRadius: 3, flexShrink: 0, display: 'grid', placeItems: 'center',

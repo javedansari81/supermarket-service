@@ -130,11 +130,14 @@ export default function StorePage() {
           '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.6)' },
           '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: '0 0 0 3px rgba(255,255,255,0.45)' },
           '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
-          '& .MuiOutlinedInput-input': { height: 44, py: 0, boxSizing: 'border-box' },
-          '& .MuiSelect-select': { display: 'flex', alignItems: 'center', height: '44px !important' } }}>
+          '& .MuiOutlinedInput-input': { height: { xs: 42, md: 44 }, py: 0, boxSizing: 'border-box' },
+          '& .MuiSelect-select': { display: 'flex', alignItems: 'center', height: { xs: '42px !important', md: '44px !important' } },
+          '& .MuiInputBase-input::placeholder': { fontSize: { xs: 15, sm: 16 } } }}>
           {categories.length > 0 && (
             <TextField select value={categoryId === null ? 'all' : String(categoryId)}
-              sx={{ flexShrink: 0, width: { xs: 72, lg: 210 } }}
+              sx={{ flexShrink: 0, width: { xs: 64, lg: 210 },
+                '& .MuiSelect-select': { pl: { xs: 1.25, lg: 1.75 }, pr: { xs: '28px !important', lg: '32px !important' } },
+                '& .MuiSelect-icon': { right: { xs: 4, lg: 7 } } }}
               onChange={(e) => {
                 setOnOffer(false);
                 chooseCategory(e.target.value === 'all' ? null : Number(e.target.value));
@@ -174,15 +177,18 @@ export default function StorePage() {
 
       <Stack spacing={2.5}>
         {!query && recentSearches.length > 0 && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'nowrap', sm: 'wrap' },
+            overflowX: { xs: 'auto', sm: 'visible' }, mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 0 },
+            scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+            <Typography variant="body2" color="text.secondary"
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
               <History fontSize="small" />Recent
             </Typography>
             {recentSearches.map((term) => (
-              <Chip key={term} label={term} variant="outlined" sx={{ bgcolor: 'background.paper' }}
+              <Chip key={term} label={term} variant="outlined" sx={{ bgcolor: 'background.paper', flexShrink: 0 }}
                 onClick={() => { setSearch(term); setOnOffer(false); }} />
             ))}
-            <Button size="small" sx={{ color: 'text.secondary' }}
+            <Button size="small" sx={{ color: 'text.secondary', flexShrink: 0 }}
               onClick={() => { clearRecentSearches(); setRecentSearches([]); }}>
               Clear
             </Button>
@@ -192,15 +198,16 @@ export default function StorePage() {
         {browsing && <StoreHomeSections store={store} onSeeAllOffers={seeAllOffers} />}
 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="h6">{title}</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+            <Typography variant="h6" sx={{ fontSize: { xs: 18, sm: 20 }, overflowWrap: 'anywhere' }}>{title}</Typography>
             {onOffer && <Chip size="small" label="Show all products" onDelete={() => { setOnOffer(false); setPage(1); }}
               onClick={() => { setOnOffer(false); setPage(1); }} />}
           </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            {current && <Typography variant="body2" color="text.secondary">{current.total} items</Typography>}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexGrow: { xs: 1, sm: 0 },
+            justifyContent: 'space-between' }}>
+            {current && <Typography variant="body2" color="text.secondary" noWrap>{current.total} items</Typography>}
             {!browsing && (
-              <TextField select size="small" value={sort} sx={{ minWidth: 200 }}
+              <TextField select size="small" value={sort} sx={{ minWidth: { xs: 0, sm: 200 }, width: { xs: 190, sm: 'auto' } }}
                 onChange={(e) => { setSort(e.target.value); setPage(1); }}
                 slotProps={{ htmlInput: { 'aria-label': 'Sort' }, select: { renderValue: (v) => (
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

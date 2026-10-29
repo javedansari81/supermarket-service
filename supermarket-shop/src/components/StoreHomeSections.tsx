@@ -49,7 +49,8 @@ export default function StoreHomeSections({ store, onSeeAllOffers }: Props) {
 
   return (
     <>
-      <Box sx={{ borderRadius: 4, p: { xs: 2, sm: 2.5 }, background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+      <Box sx={{ borderRadius: { xs: 0, sm: 4 }, mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 2.5 }, py: { xs: 2, sm: 2.5 },
+        background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
         display: offerItems.length ? 'block' : 'none' }}>
         <ProductRow store={store} products={offerItems}
           title="Today's offers" subtitle={`${offers?.total ?? 0} products on offer`}
