@@ -948,6 +948,39 @@ def test_store_can_block_a_customer_from_ordering(client, db, online, product):
     assert res.status_code == 403
 
 
+def test_shop_requests_are_limited_per_visitor_ip(client, online, product, monkeypatch):
+    settings_path = "app.core.config.settings"
+    monkeypatch.setattr(f"{settings_path}.RATE_LIMIT_CATALOGUE_PER_MINUTE", 2)
+    browse = lambda ip: client.get(f"{SHOP}/storea/products", headers={"do-connecting-ip": ip})
+    assert browse("203.0.113.5").status_code == 200
+    assert browse("203.0.113.5").status_code == 200
+    res = browse("203.0.113.5")
+    assert res.status_code == 429 and 1 <= int(res.headers["Retry-After"]) <= 60
+    assert "Too many requests" in res.json()["detail"]
+    # Other visitors and other limit groups are counted separately
+    assert browse("198.51.100.7").status_code == 200
+    assert client.post(f"{ORDERS}/stores/storea/checkout/quote", headers={"do-connecting-ip": "203.0.113.5"},
+                       json={"items": [{"product_id": product.id, "quantity": 1}]}).status_code == 200
+    monkeypatch.setattr(f"{settings_path}.RATE_LIMIT_ENABLED", False)
+    assert browse("203.0.113.5").status_code == 200
+
+
+def test_orders_and_address_changes_are_limited_per_customer(client, db, online, product, monkeypatch):
+    monkeypatch.setattr("app.core.config.settings.RATE_LIMIT_ORDERS_PER_HOUR_ACCOUNT", 1)
+    monkeypatch.setattr("app.core.config.settings.RATE_LIMIT_ADDRESSES_PER_HOUR", 2)
+    headers = customer_headers(db)
+    address = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).json()
+    assert place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85).status_code == 201
+    res = place(client, headers, address["id"], [{"product_id": product.id, "quantity": 1}], 85)
+    assert res.status_code == 429 and "Retry-After" in res.headers
+    other = customer_headers(db, mobile="9123456780")
+    other_address = client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=other).json()
+    assert place(client, other, other_address["id"], [{"product_id": product.id, "quantity": 1}], 85).status_code == 201
+
+    assert client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).status_code == 201
+    assert client.post(f"{ORDERS}/addresses", json=ADDRESS, headers=headers).status_code == 429
+
+
 def test_orders_only_to_the_stores_delivery_pincodes(client, db, online, product, admin_headers,
                                                      cashier_headers):
     from app.models import TenantSetting

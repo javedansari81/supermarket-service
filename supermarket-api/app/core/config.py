@@ -50,6 +50,23 @@ class Settings(BaseSettings):
     # Store subdomains (e.g. "mfmart.co.in" -> store1.mfmart.co.in); empty disables the check
     BASE_DOMAIN: str = ""
 
+    # Header with the visitor's IP set by the hosting proxy (App Platform: do-connecting-ip);
+    # when missing, the connection's address is used
+    CLIENT_IP_HEADER: str = "do-connecting-ip"
+
+    # Request limits on the public shop API, per visitor IP or per customer account
+    # (counted in each API instance's memory); over the limit answers 429 with Retry-After
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_OTP_REQUEST_PER_MINUTE: int = 5
+    RATE_LIMIT_OTP_VERIFY_PER_MINUTE: int = 10
+    RATE_LIMIT_REFRESH_PER_MINUTE: int = 30
+    RATE_LIMIT_CATALOGUE_PER_MINUTE: int = 120
+    RATE_LIMIT_IMAGES_PER_MINUTE: int = 300
+    RATE_LIMIT_QUOTE_PER_MINUTE: int = 30
+    RATE_LIMIT_ORDERS_PER_HOUR_ACCOUNT: int = 10
+    RATE_LIMIT_ORDERS_PER_HOUR_IP: int = 20
+    RATE_LIMIT_ADDRESSES_PER_HOUR: int = 30
+
     # Barcode
     BARCODE_FORMAT: str = "code128"
     BARCODE_DPI: int = 300

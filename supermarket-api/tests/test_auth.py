@@ -329,7 +329,7 @@ def test_code_works_once_and_expires(client, db, shop):
 def test_otp_request_limits(client, shop, monkeypatch):
     def ask(mobile, ip="203.0.113.5"):
         return client.post(shop_url("/otp/request"), json={"mobile": mobile},
-                           headers={"X-Forwarded-For": ip})
+                           headers={"do-connecting-ip": ip})
 
     assert ask(MOBILE).status_code == 200
     res = ask(MOBILE)
@@ -343,6 +343,10 @@ def test_otp_request_limits(client, shop, monkeypatch):
     monkeypatch.setattr(settings, "OTP_MAX_PER_IP_PER_HOUR", 2)
     assert ask("9123456780").status_code == 429
     assert ask("9123456780", "198.51.100.7").status_code == 200
+    # A made-up X-Forwarded-For does not change the visitor's IP
+    forged = client.post(shop_url("/otp/request"), json={"mobile": "9988776655"},
+                         headers={"do-connecting-ip": "203.0.113.5", "X-Forwarded-For": "192.0.2.99"})
+    assert forged.status_code == 429
 
 
 def test_otp_request_rejects_bad_input_and_disabled_login(client, shop, monkeypatch):

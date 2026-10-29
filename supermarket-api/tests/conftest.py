@@ -63,6 +63,15 @@ def db(engine):
         connection.close()
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """Every test starts with empty request counters"""
+    from app.core.rate_limit import limiter
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
 @pytest.fixture()
 def client(db):
     def override_get_db():

@@ -24,7 +24,7 @@ from app.schemas.order import (
     AddressIn, AddressResponse, AddressListResponse, QuoteRequest, QuoteResponse, QuoteLine,
     QuoteProblem, OrderCreate, OrderSummary, OrderResponse, OrderListResponse, OrderCancel,
 )
-from app.api.deps import get_current_account, get_shop_tenant
+from app.api.deps import get_current_account, get_shop_tenant, limit_by_account, limit_by_ip
 from app.api.v1.endpoints.settings import build_store_settings
 from app.api.v1.endpoints.shop import price_products, sellable_products
 
@@ -32,6 +32,10 @@ router = APIRouter()
 
 MAX_ADDRESSES = 10
 ZERO = Decimal("0")
+ADDRESS_LIMIT = [Depends(limit_by_account("addresses", "RATE_LIMIT_ADDRESSES_PER_HOUR"))]
+QUOTE_LIMIT = [Depends(limit_by_ip("quote", "RATE_LIMIT_QUOTE_PER_MINUTE"))]
+ORDER_LIMIT = [Depends(limit_by_ip("orders", "RATE_LIMIT_ORDERS_PER_HOUR_IP", window=3600)),
+               Depends(limit_by_account("orders", "RATE_LIMIT_ORDERS_PER_HOUR_ACCOUNT"))]
 
 
 # ---------- Delivery addresses ----------
@@ -61,7 +65,8 @@ async def list_addresses(db: Session = Depends(get_db),
     return AddressListResponse(items=rows)
 
 
-@router.post("/addresses", response_model=AddressResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/addresses", response_model=AddressResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=ADDRESS_LIMIT)
 async def add_address(data: AddressIn, db: Session = Depends(get_db),
                       account: CustomerAccount = Depends(get_current_account)):
     """Save a delivery address; the first one becomes the default"""
@@ -78,7 +83,7 @@ async def add_address(data: AddressIn, db: Session = Depends(get_db),
     return address
 
 
-@router.put("/addresses/{address_id}", response_model=AddressResponse)
+@router.put("/addresses/{address_id}", response_model=AddressResponse, dependencies=ADDRESS_LIMIT)
 async def update_address(address_id: int, data: AddressIn, db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """Change an address (orders already placed keep the address they were sent to)"""
@@ -92,7 +97,7 @@ async def update_address(address_id: int, data: AddressIn, db: Session = Depends
     return address
 
 
-@router.delete("/addresses/{address_id}")
+@router.delete("/addresses/{address_id}", dependencies=ADDRESS_LIMIT)
 async def delete_address(address_id: int, db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """Remove an address; the latest other address becomes the default"""
@@ -166,7 +171,8 @@ def _price_cart(db: Session, tenant_id: int, items, lock: bool = False) -> Price
     return cart
 
 
-@router.post("/stores/{store}/checkout/quote", response_model=QuoteResponse)
+@router.post("/stores/{store}/checkout/quote", response_model=QuoteResponse,
+             dependencies=QUOTE_LIMIT)
 async def quote(data: QuoteRequest, db: Session = Depends(get_db),
                 tenant: Tenant = Depends(get_shop_tenant)):
     """Bill for a cart before ordering (no login needed); nothing is saved"""
@@ -235,7 +241,7 @@ def _my_order(db: Session, account: CustomerAccount, order_id: int, lock: bool =
 
 
 @router.post("/stores/{store}/orders", response_model=OrderResponse,
-             status_code=status.HTTP_201_CREATED)
+             status_code=status.HTTP_201_CREATED, dependencies=ORDER_LIMIT)
 async def place_order(data: OrderCreate, request: Request, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant),
                       account: CustomerAccount = Depends(get_current_account)):

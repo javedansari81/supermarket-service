@@ -25,7 +25,7 @@ from app.schemas.customer_auth import (
     OtpRequest, OtpRequestResponse, OtpVerify, RefreshRequest,
     CustomerToken, AccountResponse, AccountUpdate, MyStore, MyStoresResponse,
 )
-from app.api.deps import CUSTOMER_TOKEN_TYPE, get_current_account, online_store_ids
+from app.api.deps import CUSTOMER_TOKEN_TYPE, get_current_account, limit_by_ip, online_store_ids
 from app.api.v1.endpoints.settings import build_store_settings
 
 router = APIRouter()
@@ -81,7 +81,8 @@ def _find_or_create_account(db: Session, mobile: str) -> CustomerAccount:
     return account
 
 
-@router.post("/otp/request", response_model=OtpRequestResponse)
+@router.post("/otp/request", response_model=OtpRequestResponse,
+             dependencies=[Depends(limit_by_ip("otp-request", "RATE_LIMIT_OTP_REQUEST_PER_MINUTE"))])
 async def request_otp(data: OtpRequest, request: Request, db: Session = Depends(get_db)):
     """Send a 6-digit login code by SMS"""
     if not otp.otp_enabled():
@@ -118,7 +119,8 @@ async def request_otp(data: OtpRequest, request: Request, db: Session = Depends(
                               resend_in=settings.OTP_RESEND_SECONDS)
 
 
-@router.post("/otp/verify", response_model=CustomerToken)
+@router.post("/otp/verify", response_model=CustomerToken,
+             dependencies=[Depends(limit_by_ip("otp-verify", "RATE_LIMIT_OTP_VERIFY_PER_MINUTE"))])
 async def verify_otp(data: OtpVerify, request: Request, db: Session = Depends(get_db)):
     """Log in with the code; the first login creates the account (no store record yet)"""
     now = datetime.utcnow()
@@ -147,7 +149,8 @@ async def verify_otp(data: OtpVerify, request: Request, db: Session = Depends(ge
     return token
 
 
-@router.post("/refresh", response_model=CustomerToken)
+@router.post("/refresh", response_model=CustomerToken,
+             dependencies=[Depends(limit_by_ip("refresh", "RATE_LIMIT_REFRESH_PER_MINUTE"))])
 async def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
     """Swap a refresh token for a new access and refresh token (the old one stops working)"""
     expired = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please log in again")

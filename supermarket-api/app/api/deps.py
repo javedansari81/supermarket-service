@@ -7,6 +7,8 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.core import rate_limit
+from app.core.audit import client_ip
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import decode_access_token
@@ -216,3 +218,24 @@ def get_current_account(
     if account.status != "active":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This account is disabled")
     return account
+
+
+MINUTE = 60
+HOUR = 3600
+
+
+def limit_by_ip(group: str, setting: str, window: int = MINUTE):
+    """Dependency: at most settings.<setting> requests per `window` seconds per visitor IP"""
+    def dependency(request: Request) -> None:
+        if settings.RATE_LIMIT_ENABLED:
+            rate_limit.check(f"{group}:ip:{client_ip(request) or 'unknown'}",
+                             getattr(settings, setting), window)
+    return dependency
+
+
+def limit_by_account(group: str, setting: str, window: int = HOUR):
+    """Dependency: at most settings.<setting> requests per `window` seconds per customer login"""
+    def dependency(account: CustomerAccount = Depends(get_current_account)) -> None:
+        if settings.RATE_LIMIT_ENABLED:
+            rate_limit.check(f"{group}:account:{account.id}", getattr(settings, setting), window)
+    return dependency

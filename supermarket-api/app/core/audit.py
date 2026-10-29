@@ -6,6 +6,7 @@ from fastapi import Request
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import inspect
 from sqlalchemy.orm import Session
+from app.core.config import settings
 from app.models.audit_log import AuditLog
 
 SENSITIVE_FIELDS = {"password_hash"}
@@ -25,13 +26,15 @@ def snapshot(obj, exclude: Iterable[str] = ()) -> Optional[dict]:
 
 
 def client_ip(request: Optional[Request]) -> Optional[str]:
-    """Caller's IP address (first X-Forwarded-For entry behind the proxy)"""
+    """Caller's IP address: the header the hosting proxy sets (CLIENT_IP_HEADER, on App
+    Platform `do-connecting-ip`), else the connection's address. X-Forwarded-For is not used:
+    the caller can write it, and on App Platform it holds the proxy's own address."""
     if request is None:
         return None
-    forwarded = request.headers.get("x-forwarded-for")
-    ip_address = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else None
-    )
+    header = settings.CLIENT_IP_HEADER.strip()
+    ip_address = (request.headers.get(header) or "").split(",")[0].strip() if header else ""
+    if not ip_address and request.client:
+        ip_address = request.client.host
     return ip_address[:50] if ip_address else None
 
 

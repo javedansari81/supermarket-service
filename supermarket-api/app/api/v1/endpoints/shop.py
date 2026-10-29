@@ -25,12 +25,14 @@ from app.schemas.shop import (
     ShopStore, ShopStoreListResponse, ShopStoreDetail, ShopCategory, ShopCategoryListResponse,
     ShopProduct, ShopProductDetail, ShopProductListResponse,
 )
-from app.api.deps import get_shop_tenant, online_store_ids
+from app.api.deps import get_shop_tenant, limit_by_ip, online_store_ids
 from app.api.v1.endpoints.settings import build_store_settings
 
 router = APIRouter()
 
 CACHE_SECONDS = 60
+CATALOGUE_LIMIT = [Depends(limit_by_ip("catalogue", "RATE_LIMIT_CATALOGUE_PER_MINUTE"))]
+IMAGES_LIMIT = [Depends(limit_by_ip("images", "RATE_LIMIT_IMAGES_PER_MINUTE"))]
 LIST_PRICE = func.coalesce(Product.selling_price, Product.mrp)
 
 
@@ -97,7 +99,7 @@ def price_products(db: Session, tenant_id: int, products: List[Product]) -> List
     return priced
 
 
-@router.get("/images/{key:path}")
+@router.get("/images/{key:path}", dependencies=IMAGES_LIMIT)
 async def get_image(key: str):
     """A product picture from object storage (when PRODUCT_IMAGE_PUBLIC_URL is not set).
     Only product image files can be read; each upload has a new name, so they cache for good."""
@@ -111,7 +113,7 @@ async def get_image(key: str):
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
-@router.get("/stores", response_model=ShopStoreListResponse)
+@router.get("/stores", response_model=ShopStoreListResponse, dependencies=CATALOGUE_LIMIT)
 async def list_stores(response: Response, db: Session = Depends(get_db)):
     """Stores customers can order from (the store picker)"""
     tenants = db.query(Tenant).filter(
@@ -126,7 +128,7 @@ async def list_stores(response: Response, db: Session = Depends(get_db)):
     return ShopStoreListResponse(items=items)
 
 
-@router.get("/stores/{store}", response_model=ShopStoreDetail)
+@router.get("/stores/{store}", response_model=ShopStoreDetail, dependencies=CATALOGUE_LIMIT)
 async def get_store(response: Response, db: Session = Depends(get_db),
                     tenant: Tenant = Depends(get_shop_tenant)):
     """Store details for the shop header and footer (FSSAI licence must be shown for food)"""
@@ -140,7 +142,8 @@ async def get_store(response: Response, db: Session = Depends(get_db),
     ))
 
 
-@router.get("/stores/{store}/categories", response_model=ShopCategoryListResponse)
+@router.get("/stores/{store}/categories", response_model=ShopCategoryListResponse,
+            dependencies=CATALOGUE_LIMIT)
 async def list_categories(response: Response, db: Session = Depends(get_db),
                           tenant: Tenant = Depends(get_shop_tenant)):
     """Active categories that have products to sell"""
@@ -158,7 +161,8 @@ async def list_categories(response: Response, db: Session = Depends(get_db),
     ])
 
 
-@router.get("/stores/{store}/products", response_model=ShopProductListResponse)
+@router.get("/stores/{store}/products", response_model=ShopProductListResponse,
+            dependencies=CATALOGUE_LIMIT)
 async def list_products(
     response: Response,
     page: int = Query(1, ge=1),
@@ -209,7 +213,8 @@ async def list_products(
     )
 
 
-@router.get("/stores/{store}/products/{product_id}", response_model=ShopProductDetail)
+@router.get("/stores/{store}/products/{product_id}", response_model=ShopProductDetail,
+            dependencies=CATALOGUE_LIMIT)
 async def get_product(product_id: int, response: Response, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant)):
     """One product with its description"""
