@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import { api } from '../api/client';
 import { clearSession, getRefreshToken, onSessionChange, saveSession } from '../api/session';
 import type { Account, CustomerToken, OtpRequestResponse } from '../api/types';
+import { disablePush, resumePush } from '../utils/push';
 
 interface AuthContextValue {
   account: Account | null;
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setAccount(token.account);
     saveSession(token);
+    void resumePush();
     return token;
   };
 
@@ -58,6 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshToken = getRefreshToken();
     clearSession();
     setAccount(null);
+    void disablePush();
     if (refreshToken) {
       await api('/shop/auth/logout', { method: 'POST', body: { refresh_token: refreshToken } })
         .catch(() => undefined);

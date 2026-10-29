@@ -78,3 +78,23 @@ class MyStore(BaseModel):
 
 class MyStoresResponse(BaseModel):
     items: List[MyStore]
+
+
+class PushKeyResponse(BaseModel):
+    """Whether order updates by notification are on, and the key browsers subscribe with"""
+    enabled: bool
+    public_key: Optional[str] = None
+
+
+class PushKeys(BaseModel):
+    p256dh: str = Field(..., min_length=1, max_length=200)
+    auth: str = Field(..., min_length=1, max_length=100)
+
+
+class PushEndpoint(BaseModel):
+    endpoint: str = Field(..., min_length=1, max_length=2000)
+
+
+class PushSubscriptionIn(PushEndpoint):
+    """The browser's PushSubscription (as from subscription.toJSON())"""
+    keys: PushKeys

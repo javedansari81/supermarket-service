@@ -1,7 +1,8 @@
 /**
- * One order: delivery progress, items, bill, address; cancel before it is packed
+ * One order: delivery progress (kept up to date while open), items, bill, address; cancel
+ * before it is packed
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link as RouterLink, useLocation, useParams } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, Dialog, DialogActions, DialogContent, DialogTitle, Divider, Skeleton, Stack, Step,
@@ -12,8 +13,12 @@ import { api, ApiError } from '../api/client';
 import type { Order } from '../api/types';
 import BillSummary from '../components/BillSummary';
 import OrderStatusChip from '../components/OrderStatusChip';
+import OrderUpdatesPrompt from '../components/OrderUpdatesPrompt';
 import { formatDateTime, formatPrice } from '../utils/format';
-import { DELIVERY_STEPS, STATUS_LABELS } from '../utils/orderStatus';
+import { DELIVERY_STEPS, OPEN_STATUSES, STATUS_LABELS } from '../utils/orderStatus';
+import { onWorkerMessage } from '../utils/push';
+
+const REFRESH_MS = 30_000;
 
 export default function OrderPage() {
   const { orderId = '' } = useParams();
@@ -25,11 +30,33 @@ export default function OrderPage() {
   const [busy, setBusy] = useState(false);
   const [cancelError, setCancelError] = useState('');
 
+  const load = useCallback(() => api<Order>(`/shop/orders/${encodeURIComponent(orderId)}`, { auth: true }),
+    [orderId]);
+
   useEffect(() => {
-    api<Order>(`/shop/orders/${encodeURIComponent(orderId)}`, { auth: true })
+    load()
       .then(setOrder)
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load the order'));
-  }, [orderId]);
+  }, [load]);
+
+  const status = order?.status;
+  const id = order?.id;
+  useEffect(() => {
+    if (!status || !OPEN_STATUSES.includes(status)) return undefined;
+    const refresh = () => {
+      if (document.visibilityState === 'visible') load().then(setOrder).catch(() => undefined);
+    };
+    const timer = window.setInterval(refresh, REFRESH_MS);
+    document.addEventListener('visibilitychange', refresh);
+    const stopListening = onWorkerMessage((m) => {
+      if (m.type === 'order-update' && m.order_id === id) refresh();
+    });
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refresh);
+      stopListening();
+    };
+  }, [status, id, load]);
 
   if (error) return <Alert severity="warning">{error}</Alert>;
   if (!order) return <Stack spacing={2}><Skeleton variant="rounded" height={120} /><Skeleton variant="rounded" height={240} /></Stack>;
@@ -59,6 +86,7 @@ export default function OrderPage() {
           Order placed. {order.store_name} will confirm it shortly. Pay {formatPrice(order.total_amount)} on delivery.
         </Alert>
       )}
+      {OPEN_STATUSES.includes(order.status) && <OrderUpdatesPrompt />}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap' }}>
         <Box>
           <Typography variant="h5">Order {order.order_no}</Typography>

@@ -16,7 +16,8 @@ from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
 from app.models.customer import Customer
-from app.models.customer_auth import CustomerAccount, CustomerOtp, CustomerRefreshToken
+from app.models.customer_auth import (CustomerAccount, CustomerOtp, CustomerRefreshToken,
+                                      CustomerPushSubscription)
 from app.models.order import CustomerAddress, Order, OrderItem
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.sale_return import SaleReturn, SaleReturnItem
@@ -50,6 +51,7 @@ __all__ = [
     "CustomerAccount",
     "CustomerOtp",
     "CustomerRefreshToken",
+    "CustomerPushSubscription",
     "CustomerAddress",
     "Order",
     "OrderItem",

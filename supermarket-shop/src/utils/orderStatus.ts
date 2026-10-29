@@ -13,3 +13,6 @@ export const STATUS_LABELS: Record<OrderStatus, string> = {
 };
 
 export const DELIVERY_STEPS: OrderStatus[] = ['placed', 'confirmed', 'packed', 'out_for_delivery', 'delivered'];
+
+/** Orders still on their way (their page keeps itself up to date) */
+export const OPEN_STATUSES: OrderStatus[] = ['placed', 'confirmed', 'packed', 'out_for_delivery'];

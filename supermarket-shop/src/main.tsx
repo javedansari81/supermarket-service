@@ -10,6 +10,9 @@ import App from './App.tsx'
 import { AuthProvider } from './auth/AuthContext.tsx'
 import { CartProvider } from './cart/CartContext.tsx'
 import theme from './theme.ts'
+import { registerServiceWorker } from './utils/push.ts'
+
+registerServiceWorker()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,7 +1,9 @@
 """
 Online orders for store staff: list, confirm, pack (weighed or lower quantities), out for
 delivery, delivered (billed as a sale through the billing code, cash in the open shift) and
-cancel (supervisors and admins). Staff get a live signal when a new order comes in.
+cancel (supervisors and admins). Staff get a live signal when a new order comes in; the
+customer gets a browser notification when the order is confirmed, sent out, delivered or
+cancelled by the store.
 """
 import asyncio
 import json
@@ -9,7 +11,7 @@ import time
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_
@@ -18,6 +20,7 @@ from app.core.audit import record_audit
 from app.core.database import SessionLocal, get_db
 from app.core.offers import CENTS, LineDiscount
 from app.core.online_orders import delivery_product, new_order_signal
+from app.core.push import queue_order_update, wants_update
 from app.core.shifts import shift_for_cash
 from app.models.audit_log import AuditLog
 from app.models.customer import Customer
@@ -32,6 +35,7 @@ from app.schemas.sale import SaleCreate, SaleItemCreate
 from app.api.deps import (TenantContext, get_current_supervisor_user, get_current_user,
                           get_tenant_context)
 from app.api.v1.endpoints.sales import PricedLine, price_lines, record_sale
+from app.api.v1.endpoints.settings import build_store_settings
 
 router = APIRouter()
 
@@ -89,8 +93,8 @@ def _require_status(order: Order, allowed, action: str) -> None:
                             detail=f"Cannot {action}: the order is {order.status.replace('_', ' ')}")
 
 
-def _move(db: Session, request: Request, context: TenantContext, order: Order, status: str,
-          extra: Optional[dict] = None) -> StaffOrder:
+def _move(db: Session, request: Request, background: BackgroundTasks, context: TenantContext,
+          order: Order, status: str, extra: Optional[dict] = None) -> StaffOrder:
     old = order.status
     order.status = status
     order.updated_by = context.user_id
@@ -99,6 +103,9 @@ def _move(db: Session, request: Request, context: TenantContext, order: Order, s
                  new_value={"status": status, **(extra or {})})
     db.commit()
     db.refresh(order)
+    if wants_update(order):
+        queue_order_update(db, background, order,
+                           build_store_settings(db, order.tenant_id).store_name)
     return _detail(order)
 
 
@@ -171,18 +178,19 @@ async def get_order(order_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/{order_id}/confirm", response_model=StaffOrder)
-async def confirm_order(order_id: int, request: Request, db: Session = Depends(get_db),
+async def confirm_order(order_id: int, request: Request, background: BackgroundTasks,
+                        db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Accept a new order"""
     order = _get_order(db, context, order_id, lock=True)
     _require_status(order, (Order.STATUS_PLACED,), "confirm")
     order.confirmed_at = datetime.utcnow()
-    return _move(db, request, context, order, Order.STATUS_CONFIRMED)
+    return _move(db, request, background, context, order, Order.STATUS_CONFIRMED)
 
 
 @router.post("/{order_id}/pack", response_model=StaffOrder)
 async def pack_order(order_id: int, data: PackRequest, request: Request,
-                     db: Session = Depends(get_db),
+                     background: BackgroundTasks, db: Session = Depends(get_db),
                      context: TenantContext = Depends(get_tenant_context)):
     """Record what was packed: the same or a lower quantity (0 = out of stock), loose items
     at their weighed quantity. The bill is worked out again at the order's prices."""
@@ -219,19 +227,20 @@ async def pack_order(order_id: int, data: PackRequest, request: Request,
     order.discount_amount = max(mrp_total - items_total, ZERO)
     order.total_amount = items_total + order.delivery_charge
     order.packed_at = datetime.utcnow()
-    return _move(db, request, context, order, Order.STATUS_PACKED,
+    return _move(db, request, background, context, order, Order.STATUS_PACKED,
                  {"packed": {str(k): v for k, v in packed.items()},
                   "total_amount": order.total_amount})
 
 
 @router.post("/{order_id}/dispatch", response_model=StaffOrder)
-async def dispatch_order(order_id: int, request: Request, db: Session = Depends(get_db),
+async def dispatch_order(order_id: int, request: Request, background: BackgroundTasks,
+                         db: Session = Depends(get_db),
                          context: TenantContext = Depends(get_tenant_context)):
     """The order has left the store"""
     order = _get_order(db, context, order_id, lock=True)
     _require_status(order, (Order.STATUS_PACKED,), "send out")
     order.dispatched_at = datetime.utcnow()
-    return _move(db, request, context, order, Order.STATUS_OUT_FOR_DELIVERY)
+    return _move(db, request, background, context, order, Order.STATUS_OUT_FOR_DELIVERY)
 
 
 def _cap_to_order_prices(lines: List[PricedLine], items: List[OrderItem]) -> None:
@@ -257,7 +266,7 @@ def _cap_to_order_prices(lines: List[PricedLine], items: List[OrderItem]) -> Non
 
 @router.post("/{order_id}/deliver", response_model=StaffOrder)
 async def deliver_order(order_id: int, data: DeliverRequest, request: Request,
-                        db: Session = Depends(get_db),
+                        background: BackgroundTasks, db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Handed over and paid: billed as a sale (tax invoice, loyalty points, stock taken off)
     with the payment in the open cash drawer shift"""
@@ -289,14 +298,14 @@ async def deliver_order(order_id: int, data: DeliverRequest, request: Request,
     order.items_total = sale.total_amount - order.delivery_charge
     order.discount_amount = max(order.mrp_total - order.items_total, ZERO)
     order.delivered_at = datetime.utcnow()
-    return _move(db, request, context, order, Order.STATUS_DELIVERED,
+    return _move(db, request, background, context, order, Order.STATUS_DELIVERED,
                  {"sale_no": sale.sale_no, "payment_mode": data.payment_mode,
                   "total_amount": sale.total_amount})
 
 
 @router.post("/{order_id}/cancel", response_model=StaffOrder)
 async def cancel_order(order_id: int, data: StoreCancel, request: Request,
-                       db: Session = Depends(get_db),
+                       background: BackgroundTasks, db: Session = Depends(get_db),
                        current_user: User = Depends(get_current_supervisor_user),
                        context: TenantContext = Depends(get_tenant_context)):
     """Cancel an open order (supervisors and admins); its stock is offered again"""
@@ -305,5 +314,5 @@ async def cancel_order(order_id: int, data: StoreCancel, request: Request,
     order.cancelled_by = "store"
     order.cancel_reason = data.reason
     order.cancelled_at = datetime.utcnow()
-    return _move(db, request, context, order, Order.STATUS_CANCELLED,
+    return _move(db, request, background, context, order, Order.STATUS_CANCELLED,
                  {"cancelled_by": "store", "cancel_reason": data.reason})

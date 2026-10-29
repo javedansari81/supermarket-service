@@ -1,4 +1,6 @@
 """Product endpoint tests"""
+import json
+
 import pytest
 
 from tests.conftest import enable_online
@@ -1092,3 +1094,128 @@ def test_only_supervisors_cancel_and_stores_see_their_own_orders(client, db, onl
     mine = client.get(f"{ORDERS}/orders/{order['id']}", headers=customer).json()
     assert (mine["status"], mine["cancelled_by"]) == ("cancelled", "store")
     assert client.post(f"{url}/confirm", headers=cashier_headers).status_code == 400
+
+
+# ---------- Order updates by browser notification ----------
+
+PUSH = "/api/v1/shop/auth/push"
+FCM = "https://fcm.googleapis.com/fcm/send/"
+KEYS = {"p256dh": "BPublicKeyOfTheBrowser", "auth": "authsecret"}
+
+
+@pytest.fixture()
+def push_on(monkeypatch, db):
+    """Web Push switched on; messages are captured instead of sent"""
+    from app.core import push
+    from app.core.config import settings
+
+    class SharedSession:
+        """The background task's own session is the test session (kept open)"""
+        def __getattr__(self, name):
+            return getattr(db, name)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "BPublicServerKey")
+    monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "private")
+    monkeypatch.setattr(push, "SessionLocal", SharedSession)
+    sent, gone = [], set()
+
+    def fake_send(device, data):
+        if device.endpoint in gone:
+            raise push.WebPushException("Gone", response=type("R", (), {"status_code": 410})())
+        sent.append((device.endpoint, json.loads(data)))
+
+    monkeypatch.setattr(push, "_send_one", fake_send)
+    return {"sent": sent, "gone": gone}
+
+
+def test_customer_turns_order_updates_on_and_off(client, db, online, monkeypatch):
+    from app.core.config import settings
+    from app.models import CustomerAccount, CustomerPushSubscription
+    asha = customer_headers(db)
+    ravi = customer_headers(db, mobile="9123456780")
+    device = {"endpoint": f"{FCM}device-1", "keys": KEYS}
+
+    assert client.get(f"{PUSH}/key").json() == {"enabled": False, "public_key": None}
+    assert client.post(f"{PUSH}/subscribe", json=device, headers=asha).status_code == 503
+
+    monkeypatch.setattr(settings, "VAPID_PUBLIC_KEY", "BPublicServerKey")
+    monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "private")
+    assert client.get(f"{PUSH}/key").json() == {"enabled": True, "public_key": "BPublicServerKey"}
+    assert client.post(f"{PUSH}/subscribe", json=device).status_code == 401
+    for bad in ("https://evil.example.com/push", "http://fcm.googleapis.com/x", "https://fcm.googleapis.com.evil.io/x"):
+        assert client.post(f"{PUSH}/subscribe", json={**device, "endpoint": bad}, headers=asha).status_code == 400
+    assert client.post(f"{PUSH}/subscribe", json=device, headers=asha).status_code == 200
+    assert client.post(f"{PUSH}/subscribe", json=device, headers=asha).status_code == 200
+    assert db.query(CustomerPushSubscription).count() == 1
+
+    # The same browser used by another login now belongs to that login
+    client.post(f"{PUSH}/subscribe", json=device, headers=ravi)
+    owner = db.query(CustomerPushSubscription).one()
+    db.refresh(owner)
+    assert owner.account_id == db.query(CustomerAccount).filter_by(mobile="9123456780").one().id
+    # At most 10 browsers per login; the oldest is dropped
+    for n in range(2, 13):
+        client.post(f"{PUSH}/subscribe", json={**device, "endpoint": f"{FCM}device-{n}"}, headers=ravi)
+    endpoints = {s.endpoint for s in db.query(CustomerPushSubscription).all()}
+    assert len(endpoints) == 10 and f"{FCM}device-1" not in endpoints and f"{FCM}device-12" in endpoints
+
+    assert client.post(f"{PUSH}/unsubscribe", json={"endpoint": f"{FCM}device-12"}).status_code == 200
+    assert db.query(CustomerPushSubscription).count() == 9
+
+
+def test_staff_steps_send_order_updates_to_the_customers_devices(client, db, online, product, cashier_headers,
+                                                                 supervisor_headers, push_on):
+    from app.models import CustomerPushSubscription
+    order, _, customer = placed_order(client, db, online, product)
+    url = f"{STAFF}/{order['id']}"
+    for name in ("phone", "laptop"):
+        client.post(f"{PUSH}/subscribe", json={"endpoint": f"{FCM}{name}", "keys": KEYS}, headers=customer)
+    other = customer_headers(db, mobile="9123456780")
+    client.post(f"{PUSH}/subscribe", json={"endpoint": f"{FCM}someone-else", "keys": KEYS}, headers=other)
+    assert push_on["sent"] == []  # placing an order sends nothing
+
+    client.post(f"{url}/confirm", headers=cashier_headers)
+    assert sorted(e for e, _ in push_on["sent"]) == [f"{FCM}laptop", f"{FCM}phone"]
+    message = push_on["sent"][0][1]
+    assert message["title"] == "Order confirmed" and order["order_no"] in message["body"]
+    assert (message["url"], message["status"]) == (f"/orders/{order['id']}", "confirmed")
+    assert "Tenant A" in message["body"]
+
+    push_on["sent"].clear()
+    items = client.get(url, headers=cashier_headers).json()["items"]
+    client.post(f"{url}/pack", headers=cashier_headers, json={"items": [
+        {"item_id": i["id"], "packed_quantity": i["quantity"]} for i in items]})
+    assert push_on["sent"] == []  # packing is not announced
+
+    # A browser that dropped the subscription is forgotten
+    push_on["gone"].add(f"{FCM}laptop")
+    client.post(f"{url}/dispatch", headers=cashier_headers)
+    assert [e for e, _ in push_on["sent"]] == [f"{FCM}phone"]
+    assert push_on["sent"][0][1]["title"] == "Out for delivery"
+    assert "keep ₹235 ready" in push_on["sent"][0][1]["body"]
+    assert {s.endpoint for s in db.query(CustomerPushSubscription).all()} == {f"{FCM}phone", f"{FCM}someone-else"}
+    assert db.query(CustomerPushSubscription).filter_by(endpoint=f"{FCM}phone").one().last_sent_at is not None
+
+    push_on["sent"].clear()
+    client.post(f"{url}/cancel", json={"reason": "Delivery van broke down"}, headers=supervisor_headers)
+    assert [m["body"] for _, m in push_on["sent"]] == [
+        f"Tenant A cancelled your order {order['order_no']}: Delivery van broke down"]
+
+
+def test_switched_off_push_and_customer_cancel_send_nothing(client, db, online, product, cashier_headers,
+                                                             push_on, monkeypatch):
+    from app.core.config import settings
+    order, _, customer = placed_order(client, db, online, product)
+    client.post(f"{PUSH}/subscribe", json={"endpoint": f"{FCM}phone", "keys": KEYS}, headers=customer)
+
+    monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "")
+    assert client.post(f"{STAFF}/{order['id']}/confirm", headers=cashier_headers).status_code == 200
+    assert push_on["sent"] == []
+
+    monkeypatch.setattr(settings, "VAPID_PRIVATE_KEY", "private")
+    res = client.post(f"{ORDERS}/orders/{order['id']}/cancel", json={"reason": "Changed my mind"}, headers=customer)
+    assert res.json()["status"] == "cancelled"
+    assert push_on["sent"] == []

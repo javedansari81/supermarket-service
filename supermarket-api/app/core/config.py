@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     STARTMESSAGING_APP_NAME: str = "MFMart"
     STARTMESSAGING_TIMEOUT_SECONDS: int = 10
 
+    # Order updates by browser notification (Web Push). Empty keys switch it off. Make the keys
+    # once with `python -m app.core.push` and never change them (customers would have to turn
+    # updates on again); the private key is a secret, keep it in .env
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    # Contact for the push services, e.g. mailto:support@mfmart.co.in
+    VAPID_SUBJECT: str = "mailto:support@mfmart.co.in"
+    PUSH_TIMEOUT_SECONDS: int = 10
+    # Unread updates are dropped by the push service after this (device off for long)
+    PUSH_TTL_SECONDS: int = 86400
+
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 
@@ -66,6 +77,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_ORDERS_PER_HOUR_ACCOUNT: int = 10
     RATE_LIMIT_ORDERS_PER_HOUR_IP: int = 20
     RATE_LIMIT_ADDRESSES_PER_HOUR: int = 30
+    RATE_LIMIT_PUSH_PER_HOUR: int = 30
 
     # Barcode
     BARCODE_FORMAT: str = "code128"

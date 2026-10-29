@@ -14,24 +14,30 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.core import otp
 from app.core.audit import client_ip
+from app.core.push import is_push_service, push_enabled
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.loyalty import get_loyalty_settings, effective_balance
 from app.core.security import create_access_token
 from app.models.customer import Customer
-from app.models.customer_auth import CustomerAccount, CustomerOtp, CustomerRefreshToken
+from app.models.customer_auth import (CustomerAccount, CustomerOtp, CustomerPushSubscription,
+                                      CustomerRefreshToken)
 from app.models.tenant import Tenant
 from app.schemas.customer_auth import (
     OtpRequest, OtpRequestResponse, OtpVerify, RefreshRequest,
     CustomerToken, AccountResponse, AccountUpdate, MyStore, MyStoresResponse,
+    PushKeyResponse, PushEndpoint, PushSubscriptionIn,
 )
-from app.api.deps import CUSTOMER_TOKEN_TYPE, get_current_account, limit_by_ip, online_store_ids
+from app.api.deps import (CUSTOMER_TOKEN_TYPE, get_current_account, limit_by_account, limit_by_ip,
+                          online_store_ids)
 from app.api.v1.endpoints.settings import build_store_settings
 
 router = APIRouter()
 logger = logging.getLogger("app.customer_auth")
 
 DISABLED_DETAIL = "This account is disabled"
+# Devices with order updates on, per login; the oldest is dropped beyond this
+MAX_PUSH_DEVICES = 10
 
 
 def _too_many(detail: str, retry_after: int) -> HTTPException:
@@ -231,3 +237,61 @@ async def my_stores(db: Session = Depends(get_db),
             points_balance=effective_balance(customer, loyalty) if loyalty.enabled else 0,
         ))
     return MyStoresResponse(items=items)
+
+
+# ---------- Order updates by browser notification ----------
+
+@router.get("/push/key", response_model=PushKeyResponse)
+async def push_key():
+    """Key the shop subscribes the browser with; enabled = false when updates are switched off"""
+    return PushKeyResponse(enabled=push_enabled(),
+                           public_key=settings.VAPID_PUBLIC_KEY if push_enabled() else None)
+
+
+@router.post("/push/subscribe",
+             dependencies=[Depends(limit_by_account("push", "RATE_LIMIT_PUSH_PER_HOUR"))])
+async def push_subscribe(data: PushSubscriptionIn, request: Request, db: Session = Depends(get_db),
+                         account: CustomerAccount = Depends(get_current_account)):
+    """Send order updates to this browser; a browser belongs to the login that turned it on last"""
+    if not push_enabled():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Order updates are not available right now")
+    if not is_push_service(data.endpoint):
+        raise HTTPException(status_code=400, detail="This browser's notifications are not supported")
+    now = datetime.utcnow()
+    device = db.query(CustomerPushSubscription).filter(
+        CustomerPushSubscription.endpoint == data.endpoint).with_for_update().first()
+    if device is None:
+        try:
+            with db.begin_nested():
+                device = CustomerPushSubscription(endpoint=data.endpoint, account_id=account.id,
+                                                  p256dh=data.keys.p256dh, auth=data.keys.auth)
+                db.add(device)
+        except IntegrityError:
+            device = db.query(CustomerPushSubscription).filter(
+                CustomerPushSubscription.endpoint == data.endpoint).one()
+    device.account_id = account.id
+    device.p256dh = data.keys.p256dh
+    device.auth = data.keys.auth
+    device.user_agent = request.headers.get("user-agent")
+    device.created_at = now
+    db.flush()
+    stale = db.query(CustomerPushSubscription.id).filter(
+        CustomerPushSubscription.account_id == account.id
+    ).order_by(CustomerPushSubscription.created_at.desc(), CustomerPushSubscription.id.desc()
+               ).offset(MAX_PUSH_DEVICES).all()
+    if stale:
+        db.query(CustomerPushSubscription).filter(
+            CustomerPushSubscription.id.in_([s.id for s in stale])).delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Order updates turned on"}
+
+
+@router.post("/push/unsubscribe",
+             dependencies=[Depends(limit_by_ip("push-off", "RATE_LIMIT_PUSH_PER_HOUR", window=3600))])
+async def push_unsubscribe(data: PushEndpoint, db: Session = Depends(get_db)):
+    """Stop order updates to this browser; works without login so logging out can call it"""
+    db.query(CustomerPushSubscription).filter(
+        CustomerPushSubscription.endpoint == data.endpoint).delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Order updates turned off"}

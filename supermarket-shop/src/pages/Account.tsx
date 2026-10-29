@@ -1,5 +1,5 @@
 /**
- * My account: name, mobile number, stores I shop at, my orders, log out
+ * My account: name, mobile number, stores I shop at, order updates on this device, my orders, log out
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { Logout, Loyalty, PhoneIphone, ReceiptLong, Storefront } from '@mui/icon
 import { api, ApiError } from '../api/client';
 import type { ListResponse, MyStore } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
+import OrderUpdatesPrompt from '../components/OrderUpdatesPrompt';
 import StoreCard from '../components/StoreCard';
 import { BRAND_GRADIENT } from '../theme';
 
@@ -112,6 +113,7 @@ export default function Account() {
               <Button component={RouterLink} to="/stores" variant="outlined">Browse stores</Button>
             </Card>
           )}
+          <OrderUpdatesPrompt variant="setting" />
           <Button component={RouterLink} to="/orders" variant="outlined" startIcon={<ReceiptLong />}
             sx={{ alignSelf: 'flex-start' }}>
             My orders

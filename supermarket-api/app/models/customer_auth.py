@@ -1,5 +1,6 @@
 """
-CustomerAccount, CustomerOtp and CustomerRefreshToken models for customer login by mobile OTP
+CustomerAccount, CustomerOtp and CustomerRefreshToken models for customer login by mobile OTP,
+and CustomerPushSubscription for order updates by browser notification
 """
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Index
 from datetime import datetime
@@ -61,3 +62,22 @@ class CustomerRefreshToken(Base):
 
     def __repr__(self):
         return f"<CustomerRefreshToken(id={self.id}, account_id={self.account_id})>"
+
+
+class CustomerPushSubscription(Base):
+    """A browser where the customer turned on order updates (Web Push address and keys)"""
+
+    __tablename__ = "customer_push_subscriptions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    account_id = Column(Integer, ForeignKey('customer_accounts.id', ondelete='CASCADE'),
+                        nullable=False, index=True)
+    endpoint = Column(Text, nullable=False, unique=True)
+    p256dh = Column(String(200), nullable=False)
+    auth = Column(String(100), nullable=False)
+    user_agent = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_sent_at = Column(DateTime)
+
+    def __repr__(self):
+        return f"<CustomerPushSubscription(id={self.id}, account_id={self.account_id})>"

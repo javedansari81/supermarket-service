@@ -14,6 +14,7 @@ import { useCart } from '../cart/CartContext';
 import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
 import { storeFromPath } from '../utils/lastStore';
 import BrandLogo from './BrandLogo';
+import OrderUpdatesNotice from './OrderUpdatesNotice';
 import StoreInfo from './StoreInfo';
 import StoreSwitcher from './StoreSwitcher';
 
@@ -114,6 +115,7 @@ export default function ShopLayout() {
           </Toolbar>
         </Container>
       </AppBar>
+      <OrderUpdatesNotice />
       <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 }, flexGrow: 1 }}>
         <Outlet context={searchSlot} />
       </Container>
