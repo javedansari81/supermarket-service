@@ -7,14 +7,7 @@ import { Box, ButtonBase, Divider, ListItemIcon, ListItemText, Menu, MenuItem, T
 import { Check, KeyboardArrowDown, Storefront, ViewList } from '@mui/icons-material';
 import { api } from '../api/client';
 import type { ListResponse, ShopStore } from '../api/types';
-
-const NON_STORE_PATHS = new Set(['', 'login', 'account', 'stores']);
-
-/** Store in the URL (/<store> or /<store>/p/<id>), if any */
-const storeFromPath = (pathname: string) => {
-  const first = decodeURIComponent(pathname.split('/')[1] || '');
-  return NON_STORE_PATHS.has(first) ? null : first;
-};
+import { storeFromPath } from '../utils/lastStore';
 
 export default function StoreSwitcher() {
   const location = useLocation();
@@ -38,17 +31,18 @@ export default function StoreSwitcher() {
   return (
     <>
       <ButtonBase onClick={(e) => setAnchor(e.currentTarget)} aria-label="Change store"
-        sx={{ borderRadius: 2, px: 1, py: 0.5, gap: 0.75, minWidth: 0, '&:hover': { bgcolor: 'action.hover' } }}>
-        <Storefront fontSize="small" color="primary" />
+        sx={{ borderRadius: 2, px: 1, py: 0.5, gap: 0.75, minWidth: 0, color: '#fff',
+          '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
+        <Storefront fontSize="small" />
         <Box sx={{ textAlign: 'left', minWidth: 0 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.1 }}>
+          <Typography variant="caption" sx={{ display: { xs: 'none', sm: 'block' }, lineHeight: 1.1, opacity: 0.8 }}>
             Shopping at
           </Typography>
           <Typography variant="body2" noWrap sx={{ fontWeight: 700, maxWidth: { xs: 110, sm: 200 }, lineHeight: 1.3 }}>
             {currentName}
           </Typography>
         </Box>
-        <KeyboardArrowDown fontSize="small" color="action" />
+        <KeyboardArrowDown fontSize="small" sx={{ opacity: 0.8 }} />
       </ButtonBase>
       <Menu anchorEl={anchor} open={Boolean(anchor)} onClose={() => setAnchor(null)}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}

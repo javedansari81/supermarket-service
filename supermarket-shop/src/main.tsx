@@ -8,6 +8,7 @@ import '@fontsource/inter/600.css'
 import '@fontsource/inter/700.css'
 import App from './App.tsx'
 import { AuthProvider } from './auth/AuthContext.tsx'
+import { CartProvider } from './cart/CartContext.tsx'
 import theme from './theme.ts'
 
 createRoot(document.getElementById('root')!).render(
@@ -16,7 +17,9 @@ createRoot(document.getElementById('root')!).render(
       <CssBaseline />
       <BrowserRouter>
         <AuthProvider>
-          <App />
+          <CartProvider>
+            <App />
+          </CartProvider>
         </AuthProvider>
       </BrowserRouter>
     </ThemeProvider>

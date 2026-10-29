@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MFMart header and search designs</title>
+<style>
+  :root { --g:#15803d; --gd:#166534; --grad:linear-gradient(135deg,#15803d 0%,#16a34a 55%,#22c55e 100%); --bg:#f6f8f4; --line:#e5e9ee; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:Inter,system-ui,"Segoe UI",Roboto,sans-serif; color:#0f172a; background:#e9edf1; }
+  .bar { position:sticky; top:0; z-index:9; background:#0f172a; color:#fff; padding:10px 20px; display:flex; gap:10px; align-items:center; font-size:13px; }
+  .bar button { border:1px solid #334155; background:#1e293b; color:#fff; padding:6px 12px; border-radius:8px; cursor:pointer; font:inherit; }
+  .bar button.on { background:#fff; color:#0f172a; }
+  .wrap { max-width:1100px; margin:0 auto; padding:24px 16px 60px; transition:max-width .3s; }
+  body.mobile .wrap { max-width:420px; }
+  h2 { font-size:18px; margin:32px 0 4px; } h2 span { color:var(--g); margin-right:6px; }
+  .note { margin:0 0 12px; color:#475569; font-size:14px; }
+  .frame { background:var(--bg); border-radius:14px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.1); }
+  /* header pieces */
+  .hdr { display:flex; align-items:center; gap:16px; padding:12px 24px; }
+  .hdr.white { background:#fff; border-bottom:1px solid var(--line); } .hdr.green { background:var(--grad); color:#fff; }
+  .logo { display:flex; align-items:center; gap:8px; font-weight:800; font-size:19px; white-space:nowrap; }
+  .logo i { width:34px; height:34px; border-radius:50%; display:grid; place-items:center; font-style:normal; background:var(--grad); color:#fff; }
+  .green .logo i { background:#fff; color:var(--g); } .white .logo { color:var(--gd); }
+  .store { font-size:13px; font-weight:700; white-space:nowrap; } .store small { display:block; font-size:10px; font-weight:500; opacity:.7; }
+  .grow { flex:1; min-width:0; }
+  .user { display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px; border:1px solid var(--line); border-radius:999px; padding:3px 10px 3px 3px; white-space:nowrap; }
+  .user i { width:28px; height:28px; border-radius:50%; display:grid; place-items:center; font-style:normal; background:var(--grad); color:#fff; }
+  .green .user { border-color:rgba(255,255,255,.4); } .green .user i { background:#fff; color:var(--g); }
+  /* search pieces */
+  .row { display:flex; gap:8px; }
+  .f { background:#fff; border-radius:8px; height:46px; display:flex; align-items:center; gap:8px; padding:0 14px; font-size:14px; white-space:nowrap; color:#0f172a; border:1px solid transparent; }
+  .f.cat { width:200px; } .f.sort { width:150px; } .f.q { flex:1; color:#94a3b8; min-width:0; }
+  .f.bord { border-color:var(--line); }
+  .f .ic { width:24px; height:24px; border-radius:50%; background:#dcfce7; color:var(--g); display:grid; place-items:center; font-size:12px; }
+  .f .dd { margin-left:auto; color:#64748b; font-size:11px; }
+  .pill { display:flex; align-items:center; background:#fff; border:2px solid var(--g); border-radius:999px; height:50px; overflow:hidden; }
+  .pill > div { display:flex; align-items:center; gap:8px; padding:0 18px; height:100%; font-size:14px; white-space:nowrap; }
+  .pill .q { flex:1; color:#94a3b8; border-left:1px solid var(--line); border-right:1px solid var(--line); min-width:0; }
+  .pill .go { background:var(--g); color:#fff; font-weight:700; }
+  .band { padding:16px 24px; } .band.green { background:var(--grad); } .band.tint { background:#dcfce7; }
+  .chips { display:flex; gap:8px; margin-top:12px; overflow:hidden; }
+  .chip { padding:6px 14px; border-radius:999px; font-size:13px; font-weight:600; white-space:nowrap; background:rgba(255,255,255,.2); color:#fff; }
+  .chip.on { background:#fff; color:var(--g); }
+  .tint .chip { background:#fff; color:#166534; border:1px solid #bbf7d0; } .tint .chip.on { background:var(--g); color:#fff; border-color:var(--g); }
+  .hero { background:var(--grad); color:#fff; padding:22px 24px 46px; } .hero h3 { margin:0; font-size:22px; } .hero p { margin:4px 0 0; opacity:.9; font-size:14px; }
+  .float { margin:-28px 24px 0; background:#fff; border-radius:12px; padding:10px; box-shadow:0 10px 30px rgba(15,23,42,.15); position:relative; }
+  /* page content preview */
+  .content { padding:18px 24px 22px; } .content b { font-size:17px; }
+  .cards { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; height:110px; box-shadow:0 6px 24px rgba(15,23,42,.08); }
+  body.mobile .cards { grid-template-columns:repeat(2,1fr); }
+  body.mobile .hide-m { display:none !important; }
+  body.mobile .f.cat, body.mobile .f.sort { width:auto; } body.mobile .f .lbl { display:none; }
+  body.mobile .hdr, body.mobile .band, body.mobile .content, body.mobile .hero { padding-left:14px; padding-right:14px; }
+  body.mobile .float { margin-left:14px; margin-right:14px; }
+  body.mobile .stack-m { flex-wrap:wrap; } body.mobile .stack-m .search-slot { order:9; flex-basis:100%; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>View</b>
+  <button class="on" data-v="desktop">Desktop</button>
+  <button data-v="mobile">Mobile</button>
+</div>
+<div class="wrap" id="designs"></div>
+
+<script>
+const H = {
+  logo: '<div class="logo"><i>🛒</i>MFMart</div>',
+  store: '<div class="store hide-m"><small>Shopping at</small>Demo Store ▾</div>',
+  user: '<div class="user"><i>J</i><span class="hide-m">Javed Ansari ▾</span></div>',
+  cat: '<div class="f cat BORD"><span class="ic">▦</span><span class="lbl">All categories</span><span class="dd">▼</span></div>',
+  q: '<div class="f q BORD">🔍 Search for atta, milk, chips...</div>',
+  sort: '<div class="f sort BORD">⇅ <span class="lbl">Name</span><span class="dd">▼</span></div>',
+  chips: '<div class="chips"><span class="chip on">All</span><span class="chip">Fruits & Veg</span><span class="chip">Dairy</span><span class="chip">Bakery</span><span class="chip">Beverages</span><span class="chip">Snacks</span></div>',
+  content: '<div class="content"><b>All products</b><div class="cards"><div class="card"></div><div class="card"></div><div class="card"></div><div class="card"></div></div></div>',
+};
+const row = (bord) => `<div class="row">${(H.cat + H.q + H.sort).replaceAll('BORD', bord ? 'bord' : '')}</div>`;
+const header = (cls, middle = '<div class="grow"></div>', extra = '') =>
+  `<div class="hdr ${cls} ${extra}">${H.logo}${H.store}${middle}${H.user}</div>`;
+
+const DESIGNS = [
+  ['Current', 'White header, full-width green search band underneath.',
+    header('white') + `<div class="band green">${row(false)}</div>`],
+  ['One green block', 'Header and search share one green gradient, so they read as a single unit. No white strip in between.',
+    header('green') + `<div class="band green" style="padding-top:4px">${row(false)}</div>`],
+  ['Green block + category chips', 'Like B, with quick category chips under the search for one-tap browsing. The dropdown still lists every category.',
+    header('green') + `<div class="band green" style="padding-top:4px">${row(false)}${H.chips}</div>`],
+  ['Search inside white header', 'Saves height: logo, search and account on one line. On phones the search drops to a second line.',
+    header('white', `<div class="grow search-slot">${row(true)}</div>`, 'stack-m')],
+  ['Search inside green header', 'Same as D but the header is green. Compact and strongly branded.',
+    header('green', `<div class="grow search-slot">${row(false)}</div>`, 'stack-m')],
+  ['Green hero with floating search', 'A short welcome strip in green; the search card overlaps its bottom edge with a shadow.',
+    header('white') + `<div class="hero"><h3>Fresh groceries from Demo Store</h3><p>Same prices as in store</p></div><div class="float">${row(true)}</div>`],
+  ['Light green band with one pill', 'Softer look: pale green band, and category, search and sort joined into one rounded bar.',
+    header('white') + `<div class="band tint"><div class="pill"><div><span class="f ic" style="padding:0;width:24px;height:24px;border:0">▦</span><span class="hide-m">All categories ▾</span></div><div class="q">🔍 Search for atta, milk, chips...</div><div class="hide-m">⇅ Name ▾</div><div class="go">Search</div></div>${H.chips}</div>`],
+];
+
+document.getElementById('designs').innerHTML = DESIGNS.map(([name, note, html], i) => `
+  <h2><span>${String.fromCharCode(65 + i)}</span>${name}</h2><p class="note">${note}</p>
+  <div class="frame">${html}${H.content}</div>`).join('');
+
+document.querySelectorAll('.bar button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.bar button').forEach((x) => x.classList.toggle('on', x === b));
+  document.body.classList.toggle('mobile', b.dataset.v === 'mobile');
+});
+</script>
+</body>
+</html>

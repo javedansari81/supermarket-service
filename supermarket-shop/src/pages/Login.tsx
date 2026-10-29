@@ -91,7 +91,7 @@ export default function Login() {
   const header = (icon: ReactNode, title: string, text: ReactNode) => (
     <Box sx={{ mb: 3 }}>
       <Box sx={{ width: 52, height: 52, borderRadius: 3, display: 'grid', placeItems: 'center', mb: 2,
-        bgcolor: 'rgba(15,118,110,0.1)', color: 'primary.main' }}>{icon}</Box>
+        bgcolor: 'rgba(21,128,61,0.1)', color: 'primary.main' }}>{icon}</Box>
       <Typography variant="h5" sx={{ mb: 0.75 }}>{title}</Typography>
       <Typography color="text.secondary">{text}</Typography>
     </Box>

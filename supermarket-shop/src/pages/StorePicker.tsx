@@ -69,7 +69,7 @@ export default function StorePicker() {
           </Typography>
           {lastStore && (
             <Button component={RouterLink} to={`/${lastStore.store}`} size="large" endIcon={<ArrowForward />}
-              sx={{ mt: 3, bgcolor: '#fff', color: 'primary.dark', '&:hover': { bgcolor: '#f0fdfa' } }}>
+              sx={{ mt: 3, bgcolor: '#fff', color: 'primary.dark', '&:hover': { bgcolor: '#f0fdf4' } }}>
               Continue at {lastStore.store_name}
             </Button>
           )}
