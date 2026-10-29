@@ -18,7 +18,13 @@ logger = logging.getLogger("app.otp")
 OTP_LENGTH = 6
 
 
+def _provider() -> str:
+    return settings.OTP_PROVIDER.strip().lower()
+
+
 def generate_code() -> str:
+    if _provider() == "fixed":
+        return settings.OTP_FIXED_CODE
     return f"{secrets.randbelow(10 ** OTP_LENGTH):0{OTP_LENGTH}d}"
 
 
@@ -36,17 +42,23 @@ def _console_sender(mobile: str, code: str) -> None:
     logger.warning("OTP for %s: %s (console provider, not sent)", mobile, code)
 
 
+def _fixed_sender(mobile: str, code: str) -> None:
+    """Testing only: every login uses OTP_FIXED_CODE and nothing is sent"""
+    logger.warning("Fixed OTP login requested for %s (fixed provider, not sent)", mobile)
+
+
 SENDERS: Dict[str, Callable[[str, str], None]] = {
     "console": _console_sender,
+    "fixed": _fixed_sender,
 }
 
 
 def otp_enabled() -> bool:
-    return settings.OTP_PROVIDER.strip().lower() in SENDERS
+    return _provider() in SENDERS
 
 
 def send_otp(mobile: str, code: str) -> None:
-    sender = SENDERS.get(settings.OTP_PROVIDER.strip().lower())
+    sender = SENDERS.get(_provider())
     if sender is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                             detail="Online login is not available right now")

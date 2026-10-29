@@ -351,6 +351,18 @@ def test_otp_request_rejects_bad_input_and_disabled_login(client, shop, monkeypa
     assert shop["sent"] == []
 
 
+def test_fixed_provider_accepts_fixed_code_for_any_number(client, shop, monkeypatch):
+    monkeypatch.setattr(settings, "OTP_PROVIDER", "fixed")
+    monkeypatch.setattr(settings, "OTP_FIXED_CODE", "123456")
+    for mobile in (MOBILE, "9123456780"):
+        assert client.post(shop_url("/otp/request"), json={"mobile": mobile}).status_code == 200
+        res = client.post(shop_url("/otp/verify"), json={"mobile": mobile, "code": "000000"})
+        assert res.status_code == 400 and res.json()["detail"] == "Incorrect code"
+        res = client.post(shop_url("/otp/verify"), json={"mobile": mobile, "code": "123456"})
+        assert res.status_code == 200 and res.json()["account"]["mobile"] == mobile
+    assert shop["sent"] == []
+
+
 def test_customer_and_staff_tokens_are_separate(client, shop, admin_headers):
     customer_headers = bearer(customer_login(client, shop)["access_token"])
     assert client.get("/api/v1/auth/me", headers=customer_headers).status_code == 401
