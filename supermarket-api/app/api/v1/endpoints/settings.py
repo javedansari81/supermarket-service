@@ -1,21 +1,25 @@
 """
 Settings management endpoints
 """
+from decimal import Decimal
 from typing import Optional, List
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.audit import record_audit
 from app.core.loyalty import get_loyalty_settings, loyalty_settings_values
 from app.core.online_orders import (DELIVERY_CHARGE_KEY, DELIVERY_PINCODES_KEY,
                                     FREE_DELIVERY_MIN_KEY, delivery_pincodes, delivery_settings)
+from app.core import encryption
+from app.core.upi import qr_png_base64, upi_uri
 from app.models.audit_log import AuditLog
+from app.models.tenant_payment_settings import TenantPaymentSettings
 from app.models.tenant_setting import TenantSetting
 from app.models.tenant import Tenant
 from app.schemas.settings import (
-    SettingCreate, SettingUpdate, SettingResponse, 
+    SettingCreate, SettingUpdate, SettingResponse,
     SettingsListResponse, StoreSettings, BillingSettings, LoyaltySettings, OnlineSettings,
-    state_code_for
+    UpiQrResponse, PaymentSettingsUpdate, PaymentSettingsResponse, state_code_for
 )
 from app.api.deps import (ONLINE_ORDERING_KEY, get_current_admin_user, get_tenant_context,
                           TenantContext)
@@ -40,6 +44,7 @@ DEFAULT_SETTINGS = {
     "clearance_enabled": {"value": "false", "category": "billing", "description": "Apply near-expiry discount tiers"},
     "shift_required": {"value": "false", "category": "billing", "description": "Billing needs an open cash drawer shift"},
     "shift_variance_limit": {"value": "100", "category": "billing", "description": "Shift closing difference needing approval (Rs)"},
+    "card_payments_enabled": {"value": "false", "category": "billing", "description": "Card offered as a payment mode at billing"},
     "loyalty_enabled": {"value": "false", "category": "loyalty", "description": "Loyalty points enabled"},
     "loyalty_earn_points_per_100": {"value": "1", "category": "loyalty", "description": "Points earned per Rs 100 paid"},
     "loyalty_point_value": {"value": "1", "category": "loyalty", "description": "Rs value of one point"},
@@ -79,7 +84,7 @@ async def list_settings(
 
 STORE_KEYS = ["store_name", "store_address", "store_phone", "store_email", "gstin", "store_state", "fssai_license"]
 BILLING_KEYS = ["currency_symbol", "tax_inclusive_pricing", "default_tax_percent", "invoice_prefix", "invoice_footer",
-                "shift_required", "shift_variance_limit"]
+                "shift_required", "shift_variance_limit", "card_payments_enabled"]
 
 
 def get_settings_dict(db: Session, tenant_id: int, keys: List[str]) -> dict:
@@ -182,7 +187,9 @@ async def get_billing_settings(
         invoice_prefix=settings_dict.get("invoice_prefix", "INV"),
         invoice_footer=settings_dict.get("invoice_footer", "Thank you for shopping!"),
         shift_required=(settings_dict.get("shift_required") or "false").lower() == "true",
-        shift_variance_limit=settings_dict.get("shift_variance_limit") or "100"
+        shift_variance_limit=settings_dict.get("shift_variance_limit") or "100",
+        card_payments_enabled=(settings_dict.get("card_payments_enabled") or "false").lower() == "true",
+        upi_configured=bool(getattr(_payment_row(db, context.tenant_id), "upi_id", ""))
     )
 
 
@@ -205,13 +212,117 @@ async def update_billing_settings(
         "invoice_prefix": billing_settings.invoice_prefix,
         "invoice_footer": billing_settings.invoice_footer,
         "shift_required": str(billing_settings.shift_required).lower(),
-        "shift_variance_limit": str(billing_settings.shift_variance_limit)
+        "shift_variance_limit": str(billing_settings.shift_variance_limit),
+        "card_payments_enabled": str(billing_settings.card_payments_enabled).lower()
     }
     upsert_settings(db, context.tenant_id, new_value)
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "setting", old_value=old_value, new_value=new_value)
     db.commit()
-    return billing_settings
+    return billing_settings.model_copy(update={
+        "upi_configured": bool(getattr(_payment_row(db, context.tenant_id), "upi_id", ""))
+    })
+
+
+# ---------- Payment accounts (UPI ID, Razorpay keys): own table, admins of the store only ----------
+
+def _payment_row(db: Session, tenant_id: int, lock: bool = False) -> Optional[TenantPaymentSettings]:
+    query = db.query(TenantPaymentSettings).filter(TenantPaymentSettings.tenant_id == tenant_id)
+    if lock:
+        query = query.with_for_update()
+    return query.first()
+
+
+def _payment_response(row: Optional[TenantPaymentSettings]) -> PaymentSettingsResponse:
+    configured = encryption.is_configured()
+    if row is None:
+        return PaymentSettingsResponse(encryption_configured=configured)
+    return PaymentSettingsResponse(
+        upi_id=row.upi_id, upi_payee_name=row.upi_payee_name, razorpay_key_id=row.razorpay_key_id,
+        razorpay_key_secret_set=bool(row.razorpay_key_secret_encrypted),
+        razorpay_webhook_secret_set=bool(row.razorpay_webhook_secret_encrypted),
+        encryption_configured=configured,
+    )
+
+
+def _payment_audit(row: Optional[TenantPaymentSettings]) -> dict:
+    """Audit values; secrets are recorded only as saved or not"""
+    data = _payment_response(row)
+    return data.model_dump(include={"upi_id", "upi_payee_name", "razorpay_key_id",
+                                    "razorpay_key_secret_set", "razorpay_webhook_secret_set"})
+
+
+def _encrypted(value: Optional[str], current: Optional[str]) -> Optional[str]:
+    """None keeps the saved secret, "" removes it, anything else replaces it"""
+    if value is None:
+        return current
+    if not value:
+        return None
+    try:
+        return encryption.encrypt(value)
+    except encryption.EncryptionNotConfigured:
+        raise HTTPException(status_code=400, detail="Razorpay secrets cannot be saved: the server's "
+                                                    "PAYMENT_ENCRYPTION_KEY is not set")
+
+
+@router.get("/payment", response_model=PaymentSettingsResponse)
+async def get_payment_settings(
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Store payment accounts (admin only); secrets are never returned
+    """
+    return _payment_response(_payment_row(db, context.tenant_id))
+
+
+@router.put("/payment", response_model=PaymentSettingsResponse)
+async def update_payment_settings(
+    data: PaymentSettingsUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context),
+    current_user = Depends(get_current_admin_user)
+):
+    """
+    Update store payment accounts (admin only). Razorpay secrets are stored encrypted.
+    """
+    row = _payment_row(db, context.tenant_id, lock=True)
+    old_value = _payment_audit(row)
+    if row is None:
+        row = TenantPaymentSettings(tenant_id=context.tenant_id)
+        db.add(row)
+    row.razorpay_key_secret_encrypted = _encrypted(data.razorpay_key_secret,
+                                                   row.razorpay_key_secret_encrypted)
+    row.razorpay_webhook_secret_encrypted = _encrypted(data.razorpay_webhook_secret,
+                                                       row.razorpay_webhook_secret_encrypted)
+    row.upi_id = data.upi_id
+    row.upi_payee_name = data.upi_payee_name
+    row.razorpay_key_id = data.razorpay_key_id
+    db.flush()
+    record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
+                 "payment_settings", row.id, old_value=old_value, new_value=_payment_audit(row))
+    db.commit()
+    return _payment_response(row)
+
+
+@router.get("/upi-qr", response_model=UpiQrResponse)
+async def get_upi_qr(
+    amount: Decimal = Query(..., gt=0, le=1000000, max_digits=9, decimal_places=2),
+    db: Session = Depends(get_db),
+    context: TenantContext = Depends(get_tenant_context)
+):
+    """
+    UPI QR code for paying an amount to the store's UPI ID (shown at billing to any staff)
+    """
+    row = _payment_row(db, context.tenant_id)
+    if row is None or not row.upi_id:
+        raise HTTPException(status_code=400,
+                            detail="Ask an admin to add the store UPI ID in Settings > Payments")
+    payee_name = row.upi_payee_name or build_store_settings(db, context.tenant_id).store_name
+    return UpiQrResponse(payee_name=payee_name, amount=amount,
+                         qr_image=qr_png_base64(upi_uri(row.upi_id, payee_name, amount)))
 
 
 @router.get("/loyalty", response_model=LoyaltySettings)

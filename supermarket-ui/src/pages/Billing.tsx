@@ -246,6 +246,9 @@ const PAY_ICONS: Record<PayMode, React.ReactNode> = {
   cash: <Payments />, card: <CreditCard />, upi: <QrCode2 />, points: null,
 };
 
+// QR code for the UPI amount, paid to the store's UPI ID (Settings > Payments)
+interface UpiQr { amount: number; payee_name: string; qr_image: string }
+
 const SHORTCUTS: { key: string; label: string }[] = [
   { key: 'F2', label: 'Search / scan' },
   { key: 'F4', label: 'Hold bill' },
@@ -341,6 +344,10 @@ const Billing: React.FC = () => {
   const [lastAddedKey, setLastAddedKey] = useState<string | null>(null);
   const [shiftMissing, setShiftMissing] = useState(false);
   const [shiftDialogOpen, setShiftDialogOpen] = useState(false);
+  const [cardEnabled, setCardEnabled] = useState(false);
+  const [upiConfigured, setUpiConfigured] = useState(false);
+  const [upiQr, setUpiQr] = useState<UpiQr | null>(null);
+  const [upiQrError, setUpiQrError] = useState('');
 
   const loadHeldBills = () =>
     api.get(API_ENDPOINTS.HELD_BILLS)
@@ -355,7 +362,11 @@ const Billing: React.FC = () => {
     searchRef.current?.focus();
     loadHeldBills();
     api.get(API_ENDPOINTS.SETTINGS_BILLING)
-      .then((res) => setTaxInclusive(res.data.tax_inclusive_pricing !== false))
+      .then((res) => {
+        setTaxInclusive(res.data.tax_inclusive_pricing !== false);
+        setCardEnabled(res.data.card_payments_enabled === true);
+        setUpiConfigured(res.data.upi_configured === true);
+      })
       .catch(() => undefined);
     api.get(API_ENDPOINTS.SETTINGS_STORE)
       .then((res) => setStoreStateCode(res.data.store_state_code || ''))
@@ -733,7 +744,8 @@ const Billing: React.FC = () => {
   const pointValue = loyalty ? Number(loyalty.point_value) : 0;
   const pointsBalance = knownCustomer?.points_balance || 0;
   const pointsAvailable = !!loyalty?.enabled && pointValue > 0 && pointsBalance >= loyalty.min_redeem_points;
-  const splitModes = pointsAvailable ? [...PAY_MODES, POINTS_MODE] : PAY_MODES;
+  const payModes = cardEnabled ? PAY_MODES : PAY_MODES.filter(({ mode }) => mode !== 'card');
+  const splitModes = pointsAvailable ? [...payModes, POINTS_MODE] : payModes;
   const pointsCap = loyalty ? round2(getGrandTotal() * Number(loyalty.max_redeem_percent) / 100) : 0;
   const maxPointsAmount = pointsAvailable
     ? round2(Math.min(Math.floor(pointsCap / pointValue + 1e-9), pointsBalance) * pointValue) : 0;
@@ -744,6 +756,7 @@ const Billing: React.FC = () => {
     : [{ mode: paymentMode, amount: getGrandTotal() }];
   const paymentRows = getPaymentRows();
   const cashDue = round2(paymentRows.filter((p) => p.mode === 'cash').reduce((s, p) => s + p.amount, 0));
+  const upiDue = round2(paymentRows.filter((p) => p.mode === 'upi').reduce((s, p) => s + p.amount, 0));
   const pointsPaid = round2(paymentRows.filter((p) => p.mode === 'points').reduce((s, p) => s + p.amount, 0));
   const pointsUsed = pointValue > 0 ? pointsPaid / pointValue : 0;
   const splitRemaining = round2(getGrandTotal() - paymentRows.reduce((s, p) => s + p.amount, 0));
@@ -760,6 +773,22 @@ const Billing: React.FC = () => {
     : splitPayment && splitRemaining < 0 ? `Payments are ₹${(-splitRemaining).toFixed(2)} more than the bill`
     : changeDue !== null && changeDue < 0 ? `Cash received is less than the cash amount ₹${cashDue.toFixed(2)}`
     : '');
+
+  useEffect(() => {
+    if (!checkoutOpen || !upiConfigured || upiDue <= 0) { setUpiQr(null); setUpiQrError(''); return; }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      api.get<UpiQr>(API_ENDPOINTS.SETTINGS_UPI_QR, { params: { amount: upiDue.toFixed(2) } })
+        .then((res) => { if (!cancelled) { setUpiQr({ ...res.data, amount: Number(res.data.amount) }); setUpiQrError(''); } })
+        .catch((err) => {
+          if (cancelled) return;
+          setUpiQr(null);
+          const detail = err?.response?.data?.detail;
+          setUpiQrError(typeof detail === 'string' ? detail : 'Could not load the UPI QR code');
+        });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [checkoutOpen, upiConfigured, upiDue]);
 
   const resetBill = () => {
     setCartItems([]);
@@ -1368,7 +1397,7 @@ const Billing: React.FC = () => {
                   exclusive fullWidth color="primary" value={paymentMode} aria-label="Payment mode"
                   onChange={(_, v) => { if (v) setPaymentMode(v as PayMode); }}
                 >
-                  {PAY_MODES.map(({ mode, label }) => (
+                  {payModes.map(({ mode, label }) => (
                     <ToggleButton key={mode} value={mode} sx={{ py: 1.5, flexDirection: 'column', gap: 0.5, fontWeight: 600 }}>
                       {PAY_ICONS[mode]}
                       {label}
@@ -1386,6 +1415,33 @@ const Billing: React.FC = () => {
                 )}
               </Box>
             )}
+            {upiDue > 0 && (!upiConfigured ? (
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Ask an admin to add the store UPI ID in Settings → Payments to show a payment QR code here.
+              </Alert>
+            ) : upiQrError ? (
+              <Alert severity="warning" sx={{ mb: 2 }}>{upiQrError}</Alert>
+            ) : (
+              <Box sx={{ mb: 2, display: 'flex', gap: 2, alignItems: 'center' }}>
+                {upiQr && upiQr.amount === upiDue ? (
+                  <Box component="img" src={`data:image/png;base64,${upiQr.qr_image}`} alt="UPI payment QR code"
+                    sx={{ width: 180, height: 180, flexShrink: 0, imageRendering: 'pixelated' }} />
+                ) : (
+                  <Box sx={{ width: 180, height: 180, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <CircularProgress size={28} />
+                  </Box>
+                )}
+                <Box>
+                  <Typography fontWeight={700}>Scan with any UPI app to pay ₹{upiDue.toFixed(2)}</Typography>
+                  {upiQr && (
+                    <Typography variant="body2" color="text.secondary">To {upiQr.payee_name}</Typography>
+                  )}
+                  <Typography variant="body2" color="warning.main" sx={{ mt: 1 }}>
+                    Check that the payment has arrived on the store's UPI app before completing the bill.
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
             {cashDue > 0 && (
               <Box sx={{ mb: 2 }}>
                 <TextField

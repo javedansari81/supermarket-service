@@ -37,6 +37,7 @@ const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) =>
   const [reasonChoice, setReasonChoice] = useState('');
   const [otherReason, setOtherReason] = useState('');
   const [refundMode, setRefundMode] = useState('');
+  const [cardEnabled, setCardEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const reason = reasonChoice === OTHER ? otherReason : reasonChoice;
 
@@ -50,6 +51,15 @@ const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) =>
       })
       .catch(() => { toast.error('Failed to load sale'); onClose(); });
   }, [saleId, onClose]);
+
+  useEffect(() => {
+    if (!saleId) return;
+    api.get(API_ENDPOINTS.SETTINGS_BILLING)
+      .then((res) => setCardEnabled(res.data.card_payments_enabled === true))
+      .catch(() => undefined);
+  }, [saleId]);
+  // Card stays available for refunding a sale that was paid by card
+  const showCard = cardEnabled || info?.payment_mode === 'card';
 
   const lines = (info?.items || [])
     .map((i) => ({ ...i, qty: Number(qty[i.sale_item_id] || 0) }))
@@ -161,7 +171,9 @@ const SaleReturnDialog: React.FC<Props> = ({ saleId, mode, onClose, onDone }) =>
               {mode === 'return' && (
                 <TextField select label="Refund mode" value={refundMode} disabled={!allowed}
                   onChange={(e) => setRefundMode(e.target.value)} sx={{ width: 160 }}>
-                  <MenuItem value="cash">Cash</MenuItem><MenuItem value="card">Card</MenuItem><MenuItem value="upi">UPI</MenuItem>
+                  <MenuItem value="cash">Cash</MenuItem>
+                  {showCard && <MenuItem value="card">Card</MenuItem>}
+                  <MenuItem value="upi">UPI</MenuItem>
                 </TextField>
               )}
             </Box>

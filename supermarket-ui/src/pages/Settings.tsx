@@ -24,6 +24,12 @@ interface BillingSettings {
   currency_symbol: string; tax_inclusive_pricing: boolean; default_tax_percent: number;
   invoice_prefix: string; invoice_footer: string;
   shift_required: boolean; shift_variance_limit: number;
+  card_payments_enabled: boolean;
+}
+// Store payment accounts (admins only); secrets are never sent back, only whether they are saved
+interface PaymentSettings {
+  upi_id: string; upi_payee_name: string; razorpay_key_id: string;
+  razorpay_key_secret_set: boolean; razorpay_webhook_secret_set: boolean; encryption_configured: boolean;
 }
 interface OnlineSettings {
   enabled: boolean; delivery_charge: number; free_delivery_min: number; delivery_pincodes: string[];
@@ -33,6 +39,12 @@ const PINCODE_REGEX = /^[1-9][0-9]{5}$/;
 const splitPincodes = (text: string) => text.split(/[\s,]+/).map((p) => p.trim()).filter(Boolean);
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
+const UPI_ID_REGEX = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9]{1,63}$/;
+const RAZORPAY_KEY_ID_REGEX = /^rzp_(test|live)_[A-Za-z0-9]{8,40}$/;
+const EMPTY_PAYMENT: PaymentSettings = {
+  upi_id: '', upi_payee_name: '', razorpay_key_id: '',
+  razorpay_key_secret_set: false, razorpay_webhook_secret_set: false, encryption_configured: false,
+};
 
 const Settings: React.FC = () => {
   const [tab, setTab] = useState(0);
@@ -44,8 +56,12 @@ const Settings: React.FC = () => {
   const [billingSettings, setBillingSettings] = useState<BillingSettings>({
     currency_symbol: '₹', tax_inclusive_pricing: true, default_tax_percent: 0,
     invoice_prefix: 'INV', invoice_footer: 'Thank you for shopping!',
-    shift_required: false, shift_variance_limit: 100,
+    shift_required: false, shift_variance_limit: 100, card_payments_enabled: false,
   });
+  const [paymentSettings, setPaymentSettings] = useState<PaymentSettings>(EMPTY_PAYMENT);
+  // New secret typed by the admin ('' = keep the saved one), or marked for removal
+  const [newSecrets, setNewSecrets] = useState({ key: '', webhook: '' });
+  const [removeSecrets, setRemoveSecrets] = useState({ key: false, webhook: false });
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings>({
     enabled: false, earn_points_per_100: 1, point_value: 1, min_redeem_points: 100,
     max_redeem_percent: 50, expiry_days: 365
@@ -56,6 +72,9 @@ const Settings: React.FC = () => {
   const [pincodeText, setPincodeText] = useState('');
   const badPincodes = splitPincodes(pincodeText).filter((p) => !PINCODE_REGEX.test(p));
   const gstinError = !!storeSettings.gstin && !GSTIN_REGEX.test(storeSettings.gstin);
+  const upiIdError = !!paymentSettings.upi_id.trim() && !UPI_ID_REGEX.test(paymentSettings.upi_id.trim());
+  const keyIdError = !!paymentSettings.razorpay_key_id.trim()
+    && !RAZORPAY_KEY_ID_REGEX.test(paymentSettings.razorpay_key_id.trim());
   const gstinStateMismatch = !gstinError && !!storeSettings.gstin && !!storeSettings.store_state
     && stateNameFromCode(storeSettings.gstin.slice(0, 2)) !== storeSettings.store_state;
 
@@ -68,12 +87,14 @@ const Settings: React.FC = () => {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const [store, billing, loyalty, online] = await Promise.all([
+        const [store, billing, loyalty, online, payment] = await Promise.all([
           api.get(API_ENDPOINTS.SETTINGS_STORE),
           api.get(API_ENDPOINTS.SETTINGS_BILLING),
           api.get(API_ENDPOINTS.SETTINGS_LOYALTY),
           api.get<OnlineSettings>(API_ENDPOINTS.SETTINGS_ONLINE),
+          api.get<PaymentSettings>(API_ENDPOINTS.SETTINGS_PAYMENT),
         ]);
+        if (payment.data) setPaymentSettings(payment.data);
         if (online.data) {
           setOnlineSettings({ ...online.data, delivery_charge: Number(online.data.delivery_charge),
             free_delivery_min: Number(online.data.free_delivery_min) });
@@ -134,7 +155,34 @@ const Settings: React.FC = () => {
     try {
       await api.put(API_ENDPOINTS.SETTINGS_BILLING, billingSettings);
       toast.success('Billing settings saved');
-    } catch (error) { toast.error('Failed to save settings'); }
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(Array.isArray(detail) ? detail[0]?.msg : detail || 'Failed to save settings');
+    }
+    finally { setLoading(false); }
+  };
+
+  const secretValue = (typed: string, remove: boolean) => (typed.trim() ? typed.trim() : remove ? '' : null);
+
+  const savePaymentSettings = async () => {
+    if (upiIdError) { toast.error('UPI ID is not valid'); return; }
+    if (keyIdError) { toast.error('Razorpay key ID is not valid'); return; }
+    setLoading(true);
+    try {
+      const response = await api.put<PaymentSettings>(API_ENDPOINTS.SETTINGS_PAYMENT, {
+        upi_id: paymentSettings.upi_id, upi_payee_name: paymentSettings.upi_payee_name,
+        razorpay_key_id: paymentSettings.razorpay_key_id,
+        razorpay_key_secret: secretValue(newSecrets.key, removeSecrets.key),
+        razorpay_webhook_secret: secretValue(newSecrets.webhook, removeSecrets.webhook),
+      });
+      setPaymentSettings(response.data);
+      setNewSecrets({ key: '', webhook: '' });
+      setRemoveSecrets({ key: false, webhook: false });
+      toast.success('Payment settings saved');
+    } catch (error: any) {
+      const detail = error.response?.data?.detail;
+      toast.error(Array.isArray(detail) ? detail[0]?.msg : detail || 'Failed to save settings');
+    }
     finally { setLoading(false); }
   };
 
@@ -163,6 +211,7 @@ const Settings: React.FC = () => {
           <Tab label="Billing" />
           <Tab label="Loyalty Points" />
           <Tab label="Online Ordering" />
+          <Tab label="Payments" />
         </Tabs>
       {tab === 0 && (
           <CardContent sx={{ p: 3 }}>
@@ -249,6 +298,12 @@ const Settings: React.FC = () => {
                   inputProps={{ min: 0, step: '1' }}
                   onChange={(e) => setBillingSettings({ ...billingSettings, shift_variance_limit: Math.max(0, Number(e.target.value) || 0) })} />
               </Grid>
+              <Grid size={12}>
+                <FormControlLabel
+                  control={<Switch checked={billingSettings.card_payments_enabled}
+                    onChange={(e) => setBillingSettings({ ...billingSettings, card_payments_enabled: e.target.checked })} />}
+                  label="Accept card payments (turn on when the store has a card machine)" />
+              </Grid>
               <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveBillingSettings} disabled={loading}>
                   Save Settings
@@ -334,6 +389,74 @@ const Settings: React.FC = () => {
               </Grid>
               <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <Button variant="contained" startIcon={<Save />} onClick={saveOnlineSettings} disabled={loading}>
+                  Save Settings
+                </Button>
+              </Grid>
+            </Grid>
+          </CardContent>
+      )}
+      {tab === 4 && (
+          <CardContent sx={{ p: 3 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              This store's payment accounts. Only this store's admins can see or change them.
+            </Typography>
+            <Grid container spacing={3}>
+              <Grid size={12}><Typography fontWeight={600}>UPI QR code at billing</Typography></Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label="Store UPI ID" value={paymentSettings.upi_id}
+                  placeholder="e.g. mfmart@okicici" error={upiIdError}
+                  helperText={upiIdError ? 'Enter a UPI ID like name@bank'
+                    : 'Billing shows a QR code for UPI payments to this ID. Leave empty for no QR code.'}
+                  inputProps={{ maxLength: 100 }}
+                  onChange={(e) => setPaymentSettings({ ...paymentSettings, upi_id: e.target.value.replace(/\s/g, '') })} />
+              </Grid>
+              <Grid size={{ xs: 12, md: 6 }}>
+                <TextField fullWidth label="UPI payee name" value={paymentSettings.upi_payee_name}
+                  helperText="Shown in the customer's UPI app (empty = store name)"
+                  inputProps={{ maxLength: 50 }}
+                  onChange={(e) => setPaymentSettings({ ...paymentSettings, upi_payee_name: e.target.value })} />
+              </Grid>
+              <Grid size={12}>
+                <Typography fontWeight={600}>Razorpay (online payments, not in use yet)</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Keys can be saved now for later. Secrets are stored encrypted and are never shown again.
+                </Typography>
+              </Grid>
+              {!paymentSettings.encryption_configured && (
+                <Grid size={12}>
+                  <Alert severity="warning">
+                    Razorpay secrets cannot be saved until the server's PAYMENT_ENCRYPTION_KEY is set.
+                  </Alert>
+                </Grid>
+              )}
+              <Grid size={12}>
+                <TextField fullWidth label="Razorpay key ID" value={paymentSettings.razorpay_key_id}
+                  placeholder="rzp_live_…" error={keyIdError}
+                  helperText={keyIdError ? 'Starts with rzp_test_ or rzp_live_' : 'From Razorpay Dashboard → Account & Settings → API keys'}
+                  inputProps={{ maxLength: 50 }}
+                  onChange={(e) => setPaymentSettings({ ...paymentSettings, razorpay_key_id: e.target.value.trim() })} />
+              </Grid>
+              {([['key', 'Razorpay key secret', paymentSettings.razorpay_key_secret_set],
+                ['webhook', 'Razorpay webhook secret', paymentSettings.razorpay_webhook_secret_set]] as const)
+                .map(([field, label, saved]) => (
+                  <Grid key={field} size={{ xs: 12, md: 6 }}>
+                    <TextField fullWidth type="password" label={label} value={newSecrets[field]}
+                      autoComplete="new-password" disabled={!paymentSettings.encryption_configured}
+                      placeholder={saved && !removeSecrets[field] ? 'Saved (type to replace)' : 'Not saved'}
+                      helperText={removeSecrets[field] ? 'Will be removed when you save' : saved ? 'Saved' : ' '}
+                      inputProps={{ maxLength: 100 }}
+                      onChange={(e) => setNewSecrets({ ...newSecrets, [field]: e.target.value })} />
+                    {saved && (
+                      <Button size="small" color="error" sx={{ mt: 0.5 }}
+                        onClick={() => { setRemoveSecrets({ ...removeSecrets, [field]: !removeSecrets[field] });
+                          setNewSecrets({ ...newSecrets, [field]: '' }); }}>
+                        {removeSecrets[field] ? 'Keep saved secret' : 'Remove saved secret'}
+                      </Button>
+                    )}
+                  </Grid>
+                ))}
+              <Grid size={12} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <Button variant="contained" startIcon={<Save />} onClick={savePaymentSettings} disabled={loading}>
                   Save Settings
                 </Button>
               </Grid>

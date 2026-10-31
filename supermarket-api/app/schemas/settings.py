@@ -5,8 +5,10 @@ import re
 from decimal import Decimal
 from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
+from app.core.upi import UPI_ID_PATTERN
 
 GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
+RAZORPAY_KEY_ID_PATTERN = re.compile(r"^rzp_(test|live)_[A-Za-z0-9]{8,40}$")
 
 GST_STATE_CODES = {
     "01": "Jammu and Kashmir", "02": "Himachal Pradesh", "03": "Punjab", "04": "Chandigarh",
@@ -114,6 +116,68 @@ class BillingSettings(BaseModel):
     shift_required: bool = False
     # Closing difference (Rs, either way) above which a supervisor or admin must approve
     shift_variance_limit: Decimal = Field(Decimal("100"), ge=0, le=100000, max_digits=8, decimal_places=2)
+    # Card offered as a payment / refund mode at billing (needs a card machine)
+    card_payments_enabled: bool = False
+    # Read only: the store has a UPI ID (Settings > Payments), so billing shows a QR code
+    upi_configured: bool = False
+
+
+class UpiQrResponse(BaseModel):
+    """UPI payment QR code for an amount; qr_image is a base64 PNG"""
+    payee_name: str
+    amount: Decimal
+    qr_image: str
+
+
+class PaymentSettingsUpdate(BaseModel):
+    """Store payment accounts (admin only). Razorpay secrets: None = keep the saved one,
+    "" = remove it, otherwise replace it."""
+    # Store UPI ID for the payment QR code at billing; empty = no QR code
+    upi_id: str = Field("", max_length=100)
+    # Name shown in the customer's UPI app; empty = store name
+    upi_payee_name: str = Field("", max_length=50)
+    # Razorpay (not used yet; kept for online payments later)
+    razorpay_key_id: str = Field("", max_length=50)
+    razorpay_key_secret: Optional[str] = Field(None, max_length=100)
+    razorpay_webhook_secret: Optional[str] = Field(None, max_length=100)
+
+    @field_validator("upi_id")
+    @classmethod
+    def validate_upi_id(cls, v: Optional[str]) -> str:
+        v = (v or "").strip()
+        if v and not UPI_ID_PATTERN.match(v):
+            raise ValueError("Invalid UPI ID (e.g. mfmart@okicici)")
+        return v
+
+    @field_validator("upi_payee_name")
+    @classmethod
+    def strip_payee_name(cls, v: Optional[str]) -> str:
+        return (v or "").strip()
+
+    @field_validator("razorpay_key_id")
+    @classmethod
+    def validate_key_id(cls, v: Optional[str]) -> str:
+        v = (v or "").strip()
+        if v and not RAZORPAY_KEY_ID_PATTERN.match(v):
+            raise ValueError("Invalid Razorpay key ID (starts with rzp_test_ or rzp_live_)")
+        return v
+
+    @field_validator("razorpay_key_secret", "razorpay_webhook_secret")
+    @classmethod
+    def strip_secret(cls, v: Optional[str]) -> Optional[str]:
+        return None if v is None else v.strip()
+
+
+class PaymentSettingsResponse(BaseModel):
+    """Store payment accounts as shown to admins: secrets are never returned, only whether
+    they are saved"""
+    upi_id: str = ""
+    upi_payee_name: str = ""
+    razorpay_key_id: str = ""
+    razorpay_key_secret_set: bool = False
+    razorpay_webhook_secret_set: bool = False
+    # The server can save gateway secrets (PAYMENT_ENCRYPTION_KEY is set)
+    encryption_configured: bool = False
 
 
 class LoyaltySettings(BaseModel):

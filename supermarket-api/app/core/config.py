@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # Unread updates are dropped by the push service after this (device off for long)
     PUSH_TTL_SECONDS: int = 86400
 
+    # Encrypts stores' payment gateway secrets (Razorpay keys) in the database. Make it once with
+    # `python -m app.core.encryption` and never change it (saved secrets would have to be entered
+    # again); it is a secret, keep it in .env. Empty = gateway secrets cannot be saved
+    PAYMENT_ENCRYPTION_KEY: str = ""
+
     # CORS
     ALLOWED_ORIGINS: List[str] = ["http://localhost:3000"]
 

@@ -140,6 +140,9 @@ def describe_audit(log: AuditLog, user_names: dict) -> Tuple[Optional[str], Opti
         reference = "Store settings" if "store_name" in values else "Billing settings"
         return reference, describe_changes(old_value, new_value)
 
+    if entity_type == "payment_settings":
+        return "Payment settings", describe_changes(old_value, new_value)
+
     name_field = NAME_FIELDS.get(entity_type)
     reference = values.get(name_field) if name_field else None
     if entity_type == "user" and not reference:
@@ -259,7 +262,8 @@ async def get_entity_types(current_user = Depends(get_current_admin_user)):
             {"value": "held_bill", "label": "Held Bill"},
             {"value": "invoice", "label": "Invoice"},
             {"value": "user", "label": "User"},
-            {"value": "setting", "label": "Setting"}
+            {"value": "setting", "label": "Setting"},
+            {"value": "payment_settings", "label": "Payment Settings"}
         ]
     }
 

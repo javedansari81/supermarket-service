@@ -113,6 +113,8 @@ export const API_ENDPOINTS = {
   SETTINGS_BILLING: '/settings/billing',
   SETTINGS_LOYALTY: '/settings/loyalty',
   SETTINGS_ONLINE: '/settings/online',
+  SETTINGS_PAYMENT: '/settings/payment',
+  SETTINGS_UPI_QR: '/settings/upi-qr',
   
   // Audit
   AUDIT_LOGS: '/audit',

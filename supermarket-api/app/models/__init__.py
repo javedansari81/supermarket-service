@@ -5,6 +5,7 @@ from app.models.tenant import Tenant
 from app.models.role import Role
 from app.models.user import User
 from app.models.tenant_setting import TenantSetting
+from app.models.tenant_payment_settings import TenantPaymentSettings
 from app.models.category import Category
 from app.models.gst_item import GstItem, CategoryGstItem
 from app.models.product import Product
@@ -34,6 +35,7 @@ __all__ = [
     "Role",
     "User",
     "TenantSetting",
+    "TenantPaymentSettings",
     "Category",
     "GstItem",
     "CategoryGstItem",

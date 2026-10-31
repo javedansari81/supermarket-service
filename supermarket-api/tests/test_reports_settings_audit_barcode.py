@@ -359,14 +359,112 @@ def test_store_settings_validation_and_role(client, seed, admin_headers, cashier
 
 
 def test_billing_settings(client, seed, admin_headers, cashier_headers):
-    body = {"tax_inclusive_pricing": False, "default_tax_percent": 12, "invoice_prefix": "BL"}
+    res = client.get(f"{SET}/billing", headers=cashier_headers).json()
+    assert res["card_payments_enabled"] is False
+    body = {"tax_inclusive_pricing": False, "default_tax_percent": 12, "invoice_prefix": "BL",
+            "card_payments_enabled": True}
     assert client.put(f"{SET}/billing", json=body, headers=admin_headers).status_code == 200
     res = client.get(f"{SET}/billing", headers=cashier_headers).json()
     assert res["tax_inclusive_pricing"] is False and res["invoice_prefix"] == "BL"
+    assert res["card_payments_enabled"] is True
     assert client.put(f"{SET}/billing", json={"default_tax_percent": 150},
                       headers=admin_headers).status_code == 422
     assert client.put(f"{SET}/billing", json=body, headers=cashier_headers).status_code == 403
     assert client.get(SET, headers=admin_headers).status_code == 200
+
+
+def test_upi_uri():
+    from decimal import Decimal
+    from app.core.upi import upi_uri
+    assert upi_uri("marta@okicici", "Mart A", Decimal("123.4")) == \
+        "upi://pay?pa=marta%40okicici&pn=Mart%20A&am=123.40&cu=INR"
+
+
+def test_upi_qr(client, seed, admin_headers, cashier_headers, admin_b_headers):
+    import base64
+    params = {"amount": "123.4"}
+    res = client.get(f"{SET}/upi-qr", params=params, headers=cashier_headers)
+    assert res.status_code == 400 and "UPI ID" in res.json()["detail"]
+    assert client.get(f"{SET}/billing", headers=cashier_headers).json()["upi_configured"] is False
+    assert client.put(f"{SET}/payment", json={"upi_id": "not a vpa"},
+                      headers=admin_headers).status_code == 422
+    client.put(f"{SET}/store", json={"store_name": "Mart A"}, headers=admin_headers)
+    assert client.put(f"{SET}/payment", json={"upi_id": " marta@okicici "},
+                      headers=admin_headers).status_code == 200
+    billing = client.get(f"{SET}/billing", headers=cashier_headers).json()
+    assert billing["upi_configured"] is True and "upi_id" not in billing
+
+    res = client.get(f"{SET}/upi-qr", params=params, headers=cashier_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["payee_name"] == "Mart A" and "upi_id" not in data
+    assert base64.b64decode(data["qr_image"]).startswith(b"\x89PNG")
+
+    client.put(f"{SET}/payment", json={"upi_id": "marta@okicici", "upi_payee_name": "MF Mart"},
+               headers=admin_headers)
+    res = client.get(f"{SET}/upi-qr", params=params, headers=cashier_headers).json()
+    assert res["payee_name"] == "MF Mart"
+    assert client.get(f"{SET}/upi-qr", params={"amount": 0},
+                      headers=cashier_headers).status_code == 422
+    # Another store has its own (empty) payment settings
+    assert client.get(f"{SET}/upi-qr", params=params, headers=admin_b_headers).status_code == 400
+    assert client.get(f"{SET}/payment", headers=admin_b_headers).json()["upi_id"] == ""
+
+
+def test_payment_settings_admin_only_and_per_store(client, seed, admin_headers, admin_b_headers,
+                                                   supervisor_headers, cashier_headers):
+    body = {"upi_id": "marta@okicici", "razorpay_key_id": "rzp_test_ABCDEF123456"}
+    for headers in (cashier_headers, supervisor_headers):
+        assert client.get(f"{SET}/payment", headers=headers).status_code == 403
+        assert client.put(f"{SET}/payment", json=body, headers=headers).status_code == 403
+    assert client.get(f"{SET}/payment").status_code == 401
+    assert client.put(f"{SET}/payment", json=body, headers=admin_headers).status_code == 200
+    assert client.get(f"{SET}/payment", headers=admin_headers).json()["upi_id"] == "marta@okicici"
+    other = client.get(f"{SET}/payment", headers=admin_b_headers).json()
+    assert other["upi_id"] == "" and other["razorpay_key_id"] == ""
+    # Never in the general settings list
+    keys = {s["setting_key"] for s in client.get(SET, headers=admin_headers).json()["items"]}
+    assert not keys & {"upi_id", "upi_payee_name", "razorpay_key_id"}
+    assert client.put(f"{SET}/payment", json={"razorpay_key_id": "key_123"},
+                      headers=admin_headers).status_code == 422
+
+
+def test_payment_secrets_encrypted_and_never_returned(client, db, seed, admin_headers, monkeypatch):
+    from cryptography.fernet import Fernet
+    from app.core.config import settings
+    from app.models import AuditLog, TenantPaymentSettings
+    secret, webhook = "SuperSecretKeyValue123", "WebhookSecret456"
+    body = {"razorpay_key_id": "rzp_test_ABCDEF123456", "razorpay_key_secret": secret}
+
+    monkeypatch.setattr(settings, "PAYMENT_ENCRYPTION_KEY", "")
+    res = client.put(f"{SET}/payment", json=body, headers=admin_headers)
+    assert res.status_code == 400 and "PAYMENT_ENCRYPTION_KEY" in res.json()["detail"]
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setattr(settings, "PAYMENT_ENCRYPTION_KEY", key)
+    res = client.put(f"{SET}/payment", json={**body, "razorpay_webhook_secret": webhook},
+                     headers=admin_headers)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["razorpay_key_secret_set"] and data["razorpay_webhook_secret_set"]
+    assert data["encryption_configured"] is True
+    assert secret not in res.text and webhook not in res.text
+    assert secret not in client.get(f"{SET}/payment", headers=admin_headers).text
+
+    row = db.query(TenantPaymentSettings).filter_by(tenant_id=seed["tenant_a"].id).one()
+    db.refresh(row)
+    assert secret not in row.razorpay_key_secret_encrypted
+    assert Fernet(key.encode()).decrypt(row.razorpay_key_secret_encrypted.encode()).decode() == secret
+    logs = db.query(AuditLog).filter_by(entity_type="payment_settings").all()
+    assert logs and all(secret not in str(l.new_value) and secret not in str(l.old_value) for l in logs)
+
+    # Leaving a secret out keeps it; an empty value removes it
+    client.put(f"{SET}/payment", json={"razorpay_key_id": "rzp_test_ABCDEF123456"},
+               headers=admin_headers)
+    assert client.get(f"{SET}/payment", headers=admin_headers).json()["razorpay_key_secret_set"]
+    res = client.put(f"{SET}/payment", json={"razorpay_key_secret": "", "razorpay_webhook_secret": ""},
+                     headers=admin_headers).json()
+    assert not res["razorpay_key_secret_set"] and not res["razorpay_webhook_secret_set"]
 
 
 def test_tax_exclusive_pricing_applied_to_sale(client, product, admin_headers):
