@@ -4,14 +4,11 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Link as RouterLink, useParams } from 'react-router-dom';
 import {
-  Alert, Box, Breadcrumbs, Button, Card, Chip, Divider, Link, Skeleton, Stack, Typography, useMediaQuery,
+  Alert, Box, Breadcrumbs, Card, Chip, Divider, Link, Skeleton, Stack, Typography, useMediaQuery,
 } from '@mui/material';
-import {
-  CheckCircle, LocalOffer, NavigateNext, RemoveShoppingCart, Scale, ShoppingCart,
-} from '@mui/icons-material';
+import { CheckCircle, LocalOffer, NavigateNext, RemoveShoppingCart, Scale } from '@mui/icons-material';
 import { api, ApiError } from '../api/client';
 import type { ShopProductDetail } from '../api/types';
-import { useCart } from '../cart/CartContext';
 import AddToCart from '../components/AddToCart';
 import PriceTag from '../components/PriceTag';
 import { ProductPicture } from '../components/ProductCard';
@@ -29,7 +26,6 @@ interface Loaded {
 export default function ProductPage() {
   const { store = '', productId = '' } = useParams();
   const { detail, notFound } = useShopStore(store);
-  const inCart = useCart().count(store) > 0;
   const pictureHeight = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 360 : 240;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const key = `${store}|${productId}`;
@@ -108,15 +104,7 @@ export default function ProductPage() {
               ? <><CheckCircle color="success" fontSize="small" /><Typography sx={{ fontWeight: 600 }}>In stock</Typography></>
               : <><RemoveShoppingCart color="error" fontSize="small" /><Typography sx={{ fontWeight: 600 }}>Out of stock</Typography></>}
           </Box>
-          <Stack spacing={1.25}>
-            <AddToCart store={store} product={product} large />
-            {inCart && (
-              <Button component={RouterLink} to={`/${store}/cart`} variant="outlined" size="large" fullWidth
-                startIcon={<ShoppingCart />}>
-                Go to cart
-              </Button>
-            )}
-          </Stack>
+          <AddToCart store={store} product={product} large />
           {product.is_loose && (
             <Alert severity="info" icon={<Scale />}>Weighed when your order is packed; you pay for the exact weight.</Alert>
           )}

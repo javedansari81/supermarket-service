@@ -54,9 +54,11 @@ export default function CartPage() {
   if (notFound) return <StoreNotFound />;
 
   const heading = (
-    <Box>
+    <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1 }}>
       <Typography variant="h5">Your cart</Typography>
-      {detail && <Typography color="text.secondary">{detail.store_name}</Typography>}
+      {ids.length > 0 && (
+        <Typography color="text.secondary">{ids.length === 1 ? '1 item' : `${ids.length} items`}</Typography>
+      )}
     </Box>
   );
 

@@ -8,7 +8,7 @@ import {
   AppBar, Avatar, Badge, Box, ButtonBase, Container, Divider, IconButton, ListItemIcon, Menu, MenuItem, Toolbar,
   Tooltip, Typography,
 } from '@mui/material';
-import { Login, Logout, Person, ReceiptLong, ShoppingCartOutlined } from '@mui/icons-material';
+import { ChevronRight, Login, Logout, Person, ReceiptLong, ShoppingCartOutlined } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { useCart } from '../cart/CartContext';
 import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
@@ -23,8 +23,10 @@ const YEAR = new Date().getFullYear();
 export default function ShopLayout() {
   const { account, loading, logout } = useAuth();
   const navigate = useNavigate();
-  const store = storeFromPath(useLocation().pathname);
+  const { pathname } = useLocation();
+  const store = storeFromPath(pathname);
   const cartCount = useCart().count(store ?? '');
+  const showCartBar = Boolean(store) && cartCount > 0 && !['cart', 'checkout'].includes(pathname.split('/')[2]);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
 
@@ -119,6 +121,25 @@ export default function ShopLayout() {
       <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 }, flexGrow: 1 }}>
         <Outlet context={searchSlot} />
       </Container>
+      {showCartBar && (
+        <Box sx={{ position: 'sticky', bottom: 0, zIndex: (t) => t.zIndex.appBar - 1, pointerEvents: 'none',
+          pb: 'calc(12px + env(safe-area-inset-bottom))' }}>
+          <Container maxWidth="sm">
+            <ButtonBase component={RouterLink} to={`/${encodeURIComponent(store ?? '')}/cart`}
+              sx={{ pointerEvents: 'auto', width: '100%', justifyContent: 'space-between', gap: 1.5, px: 2.5, py: 1.5,
+                borderRadius: 2, background: BRAND_GRADIENT, color: '#fff', boxShadow: '0 8px 24px rgba(21,128,61,0.35)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                <ShoppingCartOutlined />
+                <Typography sx={{ fontWeight: 700 }}>{cartCount === 1 ? '1 item' : `${cartCount} items`}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                <Typography sx={{ fontWeight: 700 }}>View cart</Typography>
+                <ChevronRight />
+              </Box>
+            </ButtonBase>
+          </Container>
+        </Box>
+      )}
       <Box component="footer" sx={{ background: BAND_GRADIENT, color: '#fff', pt: 3,
         pb: 'calc(24px + env(safe-area-inset-bottom))' }}>
         <Container maxWidth="lg">
