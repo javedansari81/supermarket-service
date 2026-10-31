@@ -75,6 +75,8 @@ export interface ShopProduct {
   /** 800 px and 320 px pictures: absolute, or a path under the API base address (see imageSrc) */
   image_url: string | null;
   thumb_url: string | null;
+  /** Every pack size of the same item (this one included), smallest first; empty when only one */
+  pack_sizes: ShopProduct[];
 }
 
 export interface ShopProductDetail extends ShopProduct {

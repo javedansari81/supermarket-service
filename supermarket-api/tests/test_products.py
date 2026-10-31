@@ -830,6 +830,37 @@ def test_shop_products_on_offer_and_by_ids(client, db, online, product):
     assert client.get(f"{SHOP}/storea/products", params={"ids": "1,abc"}).status_code == 422
 
 
+def test_shop_lists_pack_sizes_of_an_item_once(client, db, online, product):
+    tenant = online["tenant_a"]
+    dal = lambda no, qty, unit, price, **f: add_product(
+        db, tenant, no, f"Chana Dal {qty} {unit} MF", item_name="Chana Dal", brand="MF",
+        category_id=product.category_id, net_quantity=qty, net_unit=unit, selling_price=price, **f)
+    big = dal("P0002", 1, "kg", 120)
+    small = dal("P0003", 250, "g", 35, stock_quantity=0)
+    mid = dal("P0004", 500, "g", 65)
+    add_product(db, tenant, "P0005", "Chana Dal 1 kg Tata", item_name="Chana Dal", brand="Tata",
+                net_quantity=1, net_unit="kg", selling_price=130)
+    products = lambda **p: client.get(f"{SHOP}/storea/products", params=p).json()
+
+    body = products(search="chana")
+    assert body["total"] == 2
+    item = next(i for i in body["items"] if i["brand"] == "MF")
+    # Cheapest in stock is shown; sizes smallest first, out of stock ones included
+    assert item["id"] == mid.id
+    assert [s["id"] for s in item["pack_sizes"]] == [small.id, mid.id, big.id]
+    assert [s["in_stock"] for s in item["pack_sizes"]] == [False, True, True]
+    assert next(i for i in body["items"] if i["brand"] == "Tata")["pack_sizes"] == []
+    # A search matching one size shows that size
+    assert [i["id"] for i in products(search="1 kg MF")["items"]] == [big.id]
+
+    cats = client.get(f"{SHOP}/storea/categories").json()["items"]
+    assert cats[0]["product_count"] == 2   # rice + chana dal (Tata dal has no category)
+    # Asked by id (cart, recently viewed): every product, not grouped
+    assert len(products(ids=f"{small.id},{big.id}")["items"]) == 2
+    detail = client.get(f"{SHOP}/storea/products/{big.id}").json()
+    assert detail["id"] == big.id and len(detail["pack_sizes"]) == 3
+
+
 # ---------- Online orders (home delivery) ----------
 
 ORDERS = "/api/v1/shop"

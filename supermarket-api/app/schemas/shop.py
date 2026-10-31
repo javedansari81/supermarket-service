@@ -61,6 +61,8 @@ class ShopProduct(BaseModel):
     # 800 px and 320 px pictures (absolute, or a path under the API base address); None = no picture
     image_url: Optional[str] = None
     thumb_url: Optional[str] = None
+    # Every pack size of the same item (this one included), smallest first; empty when only one
+    pack_sizes: List["ShopProduct"] = []
 
 
 class ShopProductDetail(ShopProduct):

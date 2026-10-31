@@ -1,8 +1,8 @@
 /**
- * One product: price, pack size, stock and description
+ * One product: price, pack size (picker when the item comes in more sizes), stock and description
  */
 import { Fragment, useEffect, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom';
 import {
   Alert, Box, Breadcrumbs, Card, Chip, Divider, Link, Skeleton, Stack, Typography, useMediaQuery,
 } from '@mui/material';
@@ -11,7 +11,7 @@ import { api, ApiError } from '../api/client';
 import type { ShopProductDetail } from '../api/types';
 import AddToCart from '../components/AddToCart';
 import PriceTag from '../components/PriceTag';
-import { ProductPicture } from '../components/ProductCard';
+import { PackSizes, ProductPicture } from '../components/ProductCard';
 import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { hasDiscount, packSize } from '../utils/format';
@@ -26,6 +26,7 @@ interface Loaded {
 export default function ProductPage() {
   const { store = '', productId = '' } = useParams();
   const { detail, notFound } = useShopStore(store);
+  const navigate = useNavigate();
   const pictureHeight = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 360 : 240;
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const key = `${store}|${productId}`;
@@ -85,7 +86,12 @@ export default function ProductPage() {
           <Box>
             {product.brand && <Typography color="primary" sx={{ fontWeight: 700 }}>{product.brand}</Typography>}
             <Typography variant="h4" sx={{ fontSize: { xs: 24, sm: 30 }, mt: 0.5 }}>{product.product_name}</Typography>
-            {size && <Chip label={size} size="small" sx={{ mt: 1.5 }} />}
+            {product.pack_sizes.length > 1 ? (
+              <Box sx={{ mt: 1.5 }}>
+                <PackSizes product={product} selectedId={product.id} large
+                  onSelect={(p) => navigate(`/${store}/p/${p.id}`, { replace: true })} />
+              </Box>
+            ) : size && <Chip label={size} size="small" sx={{ mt: 1.5 }} />}
           </Box>
           <PriceTag product={product} large />
           {hasDiscount(product) && (

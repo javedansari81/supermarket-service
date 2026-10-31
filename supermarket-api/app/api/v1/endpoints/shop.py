@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.batches import fefo_key, uses_batches
 from app.core.clearance import ClearanceResolver, today_ist
@@ -26,6 +26,7 @@ from app.schemas.shop import (
     ShopProduct, ShopProductDetail, ShopProductListResponse,
 )
 from app.api.deps import get_shop_tenant, limit_by_ip, online_store_ids
+from app.api.v1.endpoints.barcode import NET_UNITS
 from app.api.v1.endpoints.settings import build_store_settings
 
 router = APIRouter()
@@ -34,6 +35,14 @@ CACHE_SECONDS = 60
 CATALOGUE_LIMIT = [Depends(limit_by_ip("catalogue", "RATE_LIMIT_CATALOGUE_PER_MINUTE"))]
 IMAGES_LIMIT = [Depends(limit_by_ip("images", "RATE_LIMIT_IMAGES_PER_MINUTE"))]
 LIST_PRICE = func.coalesce(Product.selling_price, Product.mrp)
+IN_STOCK = func.coalesce(Product.stock_quantity, 0) > 0
+# Packed products with the same item name and brand are pack sizes of one item (see pack_group)
+PACK_GROUP = case(
+    (and_(Product.is_loose.is_(False), func.coalesce(func.trim(Product.item_name), "") != ""),
+     func.concat(func.lower(func.trim(Product.item_name)), "|",
+                 func.lower(func.coalesce(func.trim(Product.brand), "")))),
+    else_=func.concat("#", Product.id),
+)
 
 
 def _cache(response: Response) -> None:
@@ -99,6 +108,39 @@ def price_products(db: Session, tenant_id: int, products: List[Product]) -> List
     return priced
 
 
+def pack_group(product: Product) -> Optional[str]:
+    """Same value as PACK_GROUP; None = the product has no other pack sizes"""
+    item_name = (product.item_name or "").strip()
+    if product.is_loose or not item_name:
+        return None
+    return f"{item_name.lower()}|{(product.brand or '').strip().lower()}"
+
+
+def _pack_order(product: Product):
+    base, factor = NET_UNITS.get(product.net_unit or "", (product.net_unit or "", Decimal("1")))
+    return base, Decimal(product.net_quantity or 0) * factor, product.id
+
+
+def price_with_pack_sizes(db: Session, tenant_id: int, products: List[Product]) -> List[dict]:
+    """price_products, with `pack_sizes` = every sellable pack size of the same item"""
+    groups = {pack_group(p) for p in products} - {None}
+    page_ids = {p.id for p in products}
+    siblings = sellable_products(db, tenant_id).options(joinedload(Product.category)).filter(
+        PACK_GROUP.in_(groups), Product.id.notin_(page_ids)).all() if groups else []
+    priced = {p["id"]: p for p in price_products(db, tenant_id, products + siblings)}
+    members: Dict[str, List[Product]] = {}
+    for product in products + siblings:
+        if pack_group(product) in groups:
+            members.setdefault(pack_group(product), []).append(product)
+
+    items = []
+    for product in products:
+        group = sorted(members.get(pack_group(product), []), key=_pack_order)
+        sizes = [priced[p.id] for p in group] if len(group) > 1 else []
+        items.append({**priced[product.id], "pack_sizes": sizes})
+    return items
+
+
 @router.get("/images/{key:path}", dependencies=IMAGES_LIMIT)
 async def get_image(key: str):
     """A product picture from object storage (when PRODUCT_IMAGE_PUBLIC_URL is not set).
@@ -146,9 +188,9 @@ async def get_store(response: Response, db: Session = Depends(get_db),
             dependencies=CATALOGUE_LIMIT)
 async def list_categories(response: Response, db: Session = Depends(get_db),
                           tenant: Tenant = Depends(get_shop_tenant)):
-    """Active categories that have products to sell"""
+    """Active categories that have products to sell (pack sizes of one item count once)"""
     counts = sellable_products(db, tenant.id).with_entities(
-        Product.category_id, func.count(Product.id).label("product_count")
+        Product.category_id, func.count(func.distinct(PACK_GROUP)).label("product_count")
     ).group_by(Product.category_id).subquery()
     rows = db.query(Category, counts.c.product_count).join(
         counts, counts.c.category_id == Category.id
@@ -176,8 +218,10 @@ async def list_products(
     tenant: Tenant = Depends(get_shop_tenant)
 ):
     """Products to browse or search; in-stock products come first. on_offer = in a running
-    offer or with a loose markdown today; ids = only these products (e.g. recently viewed)."""
-    query = sellable_products(db, tenant.id).options(joinedload(Product.category))
+    offer or with a loose markdown today; ids = only these products (e.g. recently viewed).
+    Without ids, pack sizes of one item are listed once: the matching one in stock and cheapest,
+    with all sizes in pack_sizes."""
+    query = sellable_products(db, tenant.id)
     if category_id:
         query = query.filter(Product.category_id == category_id)
     if ids:
@@ -195,9 +239,14 @@ async def list_products(
     for word in words:
         pattern = f"%{word}%"
         query = query.filter(or_(Product.product_name.ilike(pattern), Product.brand.ilike(pattern)))
+    if not ids:
+        ranked = query.with_entities(Product.id.label("id"), func.row_number().over(
+            partition_by=PACK_GROUP, order_by=[IN_STOCK.desc(), LIST_PRICE.asc(), Product.id]
+        ).label("rank")).subquery()
+        query = query.filter(Product.id.in_(db.query(ranked.c.id).filter(ranked.c.rank == 1)))
 
     total = query.count()
-    order = [(func.coalesce(Product.stock_quantity, 0) > 0).desc()]
+    order = [IN_STOCK.desc()]
     if words:
         order.append(Product.product_name.ilike(f"{words[0]}%").desc())
     if sort == "price_asc":
@@ -205,10 +254,11 @@ async def list_products(
     elif sort == "price_desc":
         order.append(LIST_PRICE.desc())
     order += [Product.product_name, Product.id]
-    products = query.order_by(*order).offset((page - 1) * page_size).limit(page_size).all()
+    products = query.options(joinedload(Product.category)).order_by(*order) \
+        .offset((page - 1) * page_size).limit(page_size).all()
     _cache(response)
     return ShopProductListResponse(
-        items=[ShopProduct(**p) for p in price_products(db, tenant.id, products)],
+        items=[ShopProduct(**p) for p in price_with_pack_sizes(db, tenant.id, products)],
         total=total, page=page, page_size=page_size
     )
 
@@ -217,10 +267,10 @@ async def list_products(
             dependencies=CATALOGUE_LIMIT)
 async def get_product(product_id: int, response: Response, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant)):
-    """One product with its description"""
+    """One product with its description and its other pack sizes"""
     product = sellable_products(db, tenant.id).options(joinedload(Product.category)).filter(
         Product.id == product_id).first()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
     _cache(response)
-    return ShopProductDetail(**price_products(db, tenant.id, [product])[0])
+    return ShopProductDetail(**price_with_pack_sizes(db, tenant.id, [product])[0])
