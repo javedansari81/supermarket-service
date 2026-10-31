@@ -8,6 +8,9 @@ is rolled back afterwards, so tests never see each other's data.
 import os
 
 os.environ["DEBUG"] = "false"
+os.environ["RATE_LIMIT_ENABLED"] = "true"
+os.environ["VAPID_PUBLIC_KEY"] = ""
+os.environ["VAPID_PRIVATE_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
