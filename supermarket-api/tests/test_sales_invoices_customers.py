@@ -639,26 +639,32 @@ def test_offer_crud_and_best_offer_applies(client, product, admin_headers, cashi
     assert item["discount_source"] == "offer" and item["offer_name"] == "Diwali Sale"
     assert float(sale["total_amount"]) == 99
 
-    # Rs 20 off per unit saves more than 10%; below the purchase cost of 40 only warns
-    flash = client.post(OFFERS, json=offer_body(product, "Flash", discount_type="amount",
-                                                discount_value=20), headers=admin_headers).json()
-    assert flash["items"][0]["below_cost"]
+    # Active offers can't overlap; an inactive one can, but can't be turned on while overlapping
+    flash_body = offer_body(product, "Flash", 5, 7, discount_type="amount", discount_value=20)
+    res = client.post(OFFERS, json=flash_body, headers=admin_headers)
+    assert res.status_code == 400 and "Diwali Sale" in res.json()["detail"]
+    flash = client.post(OFFERS, json={**flash_body, "is_active": False}, headers=admin_headers).json()
+    assert flash["status"] == "inactive"
+    assert client.put(f"{OFFERS}/{flash['id']}", json=flash_body, headers=admin_headers).status_code == 400
+
+    # Rs 20 off per unit; below the purchase cost of 40 only warns
+    diwali_off = {**offer_body(product), "is_active": False}
+    assert client.put(f"{OFFERS}/{diwali['id']}", json=diwali_off, headers=admin_headers).status_code == 200
+    flash_now = offer_body(product, "Flash", discount_type="amount", discount_value=20)
+    flash = client.put(f"{OFFERS}/{flash['id']}", json=flash_now, headers=admin_headers).json()
+    assert flash["status"] == "running" and flash["items"][0]["below_cost"]
     sale = sell_line(client, cashier_headers, product_id=product.id, quantity=2).json()
     assert sale["items"][0]["offer_id"] == flash["id"] and float(sale["total_amount"]) == 70
     assert float(sale["items"][0]["discount_percent"]) == 36.36
 
-    # Inactive and upcoming offers don't apply; deleting keeps the name on old bills
-    body = {**offer_body(product, "Flash", discount_type="amount", discount_value=20), "is_active": False}
-    assert client.put(f"{OFFERS}/{flash['id']}", json=body, headers=admin_headers).json()["status"] == "inactive"
-    upcoming = client.post(OFFERS, json=offer_body(product, "Xmas", 3, 9, discount_value=50),
+    # Upcoming offers don't apply; deleting keeps the name on old bills
+    upcoming = client.post(OFFERS, json=offer_body(product, "Xmas", 6, 9, discount_value=50),
                            headers=admin_headers).json()
     assert upcoming["status"] == "upcoming"
     names = [o["name"] for o in client.get(OFFERS, params={"status": "running"}, headers=admin_headers).json()["items"]]
-    assert names == ["Diwali Sale"]
-    item = sell_line(client, cashier_headers, product_id=product.id, quantity=2).json()["items"][0]
-    assert item["offer_id"] == diwali["id"]
-    assert client.delete(f"{OFFERS}/{diwali['id']}", headers=admin_headers).status_code == 204
-    assert client.get(f"{OFFERS}/{diwali['id']}", headers=admin_headers).status_code == 404
+    assert names == ["Flash"]
+    assert client.delete(f"{OFFERS}/{flash['id']}", headers=admin_headers).status_code == 204
+    assert client.get(f"{OFFERS}/{flash['id']}", headers=admin_headers).status_code == 404
     old = client.get(f"{SALES}/{sale['id']}", headers=admin_headers).json()
     assert old["items"][0]["offer_name"] == "Flash"
     item = sell_line(client, cashier_headers, product_id=product.id, quantity=2).json()["items"][0]
@@ -674,6 +680,21 @@ def test_offer_validation(client, product, admin_headers):
     body = offer_body(product)
     body["items"][0]["product_id"] = 99999
     assert client.post(OFFERS, json=body, headers=admin_headers).status_code == 404
+
+
+def test_offer_needs_products_in_stock(client, db, product, admin_headers):
+    listed = lambda: [p["id"] for p in client.get("/api/v1/products", params={"in_stock": True},
+                                                  headers=admin_headers).json()["items"]]
+    assert listed() == [product.id]
+    offer = client.post(OFFERS, json=offer_body(product), headers=admin_headers).json()
+    product.stock_quantity = 0
+    db.commit()
+    assert listed() == []
+    res = client.post(OFFERS, json=offer_body(product, start=6, end=8), headers=admin_headers)
+    assert res.status_code == 400 and product.product_name in res.json()["detail"]
+    # Sold out after it was added: the offer can still be edited
+    body = offer_body(product, discount_value=15)
+    assert client.put(f"{OFFERS}/{offer['id']}", json=body, headers=admin_headers).status_code == 200
 
 
 def test_higher_of_offer_and_clearance_wins(client, product, admin_headers, cashier_headers):

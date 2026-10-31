@@ -17,10 +17,10 @@ from app.core.database import get_db
 from app.core.audit import record_audit, snapshot
 from app.core.batches import (
     generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch,
-    in_stock_batches, scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
+    scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
     display_product_name, base_product_name, capitalize_words, next_plu_code, STORE_BRAND
 )
-from app.core.clearance import ClearanceResolver
+from app.core.clearance import ClearanceResolver, today_ist
 from app.core.offers import OfferResolver
 from app.models.audit_log import AuditLog
 from app.models.product import Product
@@ -274,12 +274,14 @@ async def list_products(
     category_id: Optional[int] = None,
     search: Optional[str] = None,
     low_stock: Optional[bool] = None,
+    in_stock: Optional[bool] = None,
     location_id: Optional[int] = None,
     unassigned: Optional[bool] = None,
     is_loose: Optional[bool] = None,
     product_type: Optional[str] = Query(None, pattern="^(manufacturer|own_packed|loose)$"),
     missing_barcode: Optional[bool] = None,
     expiry: Optional[str] = Query(None, pattern="^(expired|7|30)$"),
+    near_expiry_days: Optional[int] = Query(None, ge=0, le=730),
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -319,6 +321,17 @@ async def list_products(
             query = query.filter(Product.expiry_date >= today,
                                  Product.expiry_date <= today + timedelta(days=int(expiry)))
 
+    if near_expiry_days is not None:
+        # Packed: an in-stock batch expires within the days; loose (no batches): the product
+        today = today_ist()
+        last_day = today + timedelta(days=near_expiry_days)
+        query = query.filter(or_(
+            Product.batches.any((ProductBatch.quantity_left > 0) & (ProductBatch.expiry_date >= today)
+                                & (ProductBatch.expiry_date <= last_day)),
+            Product.is_loose.is_(True) & (Product.stock_quantity > 0)
+            & (Product.expiry_date >= today) & (Product.expiry_date <= last_day),
+        ))
+
     words = search.split() if search else []
     for word in words:
         pattern = f"%{word}%"
@@ -330,6 +343,9 @@ async def list_products(
 
     if low_stock:
         query = query.filter(Product.stock_quantity <= Product.reorder_level)
+
+    if in_stock:
+        query = query.filter(Product.stock_quantity > 0)
 
     total = query.count()
     order = [Product.product_name]
@@ -775,7 +791,10 @@ async def update_product(
     old_value = product_snapshot(product)
     was_loose = bool(product.is_loose)
     previous_type = product.product_type
-    previous_expiry = product.expiry_date
+    if "expiry_date" in update_data and update_data["expiry_date"] != product.expiry_date \
+            and uses_batches(product):
+        # The product's expiry is for stock received next; stock on hand keeps its batch expiry
+        sync_batches(db, product)
     for field, value in update_data.items():
         setattr(product, field, value)
     apply_gst_item(product, gst_item, fill_hsn=gst_item_changed and "hsn_code" not in update_data,
@@ -788,15 +807,6 @@ async def update_product(
     db.flush()
     if was_loose != product.is_loose:
         sync_batches(db, product)
-    if product.expiry_date != previous_expiry and uses_batches(product):
-        # Opening / adjustment stock follows the product's expiry; purchase batches keep their own
-        for batch in in_stock_batches(db, product):
-            if batch.purchase_id is None and batch.expiry_date != product.expiry_date:
-                batch_old = snapshot(batch)
-                batch.expiry_date = product.expiry_date
-                db.flush()
-                record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
-                             "product_batch", batch.id, old_value=batch_old, new_value=snapshot(batch))
     record_audit(db, request, context.tenant_id, context.user_id, AuditLog.ACTION_UPDATE,
                  "product", product.id, old_value=old_value, new_value=product_snapshot(product))
     db.commit()

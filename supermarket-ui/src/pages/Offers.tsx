@@ -4,7 +4,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Alert, Box, Button, Card, TextField, IconButton, Switch, FormControlLabel,
-  Dialog, DialogTitle, DialogContent, DialogActions, Chip, Autocomplete, Table, TableHead,
+  Dialog, DialogTitle, DialogContent, DialogActions, Chip, Autocomplete, Checkbox, Table, TableHead,
   TableBody, TableRow, TableCell, TableContainer, ToggleButton, ToggleButtonGroup, Tooltip,
 } from '@mui/material';
 import { Edit, Delete, Add, WarningAmber } from '@mui/icons-material';
@@ -49,6 +49,8 @@ const STATUS_COLOR: Record<OfferStatus, 'success' | 'info' | 'default' | 'warnin
 const localDate = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+const NEAR_EXPIRY_DAYS = 30;
+
 const showDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN');
 
 const offerPrice = (item: OfferItem): number | null => {
@@ -71,6 +73,8 @@ const Offers: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<OfferStatus | ''>('');
   const [editing, setEditing] = useState<Editing | null>(null);
   const [productOptions, setProductOptions] = useState<Product[]>([]);
+  const [nearExpiryOnly, setNearExpiryOnly] = useState(false);
+  const [productTerm, setProductTerm] = useState('');
   const [saving, setSaving] = useState(false);
 
   const fetchOffers = useCallback(async () => {
@@ -87,16 +91,22 @@ const Offers: React.FC = () => {
   const searchProducts = useCallback(async (term: string) => {
     try {
       const res = await api.get(API_ENDPOINTS.PRODUCTS, {
-        params: { search: term.trim() || undefined, status: 'active', page_size: 20 },
+        params: {
+          search: term.trim() || undefined, status: 'active', in_stock: true,
+          page_size: nearExpiryOnly ? 100 : 20,
+          near_expiry_days: nearExpiryOnly ? NEAR_EXPIRY_DAYS : undefined,
+        },
       });
       setProductOptions(res.data.items);
     } catch (err) {
       setProductOptions([]);
     }
-  }, []);
+  }, [nearExpiryOnly]);
 
   const dialogOpen = !!editing;
-  useEffect(() => { if (dialogOpen) searchProducts(''); }, [dialogOpen, searchProducts]);
+  useEffect(() => { if (dialogOpen) searchProducts(productTerm); }, [dialogOpen, productTerm, searchProducts]);
+
+  const closeDialog = () => { setEditing(null); setNearExpiryOnly(false); setProductTerm(''); };
 
   const openNew = () => setEditing({ name: '', start_date: localDate(), end_date: localDate(), is_active: true, items: [] });
 
@@ -113,10 +123,10 @@ const Offers: React.FC = () => {
     }
   };
 
-  const addProduct = (p: Product | null) => {
-    if (!p || !editing) return;
+  const toggleProduct = (p: Product) => {
+    if (!editing) return;
     if (editing.items.some(i => i.product_id === p.id)) {
-      toast.error(`${p.product_name} is already in this offer`);
+      setEditing({ ...editing, items: editing.items.filter(i => i.product_id !== p.id) });
       return;
     }
     setEditing({
@@ -147,7 +157,7 @@ const Offers: React.FC = () => {
       if (editing.id) await api.put(`${API_ENDPOINTS.OFFERS}/${editing.id}`, body);
       else await api.post(API_ENDPOINTS.OFFERS, body);
       toast.success('Offer saved');
-      setEditing(null);
+      closeDialog();
       fetchOffers();
     } catch (err: any) {
       toast.error(errorText(err, 'Failed to save offer'));
@@ -223,7 +233,7 @@ const Offers: React.FC = () => {
         </TableContainer>
       </Card>
 
-      <Dialog open={!!editing} onClose={() => setEditing(null)} maxWidth="md" fullWidth>
+      <Dialog open={!!editing} onClose={closeDialog} maxWidth="md" fullWidth>
         <DialogTitle>{editing?.id ? `Edit offer: ${editing.name}` : 'New offer'}</DialogTitle>
         <DialogContent>
           {editing && (
@@ -239,11 +249,30 @@ const Offers: React.FC = () => {
                 <FormControlLabel label="Active" control={
                   <Switch checked={editing.is_active} onChange={(e) => setEditing({ ...editing, is_active: e.target.checked })} />} />
               </Box>
-              <Autocomplete options={productOptions} filterOptions={(o) => o} value={null} blurOnSelect
-                getOptionLabel={(p) => p.product_name} isOptionEqualToValue={(o, v) => o.id === v.id}
-                onInputChange={(_, term, reason) => reason === 'input' && searchProducts(term)}
-                onChange={(_, p) => addProduct(p)} noOptionsText="No products found"
-                renderInput={(params) => <TextField {...params} size="small" label="Add product" placeholder="Type to search" />} />
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                <Autocomplete multiple disableCloseOnSelect disableClearable sx={{ flex: 1 }}
+                  options={productOptions} filterOptions={(o) => o}
+                  value={productOptions.filter(p => editing.items.some(i => i.product_id === p.id))}
+                  getOptionLabel={(p) => p.product_name} isOptionEqualToValue={(o, v) => o.id === v.id}
+                  inputValue={productTerm}
+                  onInputChange={(_, term, reason) => reason === 'input' && setProductTerm(term)}
+                  onChange={(e, _, reason, details) => {
+                    if (!details || (reason !== 'selectOption' && reason !== 'removeOption')) return;
+                    if (e.type === 'keydown' && (e as React.KeyboardEvent).key !== 'Enter') return;
+                    toggleProduct(details.option);
+                  }}
+                  renderValue={() => null}
+                  renderOption={({ key, ...props }, p, { selected }) => (
+                    <li key={key} {...props}>
+                      <Checkbox size="small" checked={selected} sx={{ mr: 1, p: 0.5 }} />
+                      {p.product_name}
+                    </li>
+                  )}
+                  noOptionsText={nearExpiryOnly ? `No products expiring within ${NEAR_EXPIRY_DAYS} days` : 'No products found'}
+                  renderInput={(params) => <TextField {...params} size="small" label="Add products" placeholder="Type to search" />} />
+                <FormControlLabel label="Near Expiry Products" sx={{ whiteSpace: 'nowrap', mr: 0 }} control={
+                  <Checkbox checked={nearExpiryOnly} onChange={(e) => setNearExpiryOnly(e.target.checked)} />} />
+              </Box>
               <Table size="small" sx={{ mt: 1 }}>
                 <TableHead>
                   <TableRow>
@@ -300,7 +329,7 @@ const Offers: React.FC = () => {
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setEditing(null)}>Cancel</Button>
+          <Button onClick={closeDialog}>Cancel</Button>
           <Button variant="contained" onClick={saveOffer} disabled={saving || !editing?.items.length}>Save</Button>
         </DialogActions>
       </Dialog>

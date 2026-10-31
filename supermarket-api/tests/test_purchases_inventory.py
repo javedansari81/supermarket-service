@@ -411,11 +411,32 @@ def test_update_batch(client, product, admin_headers, cashier_headers, admin_b_h
     assert client.put(other, json={"batch_no": "X"}, headers=admin_headers).status_code == 400
 
 
-def test_product_expiry_updates_opening_batch_only(client, product, admin_headers):
+def test_product_expiry_is_for_next_stock_only(client, product, admin_headers):
     buy(client, product, admin_headers, mrp=65, selling_price=62)
     res = client.put(f"/api/v1/products/{product.id}", json={"expiry_date": "2026-11-30"},
                      headers=admin_headers)
     assert res.status_code == 200
-    expiry = {float(b["mrp"]): b["expiry_date"] for b in batches_of(client, product, admin_headers)}
-    assert expiry[60] == "2026-11-30"
-    assert expiry[65] is None
+    assert {b["expiry_date"] for b in batches_of(client, product, admin_headers)} == {None}
+    body = {"product_id": product.id, "adjustment_type": "adjustment_in", "quantity": 5}
+    assert client.post(f"{INV}/adjust", json=body, headers=admin_headers).status_code == 200
+    expiry = sorted((b["expiry_date"] or "", float(b["quantity_left"]))
+                    for b in batches_of(client, product, admin_headers))
+    assert expiry == [("", 10), ("", 100), ("2026-11-30", 5)]
+
+
+def test_near_expiry_product_filter_uses_batches(client, product, admin_headers):
+    from datetime import timedelta
+    from app.core.clearance import today_ist
+    in_days = lambda d: (today_ist() + timedelta(days=d)).isoformat()
+    near = lambda: [p["id"] for p in client.get("/api/v1/products", params={"near_expiry_days": 30},
+                                                headers=admin_headers).json()["items"]]
+    batches_of(client, product, admin_headers)
+    # Product expiry is for the next batch; stock on hand has no expiry
+    client.put(f"/api/v1/products/{product.id}", json={"expiry_date": in_days(5)}, headers=admin_headers)
+    assert near() == []
+    buy(client, product, admin_headers, expiry_date=in_days(90))
+    assert near() == []
+    buy(client, product, admin_headers, expiry_date=in_days(-1))
+    assert near() == []
+    buy(client, product, admin_headers, expiry_date=in_days(10))
+    assert near() == [product.id]

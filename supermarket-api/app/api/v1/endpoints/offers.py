@@ -64,13 +64,42 @@ def get_offer(db: Session, tenant_id: int, offer_id: int) -> Offer:
     return offer
 
 
+def check_no_overlap(db: Session, tenant_id: int, offer: Offer, data: OfferIn) -> None:
+    """Only one active offer may run on any day"""
+    if not data.is_active:
+        return
+    query = db.query(Offer).filter(
+        Offer.tenant_id == tenant_id,
+        Offer.is_active.is_(True),
+        Offer.start_date <= data.end_date,
+        Offer.end_date >= data.start_date,
+    )
+    if offer.id:
+        query = query.filter(Offer.id != offer.id)
+    other = query.order_by(Offer.start_date).first()
+    if other:
+        raise HTTPException(
+            status_code=400,
+            detail=f'"{other.name}" already runs from {other.start_date:%d-%m-%Y} to '
+                   f'{other.end_date:%d-%m-%Y}. Change the dates or turn that offer off first.'
+        )
+
+
 def apply_data(db: Session, context: TenantContext, offer: Offer, data: OfferIn) -> None:
+    check_no_overlap(db, context.tenant_id, offer, data)
     product_ids = {i.product_id for i in data.items}
-    found = {pid for (pid,) in db.query(Product.id).filter(
+    products = db.query(Product).filter(
         Product.tenant_id == context.tenant_id, Product.id.in_(product_ids)
-    )}
-    if found != product_ids:
+    ).all()
+    if {p.id for p in products} != product_ids:
         raise HTTPException(status_code=404, detail="Product not found")
+    # Products already in the offer may sell out; new ones must be in stock
+    already_in = {i.product_id for i in offer.items}
+    out_of_stock = sorted(p.product_name for p in products
+                          if p.id not in already_in and (p.stock_quantity or 0) <= 0)
+    if out_of_stock:
+        raise HTTPException(status_code=400,
+                            detail=f"Out of stock, can't be added: {', '.join(out_of_stock)}")
     offer.name = data.name
     offer.start_date = data.start_date
     offer.end_date = data.end_date

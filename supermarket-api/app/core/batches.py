@@ -165,7 +165,8 @@ def sync_batches(db: Session, product: Product) -> List[ProductBatch]:
     diff = stock - sum((b.quantity_left for b in batches), Decimal("0"))
     if diff > 0:
         opening = next((b for b in batches if b.batch_no == ProductBatch.OPENING
-                        and b.mrp == product.mrp and b.selling_price == product.selling_price), None)
+                        and b.mrp == product.mrp and b.selling_price == product.selling_price
+                        and b.expiry_date == product.expiry_date), None)
         if not opening:
             opening = create_batch(db, product, mrp=product.mrp, selling_price=product.selling_price,
                                    purchase_price=product.purchase_price,
