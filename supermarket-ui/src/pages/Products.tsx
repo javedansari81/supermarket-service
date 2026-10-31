@@ -7,7 +7,7 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   FormControl, FormHelperText, InputLabel, Select, MenuItem, InputAdornment,
   Chip, ToggleButton, Divider, Autocomplete, Typography, Collapse, createFilterOptions,
-  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell,
+  Alert, LinearProgress, Table, TableHead, TableBody, TableRow, TableCell, FormControlLabel, Switch,
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
@@ -93,7 +93,7 @@ const formatLocations = (locations?: ProductLocation[]) =>
 const emptyForm = {
   item_name: '', product_name: '', name_edited: false, brand: '', barcode: '', hsn_code: '', gst_item_id: '', category_id: '', mrp: '', selling_price: '',
   tax_percent: '', reorder_level: '10', unit_type: PACKED_UNIT, product_type: '' as ProductType | '',
-  net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active'
+  net_quantity: '', net_unit: '' as NetUnit | '', expiry_date: '', status: 'active', sell_online: true
 };
 
 const formatPackSize = (p: Product) =>
@@ -228,7 +228,7 @@ const Products: React.FC = () => {
         unit_type: typeOf(product) === 'loose' ? product.unit_type : PACKED_UNIT, product_type: typeOf(product),
         net_quantity: product.net_quantity != null ? Number(product.net_quantity).toString() : '',
         net_unit: product.net_unit || '',
-        expiry_date: product.expiry_date || '', status: product.status
+        expiry_date: product.expiry_date || '', status: product.status, sell_online: product.sell_online ?? true
       });
       setFormLocations((product.locations || []).map((l) => ({
         location_id: String(l.location_id), is_primary: l.is_primary
@@ -393,7 +393,7 @@ const Products: React.FC = () => {
         tax_percent: parseFloat(formData.tax_percent), reorder_level: parseFloat(formData.reorder_level || '0'),
         unit_type: formData.unit_type, product_type: productType, is_loose: isLoose,
         net_quantity: netQuantity, net_unit: netUnit,
-        expiry_date: formData.expiry_date || null, status: formData.status,
+        expiry_date: formData.expiry_date || null, status: formData.status, sell_online: formData.sell_online,
         locations: formLocations.map((l) => ({ location_id: parseInt(l.location_id), is_primary: l.is_primary }))
       };
 
@@ -613,10 +613,7 @@ const Products: React.FC = () => {
             <Grid size={{ xs: 12, md: isManufacturer ? 3 : 6 }}>
               <SearchableSelect label="Category" value={formData.category_id}
                 onChange={handleCategoryChange}
-                options={[
-                  { value: '', label: 'None' },
-                  ...categories.map((c) => ({ value: c.id.toString(), label: c.category_name })),
-                ]} />
+                options={categories.map((c) => ({ value: c.id.toString(), label: c.category_name }))} />
             </Grid>
             {isLoose ? (
               <Grid size={12}>
@@ -754,6 +751,16 @@ const Products: React.FC = () => {
                   </Select></FormControl>
               </Grid>
             )}
+            <Grid size={12}>
+              <FormControlLabel label="Sell online"
+                control={<Switch checked={formData.sell_online}
+                  onChange={(e) => setFormData({ ...formData, sell_online: e.target.checked })} />} />
+              <FormHelperText sx={{ mt: 0 }}>
+                {formData.sell_online
+                  ? 'Shown in the online shop'
+                  : `Sold in store only${isLoose ? ', e.g. when its MF packs are sold online instead' : ''}`}
+              </FormHelperText>
+            </Grid>
             <Grid size={12}><Divider>Store Locations</Divider></Grid>
             {formLocations.map((loc, index) => (
               <React.Fragment key={index}>

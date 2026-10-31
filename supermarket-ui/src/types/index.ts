@@ -149,6 +149,8 @@ export interface Product {
   reorder_level?: number;
   unit_type: string;
   status: string;
+  // false = sold in store only, hidden from the online shop
+  sell_online?: boolean;
   locations?: ProductLocation[];
   // 800 px and 320 px pictures: absolute, or a path under the API base address (see imageSrc)
   image_url?: string | null;

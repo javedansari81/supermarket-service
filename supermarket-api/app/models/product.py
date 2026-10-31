@@ -45,6 +45,8 @@ class Product(Base, TimestampMixin, StatusMixin):
     markdown_percent = Column(Numeric(5, 2))
     markdown_until = Column(DateTime)
     description = Column(Text)
+    # False = sold in store only, hidden from the online shop
+    sell_online = Column(Boolean, nullable=False, default=True, server_default='true')
     # Picture in object storage (see app.core.product_images); None = no picture
     image_key = Column(String(300))
     image_updated_at = Column(DateTime)

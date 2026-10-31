@@ -730,6 +730,8 @@ async def update_product(
     update_data = product_data.model_dump(exclude_unset=True, exclude={"locations"})
     if "barcode" in update_data and not (update_data["barcode"] or "").strip():
         update_data.pop("barcode")
+    if update_data.get("sell_online", False) is None:
+        update_data.pop("sell_online")
     update_data.update(resolve_names(update_data))
 
     mrp = update_data.get("mrp", product.mrp)

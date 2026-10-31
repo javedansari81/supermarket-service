@@ -50,9 +50,9 @@ def _cache(response: Response) -> None:
 
 
 def sellable_products(db: Session, tenant_id: int):
-    """Active products with a price"""
+    """Active products with a price, switched on for selling online"""
     return db.query(Product).filter(Product.tenant_id == tenant_id, Product.status == "active",
-                                    LIST_PRICE > 0)
+                                    Product.sell_online.is_(True), LIST_PRICE > 0)
 
 
 def price_products(db: Session, tenant_id: int, products: List[Product]) -> List[dict]:

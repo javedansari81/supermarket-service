@@ -36,6 +36,8 @@ class ProductBase(BaseModel):
     reorder_level: Optional[Decimal] = Field(Decimal("0"), ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None
+    # False = sold in store only, hidden from the online shop
+    sell_online: bool = True
 
 
 class ProductCreate(ProductBase):
@@ -77,6 +79,7 @@ class ProductUpdate(BaseModel):
     reorder_level: Optional[Decimal] = Field(None, ge=0)
     expiry_date: Optional[date] = None
     description: Optional[str] = None
+    sell_online: Optional[bool] = None
     status: Optional[str] = None
     locations: Optional[List[ProductLocationIn]] = None
 

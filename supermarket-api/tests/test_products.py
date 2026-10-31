@@ -861,6 +861,28 @@ def test_shop_lists_pack_sizes_of_an_item_once(client, db, online, product):
     assert detail["id"] == big.id and len(detail["pack_sizes"]) == 3
 
 
+def test_products_switched_off_for_online_are_store_only(client, db, online, product, admin_headers):
+    tenant = online["tenant_a"]
+    loose = add_product(db, tenant, "P0002", "Chana Dal Loose", product_type="loose", is_loose=True,
+                        unit_type="kg", category_id=product.category_id)
+    res = client.put(f"{URL}/{loose.id}", json={"sell_online": False}, headers=admin_headers)
+    assert res.status_code == 200 and res.json()["sell_online"] is False
+    # Other edits (and null) leave the switch as it is
+    client.put(f"{URL}/{loose.id}", json={"selling_price": 90, "sell_online": None}, headers=admin_headers)
+    db.refresh(loose)
+    assert loose.sell_online is False
+
+    assert [i["id"] for i in client.get(f"{SHOP}/storea/products").json()["items"]] == [product.id]
+    assert client.get(f"{SHOP}/storea/products", params={"ids": str(loose.id)}).json()["items"] == []
+    assert client.get(f"{SHOP}/storea/products/{loose.id}").status_code == 404
+    assert client.get(f"{SHOP}/storea/categories").json()["items"][0]["product_count"] == 1
+    quote = client.post("/api/v1/shop/stores/storea/checkout/quote",
+                        json={"items": [{"product_id": loose.id, "quantity": 1}]}).json()
+    assert quote["items"] == [] and quote["problems"][0]["reason"] == "unavailable"
+    # Still listed for the counter
+    assert client.get(URL, params={"search": "chana"}, headers=admin_headers).json()["total"] == 1
+
+
 # ---------- Online orders (home delivery) ----------
 
 ORDERS = "/api/v1/shop"
