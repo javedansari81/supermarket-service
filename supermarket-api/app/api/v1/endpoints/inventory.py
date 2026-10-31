@@ -27,6 +27,7 @@ async def get_stock_summary(
     category_id: Optional[int] = None,
     low_stock_only: bool = False,
     out_of_stock_only: bool = False,
+    stock_status: Optional[str] = Query(None, pattern="^(out|low|in)$"),
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -47,7 +48,17 @@ async def get_stock_summary(
     
     if out_of_stock_only:
         query = query.filter(Product.stock_quantity <= 0)
-    
+
+    if stock_status:
+        stock = func.coalesce(Product.stock_quantity, 0)
+        reorder = func.coalesce(Product.reorder_level, 0)
+        if stock_status == "out":
+            query = query.filter(stock <= 0)
+        elif stock_status == "low":
+            query = query.filter(stock > 0, stock <= reorder)
+        else:
+            query = query.filter(stock > 0, stock > reorder)
+
     if search:
         query = query.filter(
             (Product.product_name.ilike(f"%{search}%")) |

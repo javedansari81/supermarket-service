@@ -32,6 +32,7 @@ const Inventory: React.FC = () => {
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(10);
   const [search, setSearch] = useState('');
+  const [stockFilter, setStockFilter] = useState('');
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState<StockItem | null>(null);
   const [adjustType, setAdjustType] = useState('adjustment_in');
@@ -46,13 +47,14 @@ const Inventory: React.FC = () => {
     setLoading(true);
     try {
       const response = await api.get<PaginatedResponse<StockItem>>(API_ENDPOINTS.INVENTORY_STOCK, {
-        params: { page: page + 1, page_size: pageSize, search }
+        params: { page: page + 1, page_size: pageSize, search,
+          stock_status: stockFilter || undefined }
       });
       setStockItems(response.data.items);
       setTotal(response.data.total);
     } catch (error) { toast.error('Failed to fetch stock'); }
     finally { setLoading(false); }
-  }, [page, pageSize, search]);
+  }, [page, pageSize, search, stockFilter]);
 
   const fetchMovements = useCallback(async () => {
     setLoading(true);
@@ -196,6 +198,16 @@ const Inventory: React.FC = () => {
               <TextField placeholder="Search products..." value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(0); }}
                 InputProps={{ startAdornment: <InputAdornment position="start"><Search /></InputAdornment> }} sx={{ flex: 1 }} />
+              <FormControl size="small" sx={{ minWidth: 180 }}>
+                <InputLabel shrink>Stock</InputLabel>
+                <Select label="Stock" value={stockFilter} displayEmpty notched
+                  onChange={(e) => { setStockFilter(e.target.value); setPage(0); }}>
+                  <MenuItem value="">All</MenuItem>
+                  <MenuItem value="in">In stock</MenuItem>
+                  <MenuItem value="low">Low stock</MenuItem>
+                  <MenuItem value="out">Out of stock</MenuItem>
+                </Select>
+              </FormControl>
             </ListToolbar>
             <DataGrid rows={stockItems} columns={stockColumns} loading={loading} rowCount={total}
               initialState={{ columns: { columnVisibilityModel: { barcode: false } } }}

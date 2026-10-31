@@ -273,6 +273,20 @@ def test_stock_listing(client, product, cashier_headers, admin_b_headers):
     assert client.get(f"{INV}/stock", headers=admin_b_headers).status_code == 200
 
 
+def test_stock_listing_by_status(client, db, product, admin_headers):
+    def listed(status):
+        res = client.get(f"{INV}/stock", params={"stock_status": status}, headers=admin_headers)
+        return res.json()["total"]
+
+    for stock, expected in [(100, "in"), (10, "low"), (0, "out")]:
+        product.stock_quantity = stock
+        db.commit()
+        assert {s: listed(s) for s in ("in", "low", "out")} == \
+            {s: int(s == expected) for s in ("in", "low", "out")}
+    res = client.get(f"{INV}/stock", params={"stock_status": "other"}, headers=admin_headers)
+    assert res.status_code == 422
+
+
 def test_adjust_stock_in_and_out(client, product, admin_headers):
     body = {"product_id": product.id, "adjustment_type": "adjustment_in", "quantity": 5}
     res = client.post(f"{INV}/adjust", json=body, headers=admin_headers)
