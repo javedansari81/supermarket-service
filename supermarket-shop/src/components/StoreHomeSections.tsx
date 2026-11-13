@@ -16,7 +16,7 @@ interface Props {
 }
 
 const rowIcon = (icon: ReactNode, color: string, background: string) => (
-  <Box sx={{ width: 36, height: 36, borderRadius: 2.5, display: 'grid', placeItems: 'center', color, bgcolor: background }}>
+  <Box sx={{ width: 36, height: 36, borderRadius: 1, display: 'grid', placeItems: 'center', color, bgcolor: background }}>
     {icon}
   </Box>
 );
@@ -49,7 +49,7 @@ export default function StoreHomeSections({ store, onSeeAllOffers }: Props) {
 
   return (
     <>
-      <Box sx={{ borderRadius: { xs: 0, sm: 4 }, mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 2.5 }, py: { xs: 2, sm: 2.5 },
+      <Box sx={{ borderRadius: { xs: 0, sm: 1.5 }, mx: { xs: -2, sm: 0 }, px: { xs: 2, sm: 2.5 }, py: { xs: 2, sm: 2.5 },
         background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
         display: offerItems.length ? 'block' : 'none' }}>
         <ProductRow store={store} products={offerItems}

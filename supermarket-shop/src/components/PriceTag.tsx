@@ -10,7 +10,8 @@ export default function PriceTag({ product, large = false }: { product: ShopProd
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.75, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontWeight: 800, fontSize: large ? 32 : 17, letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+        <Typography sx={{ fontWeight: 800, fontSize: large ? 32 : 17, letterSpacing: '-0.01em', lineHeight: 1.2,
+          fontVariantNumeric: 'tabular-nums' }}>
           {formatPrice(product.offer_price)}
         </Typography>
         {product.is_loose && (

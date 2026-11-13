@@ -106,7 +106,10 @@ export default function CartPage() {
                   <ProductPicture product={p} height={72} />
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }} noWrap>{p.product_name}</Typography>
+                  <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.35, display: '-webkit-box', overflow: 'hidden',
+                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    {p.product_name}
+                  </Typography>
                   <Typography variant="caption" color="text.secondary">
                     {[packSize(p), `${formatPrice(p.offer_price)}${p.is_loose ? ` / ${p.unit_type || 'kg'}` : ' each'}`]
                       .filter(Boolean).join(' · ')}

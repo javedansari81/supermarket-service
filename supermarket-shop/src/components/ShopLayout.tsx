@@ -127,7 +127,7 @@ export default function ShopLayout() {
           <Container maxWidth="sm">
             <ButtonBase component={RouterLink} to={`/${encodeURIComponent(store ?? '')}/cart`}
               sx={{ pointerEvents: 'auto', width: '100%', justifyContent: 'space-between', gap: 1.5, px: 2.5, py: 1.5,
-                borderRadius: 2, background: BRAND_GRADIENT, color: '#fff', boxShadow: '0 8px 24px rgba(21,128,61,0.35)' }}>
+                borderRadius: 1, background: BRAND_GRADIENT, color: '#fff', boxShadow: '0 8px 24px rgba(21,128,61,0.35)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
                 <ShoppingCartOutlined />
                 <Typography sx={{ fontWeight: 700 }}>{cartCount === 1 ? '1 item' : `${cartCount} items`}</Typography>

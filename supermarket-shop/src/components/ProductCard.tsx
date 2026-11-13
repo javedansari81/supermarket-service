@@ -21,7 +21,7 @@ export function ProductPicture({ product, height = 132 }: { product: ShopProduct
   const [failed, setFailed] = useState<string | null>(null);
   const showImage = Boolean(src) && failed !== src;
   return (
-    <Box sx={{ height, borderRadius: 3, display: 'grid', placeItems: 'center', position: 'relative', overflow: 'hidden',
+    <Box sx={{ height, borderRadius: '6px', display: 'grid', placeItems: 'center', position: 'relative', overflow: 'hidden',
       background: showImage ? '#fff' : `radial-gradient(circle at 30% 25%, #ffffff 0%, ${background} 70%)`, color }}>
       {showImage ? (
         <Box component="img" src={src} alt={product.product_name} loading="lazy" decoding="async"
@@ -30,15 +30,15 @@ export function ProductPicture({ product, height = 132 }: { product: ShopProduct
       ) : (
         <Icon sx={{ fontSize: height * 0.42, opacity: 0.85 }} />
       )}
-      {hasDiscount(product) && (
-        <Box sx={{ position: 'absolute', top: 8, left: 8, px: 1, py: 0.25, borderRadius: 1.5, maxWidth: '85%',
+      {hasDiscount(product) && height >= 100 && (
+        <Box sx={{ position: 'absolute', top: 8, left: 8, px: 1, py: 0.25, borderRadius: '4px', maxWidth: '85%',
           bgcolor: 'secondary.main', color: '#fff', fontSize: 11, fontWeight: 800, letterSpacing: '0.02em',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {discountLabel(product).toUpperCase()}
         </Box>
       )}
       {!product.in_stock && (
-        <Box sx={{ position: 'absolute', inset: 0, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.65)',
+        <Box sx={{ position: 'absolute', inset: 0, bgcolor: 'rgba(255,255,255,0.65)',
           display: 'grid', placeItems: 'center' }}>
           <Box sx={{ px: 1.25, py: 0.5, borderRadius: 99, bgcolor: '#334155', color: '#fff', fontSize: 12,
             fontWeight: 700 }}>

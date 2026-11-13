@@ -1,13 +1,13 @@
 /**
  * A store's home and products: category dropdown and search in the header (recent searches below),
- * today's offers, recently viewed, then all products with "Show more" paging. Sort appears once the
+ * category shortcuts, today's offers, recently viewed, then all products with "Show more" paging. Sort appears once the
  * customer searches or filters.
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useOutletContext, useParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Chip, IconButton, InputAdornment, MenuItem, Skeleton, Stack, TextField, Typography,
+  Alert, Box, Button, ButtonBase, Chip, IconButton, InputAdornment, MenuItem, Skeleton, Stack, TextField, Typography,
 } from '@mui/material';
 import { Apps, Close, History, Search, SearchOff, SwapVert } from '@mui/icons-material';
 import { api, ApiError } from '../api/client';
@@ -195,6 +195,36 @@ export default function StorePage() {
           </Box>
         )}
 
+        {!query && categories.length > 0 && (
+          <Box role="group" aria-label="Shop by category"
+            sx={{ display: 'flex', gap: { xs: 0.25, sm: 1 }, overflowX: 'auto', mx: { xs: -2, sm: -1 }, px: { xs: 1, sm: 0 },
+              scrollbarWidth: 'none', '&::-webkit-scrollbar': { display: 'none' } }}>
+            {[null, ...categories].map((c) => {
+              const selected = !onOffer && categoryId === (c?.id ?? null);
+              const { Icon, color, background } = c ? categoryStyle(c.category_name)
+                : { Icon: Apps, color: '#15803d', background: '#dcfce7' };
+              return (
+                <ButtonBase key={c?.id ?? 'all'} aria-pressed={selected}
+                  onClick={() => { setOnOffer(false); chooseCategory(c?.id ?? null); }}
+                  sx={{ flexDirection: 'column', justifyContent: 'flex-start', gap: 0.75, flexShrink: 0,
+                    width: { xs: 78, sm: 96 }, px: 0.5, py: 1, borderRadius: 1,
+                    '@media (hover: hover)': { '&:hover': { bgcolor: 'rgba(15,23,42,0.04)' } } }}>
+                  <Box sx={{ width: { xs: 52, sm: 56 }, height: { xs: 52, sm: 56 }, borderRadius: '50%', display: 'grid',
+                    placeItems: 'center', color, bgcolor: background, transition: 'box-shadow .15s',
+                    boxShadow: selected ? '0 0 0 2px #f6f8f4, 0 0 0 4px #15803d' : 'none' }}>
+                    <Icon />
+                  </Box>
+                  <Typography variant="caption" sx={{ lineHeight: 1.25, textAlign: 'center', fontWeight: selected ? 700 : 500,
+                    color: selected ? 'primary.dark' : 'text.primary', display: '-webkit-box', overflow: 'hidden',
+                    WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                    {c?.category_name ?? 'All'}
+                  </Typography>
+                </ButtonBase>
+              );
+            })}
+          </Box>
+        )}
+
         {browsing && <StoreHomeSections store={store} onSeeAllOffers={seeAllOffers} />}
 
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
@@ -228,7 +258,7 @@ export default function StorePage() {
             gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(4, 1fr)', lg: 'repeat(5, 1fr)' } }}>
             {items.map((p) => <ProductCard key={p.id} store={store} product={p} />)}
             {loading && !error && Array.from({ length: items.length ? 5 : 10 }, (_, i) => (
-              <Skeleton key={`s${i}`} variant="rounded" height={268} sx={{ borderRadius: 4 }} />
+              <Skeleton key={`s${i}`} variant="rounded" height={268} />
             ))}
           </Box>
         )}

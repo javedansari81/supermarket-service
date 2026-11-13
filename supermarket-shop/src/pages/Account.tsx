@@ -71,7 +71,7 @@ export default function Account() {
           </Box>
           <Box sx={{ display: 'flex', gap: 1.5 }}>
             {stats.map(({ Icon, value, label }) => (
-              <Box key={label} sx={{ px: 2, py: 1.25, borderRadius: 3, bgcolor: 'background.default', minWidth: 104 }}>
+              <Box key={label} sx={{ px: 2, py: 1.25, borderRadius: 1, bgcolor: 'background.default', minWidth: 104 }}>
                 <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
                   <Icon fontSize="small" color="primary" />{value}
                 </Typography>

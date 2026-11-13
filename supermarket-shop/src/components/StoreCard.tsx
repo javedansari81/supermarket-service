@@ -23,7 +23,7 @@ export default function StoreCard({ store, name, address, points, regular = fals
       '@media (hover: hover)': { '&:hover': { transform: 'translateY(-2px)', boxShadow: HOVER_SHADOW } } }}>
       <CardActionArea component={RouterLink} to={`/${store}`}
         sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-start' }}>
-        <Box sx={{ width: 56, height: 56, borderRadius: 3, flexShrink: 0, display: 'grid', placeItems: 'center',
+        <Box sx={{ width: 56, height: 56, borderRadius: 1, flexShrink: 0, display: 'grid', placeItems: 'center',
           background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, fontSize: 20 }}>
           {initials(name)}
         </Box>

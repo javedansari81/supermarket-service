@@ -10,7 +10,7 @@ export default function BrandLogo({ light = false, compact = false }: { light?: 
   return (
     <Box component={RouterLink} to="/"
       sx={{ display: 'inline-flex', alignItems: 'center', gap: 1.25, textDecoration: 'none' }}>
-      <Box sx={{ width: 36, height: 36, borderRadius: 2.5, display: 'grid', placeItems: 'center',
+      <Box sx={{ width: 36, height: 36, borderRadius: 1, display: 'grid', placeItems: 'center',
         background: light ? 'rgba(255,255,255,0.18)' : BRAND_GRADIENT, color: '#fff' }}>
         <ShoppingBasket fontSize="small" />
       </Box>

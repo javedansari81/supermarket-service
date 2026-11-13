@@ -43,7 +43,7 @@ export default function AddToCart({ store, product, large = false }: Props) {
   }
 
   return (
-    <Box sx={{ height, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: 2,
+    <Box sx={{ height, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '6px',
       bgcolor: 'primary.main', color: '#fff' }}>
       <IconButton size="small" aria-label={`Remove one ${product.product_name}`} sx={{ color: 'inherit', height }}
         onClick={() => cart.setQuantity(store, product.id, quantity - step)}>

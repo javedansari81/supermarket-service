@@ -41,8 +41,8 @@ export default function Home() {
   if (target) return <Navigate to={target} replace />;
   return (
     <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' } }}>
-      <Skeleton variant="rounded" height={56} sx={{ gridColumn: '1 / -1', borderRadius: 3 }} />
-      {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} variant="rounded" height={260} sx={{ borderRadius: 4 }} />)}
+      <Skeleton variant="rounded" height={56} sx={{ gridColumn: '1 / -1' }} />
+      {Array.from({ length: 8 }, (_, i) => <Skeleton key={i} variant="rounded" height={260} />)}
     </Box>
   );
 }

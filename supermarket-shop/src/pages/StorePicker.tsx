@@ -54,7 +54,7 @@ export default function StorePicker() {
 
   return (
     <Stack spacing={4}>
-      <Box sx={{ borderRadius: 5, p: { xs: 3, sm: 5 }, color: '#fff', background: BRAND_GRADIENT,
+      <Box sx={{ borderRadius: 1.5, p: { xs: 3, sm: 5 }, color: '#fff', background: BRAND_GRADIENT,
         position: 'relative', overflow: 'hidden' }}>
         <Box sx={{ position: 'absolute', width: 280, height: 280, borderRadius: '50%', right: -80, top: -120,
           bgcolor: 'rgba(255,255,255,0.08)' }} />
@@ -80,7 +80,7 @@ export default function StorePicker() {
 
       {!stores && !error && (
         <Box sx={STORE_GRID}>
-          {[0, 1].map((i) => <Skeleton key={i} variant="rounded" height={96} sx={{ borderRadius: 4 }} />)}
+          {[0, 1].map((i) => <Skeleton key={i} variant="rounded" height={96} />)}
         </Box>
       )}
 

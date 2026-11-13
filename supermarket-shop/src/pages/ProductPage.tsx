@@ -61,7 +61,7 @@ export default function ProductPage() {
   if (!current) {
     return (
       <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-        <Skeleton variant="rounded" height={pictureHeight} sx={{ borderRadius: 4 }} />
+        <Skeleton variant="rounded" height={pictureHeight} />
         <Stack spacing={2}><Skeleton width="60%" height={48} /><Skeleton width="40%" /><Skeleton width="30%" height={56} /></Stack>
       </Box>
     );
@@ -95,7 +95,7 @@ export default function ProductPage() {
           </Box>
           <PriceTag product={product} large />
           {hasDiscount(product) && (
-            <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', p: 1.5, borderRadius: 3,
+            <Box sx={{ display: 'flex', gap: 1.25, alignItems: 'center', p: 1.5, borderRadius: 1,
               bgcolor: 'rgba(249,115,22,0.08)', color: '#c2410c' }}>
               <LocalOffer fontSize="small" />
               <Typography variant="body2" sx={{ fontWeight: 600 }}>

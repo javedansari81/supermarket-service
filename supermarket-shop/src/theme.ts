@@ -8,7 +8,7 @@ const BORDER = '#e5e9ee';
 
 export const BRAND_GRADIENT = 'linear-gradient(135deg, #15803d 0%, #16a34a 55%, #22c55e 100%)';
 export const BAND_GRADIENT = 'linear-gradient(90deg, #15803d 0%, #16a34a 55%, #22c55e 100%)';
-export const SOFT_SHADOW = '0 6px 24px rgba(15, 23, 42, 0.12)';
+export const SOFT_SHADOW = '0 1px 2px rgba(15, 23, 42, 0.05), 0 4px 14px rgba(15, 23, 42, 0.06)';
 export const HOVER_SHADOW = '0 12px 32px rgba(15, 23, 42, 0.16)';
 
 const theme = createTheme({
@@ -43,6 +43,7 @@ const theme = createTheme({
       styleOverrides: { root: { border: `1px solid ${BORDER}`, borderRadius: 8, boxShadow: SOFT_SHADOW } },
     },
     MuiChip: { styleOverrides: { root: { fontWeight: 600 } } },
+    MuiSkeleton: { styleOverrides: { rounded: { borderRadius: 8 } } },
     MuiOutlinedInput: {
       styleOverrides: {
         root: {

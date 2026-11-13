@@ -29,7 +29,7 @@ export default function LoginBrandPanel() {
       <Stack spacing={2.5} sx={{ position: 'relative' }}>
         {BENEFITS.map(({ Icon, title, text }) => (
           <Box key={title} sx={{ display: 'flex', gap: 1.75, alignItems: 'flex-start' }}>
-            <Box sx={{ width: 40, height: 40, borderRadius: 2.5, display: 'grid', placeItems: 'center',
+            <Box sx={{ width: 40, height: 40, borderRadius: 1, display: 'grid', placeItems: 'center',
               bgcolor: 'rgba(255,255,255,0.16)', flexShrink: 0 }}>
               <Icon fontSize="small" />
             </Box>

@@ -29,7 +29,7 @@ export default function ProductRow({ title, icon, subtitle, store, products, onS
         {onSeeAll && <Button size="small" endIcon={<ChevronRight />} onClick={onSeeAll} sx={{ flexShrink: 0 }}>See all</Button>}
       </Box>
       <Box sx={{ display: 'grid', gridAutoFlow: 'column', gridAutoColumns: { xs: 148, sm: 188 }, gap: { xs: 1.25, sm: 2 },
-        overflowX: 'auto', pb: 1, mx: { xs: -2, sm: -0.5 }, px: { xs: 2, sm: 0.5 }, scrollPaddingLeft: { xs: 16, sm: 4 },
+        overflowX: 'auto', pt: 0.5, pb: 1.5, mx: { xs: -2, sm: -0.5 }, px: { xs: 2, sm: 0.5 }, scrollPaddingLeft: { xs: 16, sm: 4 },
         scrollSnapType: 'x mandatory', '& > *': { scrollSnapAlign: 'start' },
         scrollbarWidth: { xs: 'none', sm: 'thin' }, '&::-webkit-scrollbar': { display: { xs: 'none', sm: 'block' } } }}>
         {products.map((p) => <ProductCard key={p.id} store={store} product={p} />)}
