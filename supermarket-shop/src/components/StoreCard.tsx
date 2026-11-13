@@ -5,6 +5,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { Box, Card, CardActionArea, Chip, Stack, Typography } from '@mui/material';
 import { ArrowForward, LocationOn, Loyalty } from '@mui/icons-material';
 import { BRAND_GRADIENT, HOVER_SHADOW } from '../theme';
+import { storePath } from '../utils/storeSite';
 
 interface Props {
   store: string;
@@ -21,7 +22,7 @@ export default function StoreCard({ store, name, address, points, regular = fals
   return (
     <Card sx={{ transition: 'transform .15s, box-shadow .15s',
       '@media (hover: hover)': { '&:hover': { transform: 'translateY(-2px)', boxShadow: HOVER_SHADOW } } }}>
-      <CardActionArea component={RouterLink} to={`/${store}`}
+      <CardActionArea component={RouterLink} to={storePath(store)}
         sx={{ p: 2.5, display: 'flex', alignItems: 'center', gap: 2, justifyContent: 'flex-start' }}>
         <Box sx={{ width: 56, height: 56, borderRadius: 1, flexShrink: 0, display: 'grid', placeItems: 'center',
           background: BRAND_GRADIENT, color: '#fff', fontWeight: 800, fontSize: 20 }}>

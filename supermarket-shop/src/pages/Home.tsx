@@ -10,6 +10,7 @@ import { api } from '../api/client';
 import type { ListResponse, MyStore, ShopStore } from '../api/types';
 import { useAuth } from '../auth/AuthContext';
 import { getLastStore } from '../utils/lastStore';
+import { storePath } from '../utils/storeSite';
 
 async function pickStore(loggedIn: boolean): Promise<string | null> {
   const stores = (await api<ListResponse<ShopStore>>('/shop/stores')).items;
@@ -33,7 +34,7 @@ export default function Home() {
     if (loading) return;
     let cancelled = false;
     pickStore(Boolean(account))
-      .then((store) => { if (!cancelled) setTarget(store ? `/${store}` : '/stores'); })
+      .then((store) => { if (!cancelled) setTarget(store ? storePath(store) : '/stores'); })
       .catch(() => { if (!cancelled) setTarget('/stores'); });
     return () => { cancelled = true; };
   }, [account, loading]);

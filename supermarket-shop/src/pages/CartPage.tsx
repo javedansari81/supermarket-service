@@ -3,7 +3,7 @@
  * loose items are an estimate until weighed.
  */
 import { useEffect, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
+import { Link as RouterLink } from 'react-router-dom';
 import { Alert, Box, Button, Card, Divider, IconButton, Skeleton, Stack, Tooltip, Typography } from '@mui/material';
 import { DeleteOutlined, RemoveShoppingCart, ShoppingCartCheckout } from '@mui/icons-material';
 import { api, ApiError } from '../api/client';
@@ -15,11 +15,12 @@ import { ProductPicture } from '../components/ProductCard';
 import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { formatPrice, packSize } from '../utils/format';
+import { storePath, useStore } from '../utils/storeSite';
 
 const money = (value: number) => Math.round(value * 100) / 100;
 
 export default function CartPage() {
-  const { store = '' } = useParams();
+  const store = useStore();
   const { detail, notFound } = useShopStore(store);
   const cart = useCart();
   const lines = cart.lines(store);
@@ -69,7 +70,7 @@ export default function CartPage() {
         <Card sx={{ p: 5, textAlign: 'center' }}>
           <RemoveShoppingCart sx={{ fontSize: 56, color: 'text.disabled' }} />
           <Typography variant="h6" sx={{ mt: 1 }}>Your cart is empty</Typography>
-          <Button component={RouterLink} to={`/${store}`} variant="contained" sx={{ mt: 2 }}>Start shopping</Button>
+          <Button component={RouterLink} to={storePath(store)} variant="contained" sx={{ mt: 2 }}>Start shopping</Button>
         </Card>
       </Stack>
     );
@@ -102,7 +103,7 @@ export default function CartPage() {
             <Box key={p.id}>
               {i > 0 && <Divider />}
               <Box sx={{ display: 'flex', gap: 1.5, p: 1.5, alignItems: 'center', opacity: p.in_stock ? 1 : 0.6 }}>
-                <Box component={RouterLink} to={`/${store}/p/${p.id}`} sx={{ width: 72, flexShrink: 0 }}>
+                <Box component={RouterLink} to={storePath(store, `/p/${p.id}`)} sx={{ width: 72, flexShrink: 0 }}>
                   <ProductPicture product={p} height={72} />
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -137,7 +138,7 @@ export default function CartPage() {
           <BillSummary mrpTotal={mrpTotal} itemsTotal={total} deliveryCharge={delivery}
             freeDeliveryGap={delivery > 0 ? money(freeMin - total) : 0}
             note={`Inclusive of all taxes.${hasLoose ? ' Loose items are charged for their exact weight when packed.' : ''}`} />
-          <Button component={RouterLink} to={`/${store}/checkout`} variant="contained" size="large" fullWidth
+          <Button component={RouterLink} to={storePath(store, '/checkout')} variant="contained" size="large" fullWidth
             disabled={available.length === 0} startIcon={<ShoppingCartCheckout />} sx={{ mt: 2 }}>
             Checkout
           </Button>

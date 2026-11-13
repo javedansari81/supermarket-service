@@ -3,7 +3,7 @@
  * pays cash on delivery (online payment comes with the payment gateway)
  */
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Link as RouterLink, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link as RouterLink, Navigate, useNavigate } from 'react-router-dom';
 import {
   Alert, Box, Button, Card, CircularProgress, FormControlLabel, Radio, RadioGroup, Skeleton, Stack, TextField,
   Typography,
@@ -16,6 +16,7 @@ import AddressDialog from '../components/AddressDialog';
 import BillSummary from '../components/BillSummary';
 import { useShopStore } from '../hooks/useShopStore';
 import { formatPrice } from '../utils/format';
+import { storePath, useStore } from '../utils/storeSite';
 
 const fitQuantity = (available: string | null) => {
   const n = Number(available ?? 0);
@@ -23,7 +24,7 @@ const fitQuantity = (available: string | null) => {
 };
 
 export default function CheckoutPage() {
-  const { store = '' } = useParams();
+  const store = useStore();
   const navigate = useNavigate();
   const { detail } = useShopStore(store);
   const cart = useCart();
@@ -58,7 +59,7 @@ export default function CheckoutPage() {
       .catch(() => setAddresses([]));
   }, []);
 
-  if (Object.keys(lines).length === 0 && !placing) return <Navigate to={`/${store}/cart`} replace />;
+  if (Object.keys(lines).length === 0 && !placing) return <Navigate to={storePath(store, '/cart')} replace />;
 
   const current = quote?.key === cartKey ? quote : null;
   const data = current?.data;
@@ -204,7 +205,7 @@ export default function CheckoutPage() {
             startIcon={placing ? <CircularProgress size={18} color="inherit" /> : undefined}>
             {data ? `Place order · ${formatPrice(data.total_amount)}` : 'Place order'}
           </Button>
-          <Button component={RouterLink} to={`/${store}/cart`} fullWidth sx={{ mt: 1 }}>Back to cart</Button>
+          <Button component={RouterLink} to={storePath(store, '/cart')} fullWidth sx={{ mt: 1 }}>Back to cart</Button>
         </Card>
       </Box>
 

@@ -12,6 +12,7 @@ import { useAuth } from '../auth/AuthContext';
 import StoreCard from '../components/StoreCard';
 import { BRAND_GRADIENT } from '../theme';
 import { getLastStore } from '../utils/lastStore';
+import { storePath } from '../utils/storeSite';
 
 const STORE_GRID = { display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' } };
 
@@ -68,7 +69,7 @@ export default function StorePicker() {
             Choose a store to see what is in stock today. Prices and offers are the same as in store.
           </Typography>
           {lastStore && (
-            <Button component={RouterLink} to={`/${lastStore.store}`} size="large" endIcon={<ArrowForward />}
+            <Button component={RouterLink} to={storePath(lastStore.store)} size="large" endIcon={<ArrowForward />}
               sx={{ mt: 3, bgcolor: '#fff', color: 'primary.dark', '&:hover': { bgcolor: '#f0fdf4' } }}>
               Continue at {lastStore.store_name}
             </Button>

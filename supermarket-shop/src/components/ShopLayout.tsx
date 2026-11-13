@@ -13,6 +13,7 @@ import { useAuth } from '../auth/AuthContext';
 import { useCart } from '../cart/CartContext';
 import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
 import { storeFromPath } from '../utils/lastStore';
+import { SITE_STORE, storePath } from '../utils/storeSite';
 import BrandLogo from './BrandLogo';
 import OrderUpdatesNotice from './OrderUpdatesNotice';
 import StoreInfo from './StoreInfo';
@@ -26,7 +27,9 @@ export default function ShopLayout() {
   const { pathname } = useLocation();
   const store = storeFromPath(pathname);
   const cartCount = useCart().count(store ?? '');
-  const showCartBar = Boolean(store) && cartCount > 0 && !['cart', 'checkout'].includes(pathname.split('/')[2]);
+  // Page within the store (/<store>/cart, or /cart on a store's own site); no cart bar on the cart, checkout or login
+  const storePage = pathname.split('/')[SITE_STORE ? 1 : 2];
+  const showCartBar = Boolean(store) && cartCount > 0 && !['cart', 'checkout', 'login'].includes(storePage);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
 
@@ -56,7 +59,7 @@ export default function ShopLayout() {
               flexBasis: { xs: '100%', md: 0 }, '&:empty': { display: 'none' } }} />
             {store && (
               <Tooltip title="Cart">
-                <IconButton component={RouterLink} to={`/${encodeURIComponent(store)}/cart`}
+                <IconButton component={RouterLink} to={storePath(store, '/cart')}
                   aria-label={`Cart, ${cartCount} items`}
                   sx={{ ml: 'auto', color: '#fff', border: '1px solid rgba(255,255,255,0.4)',
                     width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
@@ -125,7 +128,7 @@ export default function ShopLayout() {
         <Box sx={{ position: 'sticky', bottom: 0, zIndex: (t) => t.zIndex.appBar - 1, pointerEvents: 'none',
           pb: 'calc(12px + env(safe-area-inset-bottom))' }}>
           <Container maxWidth="sm">
-            <ButtonBase component={RouterLink} to={`/${encodeURIComponent(store ?? '')}/cart`}
+            <ButtonBase component={RouterLink} to={storePath(store ?? '', '/cart')}
               sx={{ pointerEvents: 'auto', width: '100%', justifyContent: 'space-between', gap: 1.5, px: 2.5, py: 1.5,
                 borderRadius: 1, background: BRAND_GRADIENT, color: '#fff', boxShadow: '0 8px 24px rgba(21,128,61,0.35)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>

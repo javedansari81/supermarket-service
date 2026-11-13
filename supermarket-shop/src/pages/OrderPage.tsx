@@ -17,6 +17,7 @@ import OrderUpdatesPrompt from '../components/OrderUpdatesPrompt';
 import { formatDateTime, formatPrice } from '../utils/format';
 import { DELIVERY_STEPS, OPEN_STATUSES, STATUS_LABELS } from '../utils/orderStatus';
 import { onWorkerMessage } from '../utils/push';
+import { storePath } from '../utils/storeSite';
 
 const REFRESH_MS = 30_000;
 
@@ -157,7 +158,7 @@ export default function OrderPage() {
             <Button color="error" variant="outlined" onClick={() => setCancelOpen(true)}>Cancel order</Button>
           )}
           <Button component={RouterLink} to="/orders">All my orders</Button>
-          {order.store && <Button component={RouterLink} to={`/${order.store}`}>Continue shopping</Button>}
+          {order.store && <Button component={RouterLink} to={storePath(order.store)}>Continue shopping</Button>}
         </Stack>
       </Box>
 

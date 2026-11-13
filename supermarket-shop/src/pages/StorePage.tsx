@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useOutletContext, useParams } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import {
   Alert, Box, Button, ButtonBase, Chip, IconButton, InputAdornment, MenuItem, Skeleton, Stack, TextField, Typography,
 } from '@mui/material';
@@ -18,6 +18,7 @@ import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { categoryStyle } from '../utils/categoryStyle';
 import { addRecentSearch, clearRecentSearches, getRecentSearches } from '../utils/history';
+import { useStore } from '../utils/storeSite';
 
 const PAGE_SIZE = 24;
 const SORTS = [
@@ -34,7 +35,7 @@ interface Result {
 }
 
 export default function StorePage() {
-  const store = useParams().store!;
+  const store = useStore();
   const searchSlot = useOutletContext<HTMLElement | null>();
   const { notFound, error: storeError } = useShopStore(store);
   const [recentSearches, setRecentSearches] = useState<string[]>(getRecentSearches);
