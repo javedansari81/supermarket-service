@@ -11,7 +11,6 @@ import type { ShopProduct } from '../api/types';
 import { HOVER_SHADOW } from '../theme';
 import { categoryStyle } from '../utils/categoryStyle';
 import { discountLabel, hasDiscount, packSize } from '../utils/format';
-import { storePath } from '../utils/storeSite';
 import AddToCart from './AddToCart';
 import PriceTag from './PriceTag';
 
@@ -83,7 +82,7 @@ export default function ProductCard({ store, product }: { store: string; product
   return (
     <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', transition: 'transform .15s, box-shadow .15s',
       '@media (hover: hover)': { '&:hover': { transform: 'translateY(-3px)', boxShadow: HOVER_SHADOW } } }}>
-      <CardActionArea component={RouterLink} to={storePath(store, `/p/${shown.id}`)}
+      <CardActionArea component={RouterLink} to={`/p/${shown.id}`}
         sx={{ flexGrow: 1, p: 1.25, pb: 0.5, display: 'flex', flexDirection: 'column', alignItems: 'stretch',
           justifyContent: 'flex-start' }}>
         <ProductPicture product={shown} />

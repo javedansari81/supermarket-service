@@ -1,6 +1,6 @@
 /**
- * Page frame: green top bar with the logo, the store dropdown and search (on store pages, passed to the
- * page as the outlet context) and the login button or the customer's menu, and a green footer with the store's details on store pages
+ * Page frame: green top bar with the store's name as the logo, search (on the store page, passed to the page as
+ * the outlet context), the cart, and the login button or the customer's menu, and a green footer with the store's details
  */
 import { useState } from 'react';
 import { Link as RouterLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -11,13 +11,12 @@ import {
 import { ChevronRight, Login, Logout, Person, ReceiptLong, ShoppingCartOutlined } from '@mui/icons-material';
 import { useAuth } from '../auth/AuthContext';
 import { useCart } from '../cart/CartContext';
+import { useStoreName } from '../hooks/useShopStore';
 import { BAND_GRADIENT, BRAND_GRADIENT } from '../theme';
-import { storeFromPath } from '../utils/lastStore';
-import { SITE_STORE, storePath } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 import BrandLogo from './BrandLogo';
 import OrderUpdatesNotice from './OrderUpdatesNotice';
 import StoreInfo from './StoreInfo';
-import StoreSwitcher from './StoreSwitcher';
 
 const YEAR = new Date().getFullYear();
 
@@ -25,11 +24,10 @@ export default function ShopLayout() {
   const { account, loading, logout } = useAuth();
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const store = storeFromPath(pathname);
-  const cartCount = useCart().count(store ?? '');
-  // Page within the store (/<store>/cart, or /cart on a store's own site); no cart bar on the cart, checkout or login
-  const storePage = pathname.split('/')[SITE_STORE ? 1 : 2];
-  const showCartBar = Boolean(store) && cartCount > 0 && !['cart', 'checkout', 'login'].includes(storePage);
+  const storeName = useStoreName();
+  const cartCount = useCart().count(STORE);
+  // No cart bar on the cart, checkout or login pages
+  const showCartBar = cartCount > 0 && !['cart', 'checkout', 'login'].includes(pathname.split('/')[1]);
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
   const [searchSlot, setSearchSlot] = useState<HTMLElement | null>(null);
 
@@ -53,30 +51,27 @@ export default function ShopLayout() {
         <Container maxWidth="lg" disableGutters>
           <Toolbar sx={{ columnGap: { xs: 1, sm: 2 }, rowGap: 1.25, flexWrap: 'wrap', py: { xs: 1.25, md: 0 },
             minHeight: { xs: 56, sm: 68 }, px: { xs: 1.5, sm: 3 } }}>
-            <BrandLogo light compact />
-            <Box sx={{ minWidth: 0, display: 'flex' }}><StoreSwitcher /></Box>
+            <BrandLogo light />
             <Box ref={setSearchSlot} sx={{ flexGrow: 1, minWidth: 0, order: { xs: 9, md: 0 },
               flexBasis: { xs: '100%', md: 0 }, '&:empty': { display: 'none' } }} />
-            {store && (
-              <Tooltip title="Cart">
-                <IconButton component={RouterLink} to={storePath(store, '/cart')}
-                  aria-label={`Cart, ${cartCount} items`}
-                  sx={{ ml: 'auto', color: '#fff', border: '1px solid rgba(255,255,255,0.4)',
-                    width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
-                    '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
-                  <Badge badgeContent={cartCount} showZero max={99}
-                    sx={{ '& .MuiBadge-badge': { bgcolor: 'secondary.main', color: '#fff', fontWeight: 700,
-                      fontSize: 11, height: 18, minWidth: 18, px: 0.5, border: '2px solid #16a34a', top: -2, right: -4 } }}>
-                    <ShoppingCartOutlined />
-                  </Badge>
-                </IconButton>
-              </Tooltip>
-            )}
+            <Tooltip title="Cart">
+              <IconButton component={RouterLink} to="/cart"
+                aria-label={`Cart, ${cartCount} items`}
+                sx={{ ml: 'auto', color: '#fff', border: '1px solid rgba(255,255,255,0.4)',
+                  width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
+                  '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
+                <Badge badgeContent={cartCount} showZero max={99}
+                  sx={{ '& .MuiBadge-badge': { bgcolor: 'secondary.main', color: '#fff', fontWeight: 700,
+                    fontSize: 11, height: 18, minWidth: 18, px: 0.5, border: '2px solid #16a34a', top: -2, right: -4 } }}>
+                  <ShoppingCartOutlined />
+                </Badge>
+              </IconButton>
+            </Tooltip>
             {!loading && (account ? (
               <>
                 <Tooltip title={account.customer_name || 'My account'}>
                   <ButtonBase onClick={(e) => setMenuAnchor(e.currentTarget)} aria-label="Account menu"
-                    sx={{ ml: store ? 0 : 'auto', borderRadius: '50%', p: 0.25, border: '1px solid rgba(255,255,255,0.4)',
+                    sx={{ borderRadius: '50%', p: 0.25, border: '1px solid rgba(255,255,255,0.4)',
                       '&:hover': { bgcolor: 'rgba(255,255,255,0.12)' } }}>
                     <Avatar sx={{ width: { xs: 32, sm: 36 }, height: { xs: 32, sm: 36 }, bgcolor: '#fff',
                       color: 'primary.main', fontSize: 16, fontWeight: 700 }}>
@@ -110,7 +105,7 @@ export default function ShopLayout() {
             ) : (
               <Tooltip title="Log in">
                 <IconButton component={RouterLink} to="/login" aria-label="Log in"
-                  sx={{ ml: store ? 0 : 'auto', width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
+                  sx={{ width: { xs: 38, sm: 42 }, height: { xs: 38, sm: 42 },
                     bgcolor: '#fff', color: 'primary.dark',
                     '&:hover': { bgcolor: '#f0fdf4' } }}>
                   <Login />
@@ -128,7 +123,7 @@ export default function ShopLayout() {
         <Box sx={{ position: 'sticky', bottom: 0, zIndex: (t) => t.zIndex.appBar - 1, pointerEvents: 'none',
           pb: 'calc(12px + env(safe-area-inset-bottom))' }}>
           <Container maxWidth="sm">
-            <ButtonBase component={RouterLink} to={storePath(store ?? '', '/cart')}
+            <ButtonBase component={RouterLink} to="/cart"
               sx={{ pointerEvents: 'auto', width: '100%', justifyContent: 'space-between', gap: 1.5, px: 2.5, py: 1.5,
                 borderRadius: 1, background: BRAND_GRADIENT, color: '#fff', boxShadow: '0 8px 24px rgba(21,128,61,0.35)' }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
@@ -146,9 +141,9 @@ export default function ShopLayout() {
       <Box component="footer" sx={{ background: BAND_GRADIENT, color: '#fff', pt: 3,
         pb: 'calc(24px + env(safe-area-inset-bottom))' }}>
         <Container maxWidth="lg">
-          {store && <StoreInfo key={store} store={store} />}
+          <StoreInfo store={STORE} />
           <Typography variant="body2" sx={{ opacity: 0.85 }}>
-            © {YEAR} MFMart · Groceries from your neighbourhood store
+            © {YEAR}{storeName && ` ${storeName}`} · Groceries from your neighbourhood store
           </Typography>
         </Container>
       </Box>

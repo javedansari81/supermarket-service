@@ -10,6 +10,7 @@ import { ApiError } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import LoginBrandPanel from '../components/LoginBrandPanel';
 import OtpInput from '../components/OtpInput';
+import { useStoreName } from '../hooks/useShopStore';
 
 type Step = 'mobile' | 'code' | 'name';
 
@@ -21,6 +22,7 @@ const messageOf = (err: unknown) =>
 export default function Login() {
   const { account, loading, requestCode, verifyCode, updateName } = useAuth();
   const navigate = useNavigate();
+  const storeName = useStoreName();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from || '/';
 
@@ -160,7 +162,7 @@ export default function Login() {
 
         {step === 'name' && (
           <Box component="form" onSubmit={submitName} noValidate>
-            {header(<WavingHand />, 'Welcome to MFMart!', 'What should we call you? Stores use this name on your bills.')}
+            {header(<WavingHand />, storeName ? `Welcome to ${storeName}!` : 'Welcome!', 'What should we call you? Stores use this name on your bills.')}
             <TextField label="Your name" fullWidth autoFocus value={name} autoComplete="name"
               onChange={(e) => setName(e.target.value)} slotProps={{ htmlInput: { maxLength: 200 } }} />
             {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}

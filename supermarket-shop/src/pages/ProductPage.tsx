@@ -16,7 +16,7 @@ import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { hasDiscount, packSize } from '../utils/format';
 import { addViewed } from '../utils/history';
-import { SITE_STORE, storePath, useStore } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 
 interface Loaded {
   key: string;
@@ -26,7 +26,7 @@ interface Loaded {
 
 export default function ProductPage() {
   const { productId = '' } = useParams();
-  const store = useStore();
+  const store = STORE;
   const { detail, notFound } = useShopStore(store);
   const navigate = useNavigate();
   const pictureHeight = useMediaQuery((theme) => theme.breakpoints.up('sm')) ? 360 : 240;
@@ -54,8 +54,7 @@ export default function ProductPage() {
   const current = loaded?.key === key ? loaded : null;
   const crumbs = (last?: string) => (
     <Breadcrumbs separator={<NavigateNext fontSize="small" />} sx={{ '& a': { color: 'text.secondary' } }}>
-      {!SITE_STORE && <Link component={RouterLink} to="/stores" underline="hover">Stores</Link>}
-      <Link component={RouterLink} to={storePath(store)} underline="hover">{detail?.store_name || 'Store'}</Link>
+      <Link component={RouterLink} to="/" underline="hover">{detail?.store_name || 'Store'}</Link>
       {last && <Typography color="text.primary" noWrap sx={{ maxWidth: { xs: 140, sm: 220 } }}>{last}</Typography>}
     </Breadcrumbs>
   );
@@ -91,7 +90,7 @@ export default function ProductPage() {
             {product.pack_sizes.length > 1 ? (
               <Box sx={{ mt: 1.5 }}>
                 <PackSizes product={product} selectedId={product.id} large
-                  onSelect={(p) => navigate(storePath(store, `/p/${p.id}`), { replace: true })} />
+                  onSelect={(p) => navigate(`/p/${p.id}`, { replace: true })} />
               </Box>
             ) : size && <Chip label={size} size="small" sx={{ mt: 1.5 }} />}
           </Box>

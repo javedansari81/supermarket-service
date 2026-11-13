@@ -15,12 +15,12 @@ import { ProductPicture } from '../components/ProductCard';
 import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { formatPrice, packSize } from '../utils/format';
-import { storePath, useStore } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 
 const money = (value: number) => Math.round(value * 100) / 100;
 
 export default function CartPage() {
-  const store = useStore();
+  const store = STORE;
   const { detail, notFound } = useShopStore(store);
   const cart = useCart();
   const lines = cart.lines(store);
@@ -70,7 +70,7 @@ export default function CartPage() {
         <Card sx={{ p: 5, textAlign: 'center' }}>
           <RemoveShoppingCart sx={{ fontSize: 56, color: 'text.disabled' }} />
           <Typography variant="h6" sx={{ mt: 1 }}>Your cart is empty</Typography>
-          <Button component={RouterLink} to={storePath(store)} variant="contained" sx={{ mt: 2 }}>Start shopping</Button>
+          <Button component={RouterLink} to="/" variant="contained" sx={{ mt: 2 }}>Start shopping</Button>
         </Card>
       </Stack>
     );
@@ -103,7 +103,7 @@ export default function CartPage() {
             <Box key={p.id}>
               {i > 0 && <Divider />}
               <Box sx={{ display: 'flex', gap: 1.5, p: 1.5, alignItems: 'center', opacity: p.in_stock ? 1 : 0.6 }}>
-                <Box component={RouterLink} to={storePath(store, `/p/${p.id}`)} sx={{ width: 72, flexShrink: 0 }}>
+                <Box component={RouterLink} to={`/p/${p.id}`} sx={{ width: 72, flexShrink: 0 }}>
                   <ProductPicture product={p} height={72} />
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -138,7 +138,7 @@ export default function CartPage() {
           <BillSummary mrpTotal={mrpTotal} itemsTotal={total} deliveryCharge={delivery}
             freeDeliveryGap={delivery > 0 ? money(freeMin - total) : 0}
             note={`Inclusive of all taxes.${hasLoose ? ' Loose items are charged for their exact weight when packed.' : ''}`} />
-          <Button component={RouterLink} to={storePath(store, '/checkout')} variant="contained" size="large" fullWidth
+          <Button component={RouterLink} to="/checkout" variant="contained" size="large" fullWidth
             disabled={available.length === 0} startIcon={<ShoppingCartCheckout />} sx={{ mt: 2 }}>
             Checkout
           </Button>

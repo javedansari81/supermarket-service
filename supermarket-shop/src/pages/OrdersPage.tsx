@@ -1,5 +1,5 @@
 /**
- * My orders, newest first: at every store, or on a store's own site at that store only
+ * My orders at this store, newest first
  */
 import { useEffect, useState } from 'react';
 import { Link as RouterLink } from 'react-router-dom';
@@ -9,8 +9,7 @@ import { api, ApiError } from '../api/client';
 import type { OrderSummary, PageResponse } from '../api/types';
 import OrderStatusChip from '../components/OrderStatusChip';
 import { formatDateTime, formatPrice } from '../utils/format';
-import { getLastStore } from '../utils/lastStore';
-import { SITE_STORE, storePath } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 
 const PAGE_SIZE = 20;
 
@@ -21,8 +20,7 @@ export default function OrdersPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
-    if (SITE_STORE) params.set('store', SITE_STORE);
+    const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE), store: STORE });
     api<PageResponse<OrderSummary>>(`/shop/orders?${params}`, { auth: true })
       .then((res) => {
         setOrders((prev) => (page === 1 ? res.items : [...(prev ?? []), ...res.items]));
@@ -30,8 +28,6 @@ export default function OrdersPage() {
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load your orders'));
   }, [page]);
-
-  const lastStore = SITE_STORE ?? getLastStore();
 
   return (
     <Stack spacing={2.5}>
@@ -42,7 +38,7 @@ export default function OrdersPage() {
         <Card sx={{ p: 5, textAlign: 'center' }}>
           <ReceiptLong sx={{ fontSize: 56, color: 'text.disabled' }} />
           <Typography variant="h6" sx={{ mt: 1 }}>No orders yet</Typography>
-          <Button component={RouterLink} to={lastStore ? storePath(lastStore) : '/'} variant="contained" sx={{ mt: 2 }}>
+          <Button component={RouterLink} to="/" variant="contained" sx={{ mt: 2 }}>
             Start shopping
           </Button>
         </Card>

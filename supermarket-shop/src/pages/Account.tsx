@@ -1,6 +1,5 @@
 /**
- * My account: name, mobile number, stores I shop at (on a store's own site, just that store and its points),
- * order updates on this device, my orders, log out
+ * My account: name, mobile number, my loyalty points at this store, order updates on this device, my orders, log out
  */
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link as RouterLink, useNavigate } from 'react-router-dom';
@@ -12,7 +11,7 @@ import { useAuth } from '../auth/AuthContext';
 import OrderUpdatesPrompt from '../components/OrderUpdatesPrompt';
 import StoreCard from '../components/StoreCard';
 import { BRAND_GRADIENT } from '../theme';
-import { SITE_STORE } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 
 export default function Account() {
   const { account, updateName, logout } = useAuth();
@@ -24,7 +23,7 @@ export default function Account() {
 
   useEffect(() => {
     api<ListResponse<MyStore>>('/shop/auth/my-stores', { auth: true })
-      .then((res) => setMyStores(SITE_STORE ? res.items.filter((s) => s.store === SITE_STORE) : res.items))
+      .then((res) => setMyStores(res.items.filter((s) => s.store === STORE)))
       .catch(() => setMyStores([]));
   }, []);
 
@@ -51,7 +50,6 @@ export default function Account() {
 
   const totalPoints = myStores.reduce((sum, s) => sum + s.points_balance, 0);
   const stats = [
-    ...(SITE_STORE ? [] : [{ Icon: Storefront, value: myStores.length, label: myStores.length === 1 ? 'Store' : 'Stores' }]),
     { Icon: Loyalty, value: totalPoints, label: 'Loyalty points' },
   ];
 
@@ -102,20 +100,17 @@ export default function Account() {
         </Card>
 
         <Stack spacing={2}>
-          <Typography variant="h6">{SITE_STORE ? 'Your store' : 'Your stores'}</Typography>
+          <Typography variant="h6">Your store</Typography>
           {myStores.length > 0 ? myStores.map((s) => (
-            <StoreCard key={s.store} store={s.store} name={s.store_name} points={s.points_balance} regular />
+            <StoreCard key={s.store} name={s.store_name} points={s.points_balance} regular />
           )) : (
             <Card sx={{ p: 3, textAlign: 'center' }}>
               <Storefront color="disabled" sx={{ fontSize: 44 }} />
-              <Typography sx={{ fontWeight: 600, mt: 1 }}>{SITE_STORE ? 'No points here yet' : 'No stores yet'}</Typography>
+              <Typography sx={{ fontWeight: 600, mt: 1 }}>No points here yet</Typography>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {SITE_STORE ? 'Your loyalty points appear here after your first purchase, in store or online.'
-                  : 'Stores you shop at, in store or online, appear here with your loyalty points.'}
+                Your loyalty points appear here after your first purchase, in store or online.
               </Typography>
-              <Button component={RouterLink} to={SITE_STORE ? '/' : '/stores'} variant="outlined">
-                {SITE_STORE ? 'Start shopping' : 'Browse stores'}
-              </Button>
+              <Button component={RouterLink} to="/" variant="outlined">Start shopping</Button>
             </Card>
           )}
           <OrderUpdatesPrompt variant="setting" />

@@ -18,7 +18,7 @@ import StoreNotFound from '../components/StoreNotFound';
 import { useShopStore } from '../hooks/useShopStore';
 import { categoryStyle } from '../utils/categoryStyle';
 import { addRecentSearch, clearRecentSearches, getRecentSearches } from '../utils/history';
-import { useStore } from '../utils/storeSite';
+import { STORE } from '../utils/storeSite';
 
 const PAGE_SIZE = 24;
 const SORTS = [
@@ -35,7 +35,7 @@ interface Result {
 }
 
 export default function StorePage() {
-  const store = useStore();
+  const store = STORE;
   const searchSlot = useOutletContext<HTMLElement | null>();
   const { notFound, error: storeError } = useShopStore(store);
   const [recentSearches, setRecentSearches] = useState<string[]>(getRecentSearches);
