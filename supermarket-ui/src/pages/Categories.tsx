@@ -17,11 +17,13 @@ import { RowAction, StatusChip } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Category, GstItem, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 const emptyForm = { category_name: '', description: '', status: 'active', gst_item_ids: [] as number[] };
 const filterGstItems = createFilterOptions<GstItem>({ stringify: (o) => `${o.item_name} ${o.hsn_code}` });
 
 const Categories: React.FC = () => {
+  const confirm = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -92,7 +94,7 @@ const Categories: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this category?')) return;
+    if (!(await confirm({ title: 'Delete this category?', confirmLabel: 'Delete', destructive: true }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.CATEGORIES}/${id}`);
       toast.success('Category deleted');

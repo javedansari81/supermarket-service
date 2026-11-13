@@ -24,6 +24,7 @@ import { API_ENDPOINTS, imageSrc } from '../config/api';
 import { useAuth } from '../context/AuthContext';
 import { Product, Category, GstItem, PaginatedResponse, StoreLocation, ProductLocation, LocationRole, NetUnit, ProductType } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 const PACKED_UNIT = 'pcs';
 const LOOSE_UNITS = ['kg', 'g', 'L', 'ml'];
@@ -137,6 +138,7 @@ const downloadImportReport = (result: ImportResult) => {
 };
 
 const Products: React.FC = () => {
+  const confirm = useConfirm();
   const { isAdmin } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -428,7 +430,7 @@ const Products: React.FC = () => {
     }));
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this product?')) return;
+    if (!(await confirm({ title: 'Delete this product?', confirmLabel: 'Delete', destructive: true }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.PRODUCTS}/${id}`);
       toast.success('Product deleted');

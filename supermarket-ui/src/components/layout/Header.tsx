@@ -73,7 +73,8 @@ const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth, onMenuC
         width: `calc(100% - ${drawerWidth}px)`,
         ml: `${drawerWidth}px`,
         transition: (theme) => theme.transitions.create(['width', 'margin']),
-        backgroundColor: 'background.paper',
+        backgroundColor: (theme) => `rgba(${theme.vars!.palette.background.paperChannel} / 0.86)`,
+        backdropFilter: 'saturate(180%) blur(10px)',
         backgroundImage: 'none',
         color: 'text.primary',
         boxShadow: 'none',
@@ -115,8 +116,8 @@ const Header: React.FC<HeaderProps> = ({ pageHeaderSlotRef, drawerWidth, onMenuC
             </Typography>
           </Box>
           
-          <IconButton onClick={handleMenuOpen} size="small">
-            <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36 }}>
+          <IconButton onClick={handleMenuOpen} size="small" aria-label="Account menu">
+            <Avatar sx={{ bgcolor: 'primary.main', width: 36, height: 36, fontSize: '1rem', fontWeight: 600 }}>
               {user?.username?.charAt(0).toUpperCase()}
             </Avatar>
           </IconButton>

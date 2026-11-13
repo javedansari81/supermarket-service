@@ -2,7 +2,7 @@
  * Main Layout Component
  */
 import React, { useEffect, useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { Box, Toolbar, useMediaQuery, useTheme } from '@mui/material';
 import Sidebar, { COLLAPSED_DRAWER_WIDTH, DRAWER_WIDTH } from './Sidebar';
 import Header from './Header';
@@ -14,6 +14,7 @@ const SIDEBAR_COLLAPSED_KEY = 'sidebarCollapsed';
 const MainLayout: React.FC = () => {
   const [pageHeaderSlot, setPageHeaderSlot] = useState<HTMLElement | null>(null);
   const theme = useTheme();
+  const { pathname } = useLocation();
   const isNarrow = useMediaQuery(theme.breakpoints.down('lg'), { noSsr: true });
   const isMobile = useMediaQuery(theme.breakpoints.down('md'), { noSsr: true });
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -71,7 +72,16 @@ const MainLayout: React.FC = () => {
           }}
         >
           <Toolbar />
-          <Outlet />
+          {/* Opacity only: a transform here would re-anchor the fixed page action button */}
+          <Box
+            key={pathname}
+            sx={{
+              animation: 'page-enter 180ms ease-out',
+              '@keyframes page-enter': { from: { opacity: 0 }, to: { opacity: 1 } },
+            }}
+          >
+            <Outlet />
+          </Box>
         </Box>
       </Box>
     </PageHeaderSlotProvider>

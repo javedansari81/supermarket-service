@@ -58,6 +58,7 @@ import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
+import { ConfirmOptions, useConfirm } from '../components/common/ConfirmDialog';
 import { printReceipt } from '../services/receipt';
 import ShiftControl from '../components/sales/ShiftControl';
 import { stateNameFromCode } from '../config/gst';
@@ -298,6 +299,17 @@ const SummaryRow: React.FC<{ label: string; value: string; color?: string; small
 );
 
 const Billing: React.FC = () => {
+  const askConfirm = useConfirm();
+  // Function-key shortcuts stay off while a confirmation is on screen
+  const confirming = useRef(false);
+  const confirm = async (options: ConfirmOptions) => {
+    confirming.current = true;
+    try {
+      return await askConfirm(options);
+    } finally {
+      confirming.current = false;
+    }
+  };
   const [searchInput, setSearchInput] = useState('');
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [paymentMode, setPaymentMode] = useState<PayMode>('cash');
@@ -522,8 +534,11 @@ const Billing: React.FC = () => {
     }
     if (product.is_loose && product.scanned_quantity) {
       const label = product.scanned_label;
-      if (label && scannedLabels.current.has(label)
-        && !window.confirm(`This ${product.product_name} label was already scanned in this bill. Add it again?`)) {
+      if (label && scannedLabels.current.has(label) && !(await confirm({
+        title: 'Label already scanned',
+        message: `This ${product.product_name} label was already scanned in this bill. Add it again?`,
+        confirmLabel: 'Add again',
+      }))) {
         searchRef.current?.focus();
         return;
       }
@@ -807,12 +822,12 @@ const Billing: React.FC = () => {
     searchRef.current?.focus();
   };
 
-  const clearBill = () => {
+  const clearBill = async () => {
     if (cartItems.length === 0) return;
     const message = heldBillId
-      ? 'Clear this bill? The held copy stays in Held Bills.'
-      : 'Clear all items from this bill?';
-    if (window.confirm(message)) resetBill();
+      ? 'The held copy stays in Held Bills.'
+      : 'All items will be removed from this bill.';
+    if (await confirm({ title: 'Clear this bill?', message, confirmLabel: 'Clear bill', destructive: true })) resetBill();
   };
 
   const holdBill = async () => {
@@ -912,7 +927,12 @@ const Billing: React.FC = () => {
   };
 
   const discardHeldBill = async (held: HeldBill) => {
-    if (!window.confirm(`Discard this held bill of ₹${Number(held.total_amount).toFixed(2)}? This cannot be undone.`)) return;
+    if (!(await confirm({
+      title: 'Discard this held bill?',
+      message: `Bill of ₹${Number(held.total_amount).toFixed(2)}. This cannot be undone.`,
+      confirmLabel: 'Discard',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.HELD_BILLS}/${held.id}`);
       if (held.id === heldBillId) setHeldBillId(null);
@@ -1042,7 +1062,7 @@ const Billing: React.FC = () => {
       }
       return;
     }
-    if (heldOpen || batchPick || weighProduct || shiftDialogOpen) return;
+    if (heldOpen || batchPick || weighProduct || shiftDialogOpen || confirming.current) return;
     const actions: Record<string, () => void> = {
       F2: () => { searchRef.current?.focus(); searchRef.current?.select(); },
       F4: () => { if (!holding) holdBill(); },

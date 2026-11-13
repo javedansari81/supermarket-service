@@ -14,6 +14,7 @@ import { ListToolbar, RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Product } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 type OfferStatus = 'running' | 'upcoming' | 'ended' | 'inactive';
 type DiscountType = 'percent' | 'amount';
@@ -69,6 +70,7 @@ const errorText = (err: any, fallback: string) => {
 };
 
 const Offers: React.FC = () => {
+  const confirm = useConfirm();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [statusFilter, setStatusFilter] = useState<OfferStatus | ''>('');
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -167,7 +169,12 @@ const Offers: React.FC = () => {
   };
 
   const deleteOffer = async (offer: Offer) => {
-    if (!window.confirm(`Delete the offer "${offer.name}"? Bills already made keep the offer name.`)) return;
+    if (!(await confirm({
+      title: `Delete the offer "${offer.name}"?`,
+      message: 'Bills already made keep the offer name.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.OFFERS}/${offer.id}`);
       toast.success('Offer deleted');

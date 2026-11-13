@@ -18,6 +18,7 @@ import { ListToolbar, RowAction, StatusChip, humanize } from '../components/comm
 import { API_ENDPOINTS } from '../config/api';
 import { StoreLocation, LocationProduct, LocationType, LocationSuggestion, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 export const LOCATION_TYPES: { value: LocationType; prefix: string; label: string }[] = [
   { value: 'display', prefix: 'D', label: 'D - Display' },
@@ -31,6 +32,7 @@ const emptyForm = { location_type: '' as LocationType | '', floor: 'Ground', rac
 const buildCode = (rack: string, shelf: string) => (shelf ? `${rack}-${shelf}` : rack);
 
 const Locations: React.FC = () => {
+  const confirm = useConfirm();
   const [locations, setLocations] = useState<StoreLocation[]>([]);
   const [racks, setRacks] = useState<string[]>([]);
   const [rackHint, setRackHint] = useState('');
@@ -147,7 +149,12 @@ const Locations: React.FC = () => {
   };
 
   const handleDeactivate = async (location: StoreLocation) => {
-    if (!window.confirm(`Deactivate ${location.location_code}? Products assigned here keep the assignment.`)) return;
+    if (!(await confirm({
+      title: `Deactivate ${location.location_code}?`,
+      message: 'Products assigned here keep the assignment.',
+      confirmLabel: 'Deactivate',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.LOCATIONS}/${location.id}`);
       toast.success('Location deactivated');

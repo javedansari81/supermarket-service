@@ -11,6 +11,7 @@ import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import theme from './theme/theme';
 import { AuthProvider } from './context/AuthContext';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import { ConfirmProvider } from './components/common/ConfirmDialog';
 import MainLayout from './components/layout/MainLayout';
 
 // Pages
@@ -48,11 +49,17 @@ function App() {
             style: {
               background: 'var(--mui-palette-background-paper)',
               color: 'var(--mui-palette-text-primary)',
+              border: '1px solid var(--mui-palette-divider)',
+              borderRadius: 10,
+              boxShadow: '0 8px 24px rgba(16,24,40,0.12)',
+              fontSize: '0.875rem',
+              maxWidth: 420,
             },
           }}
         />
         <BrowserRouter>
           <AuthProvider>
+          <ConfirmProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
 
@@ -87,6 +94,7 @@ function App() {
 
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
+          </ConfirmProvider>
           </AuthProvider>
         </BrowserRouter>
       </LocalizationProvider>

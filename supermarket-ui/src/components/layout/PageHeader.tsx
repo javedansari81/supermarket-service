@@ -2,7 +2,7 @@
  * Page Header Component
  * Renders the page title, subtitle and actions into the top bar.
  */
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Box, Typography } from '@mui/material';
 
@@ -18,6 +18,14 @@ interface PageHeaderProps {
 
 const PageHeader: React.FC<PageHeaderProps> = ({ title, subtitle, actions }) => {
   const slot = useContext(PageHeaderSlotContext);
+
+  // Name the browser tab after the page so several open tabs are easy to tell apart
+  useEffect(() => {
+    const previous = document.title;
+    document.title = `${title} · SuperMart`;
+    return () => { document.title = previous; };
+  }, [title]);
+
   if (!slot) return null;
 
   return createPortal(

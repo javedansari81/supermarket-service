@@ -15,6 +15,7 @@ import { RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Category, Product } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 interface Tier { days_left: number; percent: number }
 
@@ -69,6 +70,7 @@ const errorText = (err: any, fallback: string) => {
 };
 
 const NearExpiry: React.FC = () => {
+  const confirm = useConfirm();
   const [rules, setRules] = useState<Rules | null>(null);
   const [days, setDays] = useState(30);
   const [batches, setBatches] = useState<NearBatch[]>([]);
@@ -154,7 +156,12 @@ const NearExpiry: React.FC = () => {
 
   const deleteRule = async (scope: 'category' | 'product', rule: Rule) => {
     const name = scope === 'category' ? rule.category_name : rule.product_name;
-    if (!window.confirm(`Remove the rule for ${name}? It will follow the ${scope === 'category' ? 'store default' : 'category or store default'} again.`)) return;
+    if (!(await confirm({
+      title: `Remove the rule for ${name}?`,
+      message: `It will follow the ${scope === 'category' ? 'store default' : 'category or store default'} again.`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.CLEARANCE_RULES}/${scope}/${scope === 'category' ? rule.category_id : rule.product_id}`);
       toast.success('Rule removed');

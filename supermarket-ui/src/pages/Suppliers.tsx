@@ -17,6 +17,7 @@ import { ListToolbar, RowAction, StatusChip } from '../components/common/ListPar
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, PaginatedResponse } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 const EMPTY_FORM = { supplier_name: '', contact_person: '', contact_no: '', email: '', address: '', gst_no: '', status: 'active' };
@@ -31,6 +32,7 @@ const apiErrorMessage = (error: any, fallback: string): string => {
 };
 
 const Suppliers: React.FC = () => {
+  const confirm = useConfirm();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
@@ -94,7 +96,12 @@ const Suppliers: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Deactivate this supplier? Purchase history is kept.')) return;
+    if (!(await confirm({
+      title: 'Deactivate this supplier?',
+      message: 'Purchase history is kept.',
+      confirmLabel: 'Deactivate',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.SUPPLIERS}/${id}`);
       toast.success('Supplier deactivated');

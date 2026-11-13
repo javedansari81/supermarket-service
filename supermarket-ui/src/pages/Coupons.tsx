@@ -13,6 +13,7 @@ import PageHeader from '../components/layout/PageHeader';
 import { ListToolbar, RowAction } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 type CouponStatus = 'running' | 'upcoming' | 'ended' | 'inactive';
 type DiscountType = 'percent' | 'amount';
@@ -74,6 +75,7 @@ const errorText = (err: any, fallback: string) => {
 };
 
 const Coupons: React.FC = () => {
+  const confirm = useConfirm();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [statusFilter, setStatusFilter] = useState<CouponStatus | ''>('');
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -130,7 +132,12 @@ const Coupons: React.FC = () => {
   };
 
   const deleteCoupon = async (c: Coupon) => {
-    if (!window.confirm(`Delete the coupon ${c.code}? Bills already made keep the coupon code.`)) return;
+    if (!(await confirm({
+      title: `Delete coupon ${c.code}?`,
+      message: 'Bills already made keep the coupon code.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return;
     try {
       await api.delete(`${API_ENDPOINTS.COUPONS}/${c.id}`);
       toast.success('Coupon deleted');

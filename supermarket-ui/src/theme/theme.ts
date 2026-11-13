@@ -2,8 +2,10 @@
  * Material UI Theme Configuration
  */
 import { alpha, createTheme } from '@mui/material/styles';
+import type { Theme } from '@mui/material/styles';
 import type {} from '@mui/x-date-pickers/themeAugmentation';
 import type {} from '@mui/x-data-grid/themeAugmentation';
+import GridEmptyState from '../components/common/GridEmptyState';
 
 interface SidebarPalette {
   background: string;
@@ -35,6 +37,25 @@ const sidebarBase = {
   selected: alpha('#14b8a6', 0.18),
   selectedText: '#5eead4',
 };
+
+const chipColors = ['primary', 'secondary', 'success', 'info', 'warning', 'error'] as const;
+
+const POPUP_SHADOW = '0 8px 24px rgba(16,24,40,0.12)';
+
+const focusRing = (theme: Theme, offset: number) => ({
+  '&.Mui-focusVisible': {
+    outline: `2px solid ${(theme.vars || theme).palette.primary.main}`,
+    outlineOffset: offset,
+  },
+});
+
+const popupPaper = (theme: Theme) => ({
+  marginTop: 4,
+  borderRadius: 10,
+  border: `1px solid ${(theme.vars || theme).palette.divider}`,
+  boxShadow: POPUP_SHADOW,
+  backgroundImage: 'none',
+});
 
 const theme = createTheme({
   cssVariables: {
@@ -143,6 +164,10 @@ const theme = createTheme({
   },
   typography: {
     fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h3: {
+      fontWeight: 700,
+      letterSpacing: '-0.02em',
+    },
     h4: {
       fontWeight: 700,
       letterSpacing: '-0.02em',
@@ -159,15 +184,38 @@ const theme = createTheme({
     },
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: (theme) => ({
+        '*': {
+          scrollbarWidth: 'thin',
+          scrollbarColor: `${(theme.vars || theme).palette.action.disabled} transparent`,
+        },
+        '::selection': {
+          backgroundColor: `rgba(${theme.vars!.palette.primary.mainChannel} / 0.24)`,
+        },
+        '@media (prefers-reduced-motion: reduce)': {
+          '*, *::before, *::after': {
+            animationDuration: '0.01ms !important',
+            transitionDuration: '0.01ms !important',
+          },
+        },
+      }),
+    },
     MuiButton: {
       defaultProps: {
         disableElevation: true,
       },
       styleOverrides: {
-        root: {
+        root: ({ theme }) => ({
           textTransform: 'none',
           borderRadius: 8,
-        },
+          ...focusRing(theme, 2),
+        }),
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: ({ theme }) => focusRing(theme, -2),
       },
     },
     MuiCard: {
@@ -180,12 +228,47 @@ const theme = createTheme({
         }),
       },
     },
+    MuiCardHeader: {
+      styleOverrides: {
+        title: {
+          fontSize: '1rem',
+          fontWeight: 600,
+          lineHeight: 1.4,
+        },
+        subheader: {
+          fontSize: '0.8125rem',
+        },
+      },
+    },
     MuiChip: {
       styleOverrides: {
         root: {
           fontWeight: 500,
+          borderRadius: 6,
         },
       },
+      // Coloured chips use a soft tint instead of a solid fill so status
+      // columns stay readable in dense tables
+      variants: chipColors.map((color) => ({
+        props: { variant: 'filled' as const, color },
+        style: ({ theme }: { theme: Theme }) => ({
+          backgroundColor: `rgba(${theme.vars!.palette[color].mainChannel} / 0.14)`,
+          color: theme.vars!.palette[color].dark,
+          '& .MuiChip-icon': { color: 'inherit' },
+          '& .MuiChip-deleteIcon': {
+            color: 'inherit',
+            opacity: 0.6,
+            '&:hover': { color: 'inherit', opacity: 1 },
+          },
+          '&.MuiChip-clickable:hover, &.MuiChip-clickable.Mui-focusVisible': {
+            backgroundColor: `rgba(${theme.vars!.palette[color].mainChannel} / 0.24)`,
+          },
+          ...theme.applyStyles('dark', {
+            backgroundColor: `rgba(${theme.vars!.palette[color].mainChannel} / 0.2)`,
+            color: theme.vars!.palette[color].light,
+          }),
+        }),
+      })),
     },
     MuiTableHead: {
       styleOverrides: {
@@ -198,23 +281,42 @@ const theme = createTheme({
       styleOverrides: {
         root: ({ theme }) => ({
           borderColor: (theme.vars || theme).palette.divider,
+          fontVariantNumeric: 'tabular-nums',
         }),
-        head: {
+        head: ({ theme }) => ({
           fontWeight: 600,
-        },
+          fontSize: '0.8125rem',
+          color: (theme.vars || theme).palette.text.secondary,
+          whiteSpace: 'nowrap',
+        }),
       },
     },
     MuiDataGrid: {
+      defaultProps: {
+        slots: { noRowsOverlay: GridEmptyState, noResultsOverlay: GridEmptyState },
+      },
       styleOverrides: {
         root: ({ theme }) => ({
           borderColor: (theme.vars || theme).palette.divider,
+          fontVariantNumeric: 'tabular-nums',
           '--DataGrid-rowBorderColor': (theme.vars || theme).palette.divider,
           '--DataGrid-containerBackground': (theme.vars || theme).palette.background.subtle,
+          '--DataGrid-overlayHeight': '220px',
           '.MuiCard-root > &': { border: 0 },
+          // Clicking a cell should not draw a focus box; keyboard focus still does
+          '& .MuiDataGrid-cell:focus, & .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus, & .MuiDataGrid-columnHeader:focus-within': {
+            outline: 'none',
+          },
+          '& .MuiDataGrid-cell:focus-visible, & .MuiDataGrid-columnHeader:focus-visible': {
+            outline: `2px solid ${(theme.vars || theme).palette.primary.main}`,
+            outlineOffset: -2,
+          },
         }),
-        columnHeaderTitle: {
+        columnHeaderTitle: ({ theme }) => ({
           fontWeight: 600,
-        },
+          fontSize: '0.8125rem',
+          color: (theme.vars || theme).palette.text.secondary,
+        }),
       },
     },
     MuiTooltip: {
@@ -245,6 +347,9 @@ const theme = createTheme({
       defaultProps: {
         size: 'small',
       },
+      styleOverrides: {
+        paper: ({ theme }) => popupPaper(theme),
+      },
     },
     MuiDatePicker: {
       defaultProps: {
@@ -258,9 +363,37 @@ const theme = createTheme({
         },
       },
     },
+    MuiMenu: {
+      styleOverrides: {
+        paper: ({ theme }) => popupPaper(theme),
+        list: {
+          padding: 6,
+        },
+      },
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        root: {
+          borderRadius: 6,
+          fontSize: '0.875rem',
+        },
+      },
+    },
+    MuiBackdrop: {
+      styleOverrides: {
+        root: {
+          '&:not(.MuiBackdrop-invisible)': {
+            backgroundColor: 'rgba(15, 23, 42, 0.5)',
+            backdropFilter: 'blur(2px)',
+          },
+        },
+      },
+    },
     MuiDialog: {
       styleOverrides: {
         paper: ({ theme }) => ({
+          borderRadius: 14,
+          backgroundImage: 'none',
           [theme.breakpoints.down('sm')]: {
             margin: 0,
             width: '100%',
@@ -272,6 +405,29 @@ const theme = createTheme({
         }),
       },
     },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          fontSize: '1.125rem',
+          fontWeight: 600,
+          padding: '20px 24px 12px',
+        },
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          padding: '12px 24px 20px',
+        },
+      },
+    },
+    MuiAlert: {
+      styleOverrides: {
+        root: {
+          borderRadius: 10,
+        },
+      },
+    },
     MuiTabs: {
       defaultProps: {
         variant: 'scrollable',
@@ -279,8 +435,38 @@ const theme = createTheme({
         allowScrollButtonsMobile: true,
       },
     },
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+        },
+      },
+    },
+    MuiToggleButton: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          fontWeight: 600,
+        },
+      },
+    },
+    MuiFab: {
+      styleOverrides: {
+        root: {
+          textTransform: 'none',
+          boxShadow: '0 6px 16px rgba(16,24,40,0.18)',
+        },
+      },
+    },
+    MuiLinearProgress: {
+      styleOverrides: {
+        root: {
+          borderRadius: 4,
+        },
+      },
+    },
   },
 });
 
 export default theme;
-

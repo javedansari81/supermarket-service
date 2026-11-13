@@ -163,7 +163,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       >
         {!collapsed && (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0, py: 1 }}>
-            <PointOfSale sx={{ flexShrink: 0 }} />
+            <Box
+              sx={{
+                display: 'grid', placeItems: 'center', flexShrink: 0, width: 34, height: 34,
+                borderRadius: 2, backgroundColor: 'sidebar.selected', color: 'sidebar.selectedText',
+              }}
+            >
+              <PointOfSale fontSize="small" />
+            </Box>
             <Typography
               variant="subtitle1"
               title={user?.tenant_name}
@@ -202,7 +209,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       </Toolbar>
       <Divider sx={{ borderColor: 'sidebar.divider' }} />
 
-      <List sx={{ pt: 1 }}>
+      <List sx={{ pt: 1, overflowY: 'auto', overflowX: 'hidden', flex: 1 }}>
         {sections.map((section) => (
           <React.Fragment key={section.title ?? 'main'}>
             {section.title &&
@@ -214,10 +221,10 @@ const Sidebar: React.FC<SidebarProps> = ({
                   sx={{
                     backgroundColor: 'transparent',
                     color: 'sidebar.textMuted',
-                    fontSize: '0.75rem',
+                    fontSize: '0.6875rem',
                     fontWeight: 600,
-                    letterSpacing: 0.5,
-                    lineHeight: '32px',
+                    letterSpacing: '0.08em',
+                    lineHeight: '28px',
                     textTransform: 'uppercase',
                     mt: 1,
                   }}
@@ -231,15 +238,38 @@ const Sidebar: React.FC<SidebarProps> = ({
                   <ListItemButton
                     onClick={() => handleNavigate(item.path)}
                     selected={location.pathname === item.path}
+                    aria-current={location.pathname === item.path ? 'page' : undefined}
                     aria-label={item.title}
                     sx={{
+                      position: 'relative',
                       borderRadius: 2,
-                      mb: 0.5,
+                      mb: 0.25,
+                      minHeight: 40,
+                      py: 0.5,
                       justifyContent: collapsed ? 'center' : 'flex-start',
                       px: collapsed ? 1.5 : 2,
+                      '& .MuiSvgIcon-root': { fontSize: 21 },
+                      '& .MuiListItemText-primary': { fontSize: '0.875rem', fontWeight: 500 },
+                      '&.Mui-focusVisible': {
+                        backgroundColor: 'sidebar.hover',
+                        outline: '2px solid',
+                        outlineColor: 'sidebar.selectedText',
+                        outlineOffset: -2,
+                      },
                       '&.Mui-selected': {
                         backgroundColor: 'sidebar.selected',
                         color: 'sidebar.selectedText',
+                        '& .MuiListItemText-primary': { fontWeight: 600 },
+                        '&::before': {
+                          content: '""',
+                          position: 'absolute',
+                          left: 0,
+                          top: 8,
+                          bottom: 8,
+                          width: 3,
+                          borderRadius: 3,
+                          backgroundColor: 'sidebar.selectedText',
+                        },
                         '&:hover': {
                           backgroundColor: 'sidebar.selected',
                         },
@@ -249,7 +279,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                       },
                     }}
                   >
-                    <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 40 }}>
+                    <ListItemIcon sx={{ color: 'inherit', minWidth: collapsed ? 0 : 36 }}>
                       {item.path === '/online-orders'
                         ? <Badge badgeContent={waiting} color="error" max={99}>{item.icon}</Badge>
                         : item.icon}

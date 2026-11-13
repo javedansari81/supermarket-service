@@ -21,6 +21,7 @@ import { RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { Supplier, Product, PaginatedResponse, PutawayItem } from '../types';
 import toast from 'react-hot-toast';
+import { useConfirm } from '../components/common/ConfirmDialog';
 
 // gst_invoice = supplier charged GST (claimed); no_gst = handwritten receipt / bill of supply
 type BillType = 'gst_invoice' | 'no_gst';
@@ -120,6 +121,7 @@ const apiErrorMessage = (error: any, fallback: string): string => {
 };
 
 const Purchases: React.FC = () => {
+  const confirm = useConfirm();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -286,7 +288,12 @@ const Purchases: React.FC = () => {
   };
 
   const handleBillDelete = async () => {
-    if (!viewPurchase || !window.confirm(`Delete the bill attached to ${viewPurchase.purchase_no}?`)) return;
+    if (!viewPurchase) return;
+    if (!(await confirm({
+      title: `Delete the bill attached to ${viewPurchase.purchase_no}?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return;
     setBillBusy(true);
     try {
       const response = await api.delete<Purchase>(`${API_ENDPOINTS.PURCHASES}/${viewPurchase.id}/bill`);
