@@ -18,7 +18,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=UserListResponse)
-async def list_users(
+def list_users(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
@@ -60,7 +60,7 @@ async def list_users(
 
 
 @router.get("/roles")
-async def list_roles(
+def list_roles(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
 ):
@@ -72,7 +72,7 @@ async def list_roles(
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-async def get_user(
+def get_user(
     user_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
@@ -93,7 +93,7 @@ async def get_user(
 
 
 @router.post("", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def create_user(
+def create_user(
     user_data: UserCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -139,7 +139,7 @@ async def create_user(
 
 
 @router.put("/{user_id}", response_model=UserResponse)
-async def update_user(
+def update_user(
     user_id: int,
     user_data: UserUpdate,
     request: Request,
@@ -183,7 +183,7 @@ async def update_user(
 
 
 @router.post("/{user_id}/reset-password")
-async def reset_user_password(
+def reset_user_password(
     user_id: int,
     password_data: PasswordReset,
     request: Request,
@@ -211,7 +211,7 @@ async def reset_user_password(
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_user(
+def delete_user(
     user_id: int,
     request: Request,
     db: Session = Depends(get_db),

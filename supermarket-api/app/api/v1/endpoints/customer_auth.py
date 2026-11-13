@@ -89,7 +89,7 @@ def _find_or_create_account(db: Session, mobile: str) -> CustomerAccount:
 
 @router.post("/otp/request", response_model=OtpRequestResponse,
              dependencies=[Depends(limit_by_ip("otp-request", "RATE_LIMIT_OTP_REQUEST_PER_MINUTE"))])
-async def request_otp(data: OtpRequest, request: Request, db: Session = Depends(get_db)):
+def request_otp(data: OtpRequest, request: Request, db: Session = Depends(get_db)):
     """Send a 6-digit login code by SMS"""
     if not otp.otp_enabled():
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -127,7 +127,7 @@ async def request_otp(data: OtpRequest, request: Request, db: Session = Depends(
 
 @router.post("/otp/verify", response_model=CustomerToken,
              dependencies=[Depends(limit_by_ip("otp-verify", "RATE_LIMIT_OTP_VERIFY_PER_MINUTE"))])
-async def verify_otp(data: OtpVerify, request: Request, db: Session = Depends(get_db)):
+def verify_otp(data: OtpVerify, request: Request, db: Session = Depends(get_db)):
     """Log in with the code; the first login creates the account (no store record yet)"""
     now = datetime.utcnow()
     record = db.query(CustomerOtp).filter(CustomerOtp.mobile == data.mobile
@@ -157,7 +157,7 @@ async def verify_otp(data: OtpVerify, request: Request, db: Session = Depends(ge
 
 @router.post("/refresh", response_model=CustomerToken,
              dependencies=[Depends(limit_by_ip("refresh", "RATE_LIMIT_REFRESH_PER_MINUTE"))])
-async def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
+def refresh(data: RefreshRequest, request: Request, db: Session = Depends(get_db)):
     """Swap a refresh token for a new access and refresh token (the old one stops working)"""
     expired = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Please log in again")
     stored = db.query(CustomerRefreshToken).filter(
@@ -188,7 +188,7 @@ async def refresh(data: RefreshRequest, request: Request, db: Session = Depends(
 
 
 @router.post("/logout")
-async def logout(data: RefreshRequest, db: Session = Depends(get_db)):
+def logout(data: RefreshRequest, db: Session = Depends(get_db)):
     """End this session; works even after the access token has expired"""
     stored = db.query(CustomerRefreshToken).filter(
         CustomerRefreshToken.token_hash == _token_hash(data.refresh_token),
@@ -201,13 +201,13 @@ async def logout(data: RefreshRequest, db: Session = Depends(get_db)):
 
 
 @router.get("/me", response_model=AccountResponse)
-async def get_me(account: CustomerAccount = Depends(get_current_account)):
+def get_me(account: CustomerAccount = Depends(get_current_account)):
     """The logged-in customer's profile"""
     return account
 
 
 @router.put("/me", response_model=AccountResponse)
-async def update_me(data: AccountUpdate, db: Session = Depends(get_db),
+def update_me(data: AccountUpdate, db: Session = Depends(get_db),
                     account: CustomerAccount = Depends(get_current_account)):
     """Set the customer's name (asked after the first login); stores without a name get it too"""
     account.customer_name = data.customer_name
@@ -220,7 +220,7 @@ async def update_me(data: AccountUpdate, db: Session = Depends(get_db),
 
 
 @router.get("/my-stores", response_model=MyStoresResponse)
-async def my_stores(db: Session = Depends(get_db),
+def my_stores(db: Session = Depends(get_db),
                     account: CustomerAccount = Depends(get_current_account)):
     """Stores selling online where the customer already has a record, shown first in the
     store picker. Other stores never learn about these."""
@@ -242,7 +242,7 @@ async def my_stores(db: Session = Depends(get_db),
 # ---------- Order updates by browser notification ----------
 
 @router.get("/push/key", response_model=PushKeyResponse)
-async def push_key():
+def push_key():
     """Key the shop subscribes the browser with; enabled = false when updates are switched off"""
     return PushKeyResponse(enabled=push_enabled(),
                            public_key=settings.VAPID_PUBLIC_KEY if push_enabled() else None)
@@ -250,7 +250,7 @@ async def push_key():
 
 @router.post("/push/subscribe",
              dependencies=[Depends(limit_by_account("push", "RATE_LIMIT_PUSH_PER_HOUR"))])
-async def push_subscribe(data: PushSubscriptionIn, request: Request, db: Session = Depends(get_db),
+def push_subscribe(data: PushSubscriptionIn, request: Request, db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """Send order updates to this browser; a browser belongs to the login that turned it on last"""
     if not push_enabled():
@@ -289,7 +289,7 @@ async def push_subscribe(data: PushSubscriptionIn, request: Request, db: Session
 
 @router.post("/push/unsubscribe",
              dependencies=[Depends(limit_by_ip("push-off", "RATE_LIMIT_PUSH_PER_HOUR", window=3600))])
-async def push_unsubscribe(data: PushEndpoint, db: Session = Depends(get_db)):
+def push_unsubscribe(data: PushEndpoint, db: Session = Depends(get_db)):
     """Stop order updates to this browser; works without login so logging out can call it"""
     db.query(CustomerPushSubscription).filter(
         CustomerPushSubscription.endpoint == data.endpoint).delete(synchronize_session=False)

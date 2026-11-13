@@ -78,7 +78,7 @@ def delete_rule(db: Session, request: Request, context: TenantContext,
 
 
 @router.get("/rules", response_model=ClearanceRulesResponse)
-async def list_rules(db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)):
+def list_rules(db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)):
     """Store default tiers and category / product overrides"""
     rules = db.query(ClearanceRule).options(
         joinedload(ClearanceRule.category), joinedload(ClearanceRule.product)
@@ -93,7 +93,7 @@ async def list_rules(db: Session = Depends(get_db), context: TenantContext = Dep
 
 
 @router.put("/settings", response_model=ClearanceSettingsIn)
-async def update_settings(data: ClearanceSettingsIn, request: Request, db: Session = Depends(get_db),
+def update_settings(data: ClearanceSettingsIn, request: Request, db: Session = Depends(get_db),
                           context: TenantContext = Depends(get_tenant_context)):
     """Switch near-expiry discount tiers on or off for the store"""
     old = ClearanceResolver(db, context.tenant_id).enabled
@@ -105,41 +105,41 @@ async def update_settings(data: ClearanceSettingsIn, request: Request, db: Sessi
 
 
 @router.put("/rules/default", response_model=ClearanceRuleResponse)
-async def update_default_rule(data: ClearanceTiersIn, request: Request, db: Session = Depends(get_db),
+def update_default_rule(data: ClearanceTiersIn, request: Request, db: Session = Depends(get_db),
                               context: TenantContext = Depends(get_tenant_context)):
     return save_rule(db, request, context, data)
 
 
 @router.put("/rules/category/{category_id}", response_model=ClearanceRuleResponse)
-async def update_category_rule(category_id: int, data: ClearanceTiersIn, request: Request,
+def update_category_rule(category_id: int, data: ClearanceTiersIn, request: Request,
                                db: Session = Depends(get_db),
                                context: TenantContext = Depends(get_tenant_context)):
     return save_rule(db, request, context, data, category_id=category_id)
 
 
 @router.delete("/rules/category/{category_id}", status_code=204)
-async def delete_category_rule(category_id: int, request: Request, db: Session = Depends(get_db),
+def delete_category_rule(category_id: int, request: Request, db: Session = Depends(get_db),
                                context: TenantContext = Depends(get_tenant_context)):
     """Remove the override; the category follows the store default again"""
     delete_rule(db, request, context, category_id=category_id)
 
 
 @router.put("/rules/product/{product_id}", response_model=ClearanceRuleResponse)
-async def update_product_rule(product_id: int, data: ClearanceTiersIn, request: Request,
+def update_product_rule(product_id: int, data: ClearanceTiersIn, request: Request,
                               db: Session = Depends(get_db),
                               context: TenantContext = Depends(get_tenant_context)):
     return save_rule(db, request, context, data, product_id=product_id)
 
 
 @router.delete("/rules/product/{product_id}", status_code=204)
-async def delete_product_rule(product_id: int, request: Request, db: Session = Depends(get_db),
+def delete_product_rule(product_id: int, request: Request, db: Session = Depends(get_db),
                               context: TenantContext = Depends(get_tenant_context)):
     """Remove the override; the product follows its category or the store default again"""
     delete_rule(db, request, context, product_id=product_id)
 
 
 @router.get("/near-expiry", response_model=NearExpiryResponse)
-async def near_expiry(days: int = Query(30, ge=0, le=730), db: Session = Depends(get_db),
+def near_expiry(days: int = Query(30, ge=0, le=730), db: Session = Depends(get_db),
                       context: TenantContext = Depends(get_tenant_context)):
     """Packed batches expiring within `days` (expired ones too) with the % billing applies,
     and loose items in stock with today's markdown"""
@@ -179,7 +179,7 @@ async def near_expiry(days: int = Query(30, ge=0, le=730), db: Session = Depends
 
 
 @router.put("/markdown/{product_id}", response_model=LooseMarkdownItem)
-async def set_markdown(product_id: int, data: MarkdownIn, request: Request, db: Session = Depends(get_db),
+def set_markdown(product_id: int, data: MarkdownIn, request: Request, db: Session = Depends(get_db),
                        context: TenantContext = Depends(get_tenant_context)):
     """Set today's markdown on a loose item; it lapses at midnight (IST). 0 removes it."""
     product = db.query(Product).filter(Product.id == product_id, Product.tenant_id == context.tenant_id).first()

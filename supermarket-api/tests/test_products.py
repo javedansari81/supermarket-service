@@ -1133,6 +1133,31 @@ def test_staff_confirm_pack_and_deliver_bills_a_sale(client, db, online, product
     assert client.post(f"{url}/deliver", headers=cashier_headers, json={}).status_code == 400
 
 
+def test_void_of_delivered_order_restocks_goods_but_not_the_delivery_charge(client, db, online, product,
+                                                                            cashier_headers, admin_headers):
+    from app.core.online_orders import DELIVERY_PRODUCT_NO
+    from app.models import Product, ProductBatch
+    order, tomato, _ = placed_order(client, db, online, product)
+    url = f"{STAFF}/{order['id']}"
+    rice_item, tomato_item = client.get(url, headers=cashier_headers).json()["items"]
+    assert client.post(f"{url}/confirm", headers=cashier_headers).status_code == 200
+    assert client.post(f"{url}/pack", headers=cashier_headers, json={"items": [
+        {"item_id": rice_item["id"], "packed_quantity": 3},
+        {"item_id": tomato_item["id"], "packed_quantity": 1}]}).status_code == 200
+    delivered = client.post(f"{url}/deliver", headers=cashier_headers, json={"payment_mode": "cash"})
+    assert delivered.status_code == 200, delivered.text
+
+    res = client.post(f"/api/v1/sales/{delivered.json()['sale_id']}/void", headers=admin_headers,
+                      json={"reason": "Customer refused the order"})
+    assert res.status_code == 200, res.text
+    db.refresh(product)
+    db.refresh(tomato)
+    assert (float(product.stock_quantity), float(tomato.stock_quantity)) == (100, 5)
+    charge = db.query(Product).filter(Product.product_no == DELIVERY_PRODUCT_NO).one()
+    assert float(charge.stock_quantity) == 0
+    assert db.query(ProductBatch).filter(ProductBatch.product_id == charge.id).count() == 0
+
+
 def test_only_supervisors_cancel_and_stores_see_their_own_orders(client, db, online, product, cashier_headers,
                                                                  supervisor_headers, admin_b_headers):
     order, _, customer = placed_order(client, db, online, product)

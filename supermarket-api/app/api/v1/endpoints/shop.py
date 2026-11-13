@@ -7,7 +7,6 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session, joinedload
 from app.core.batches import fefo_key, uses_batches
@@ -142,13 +141,13 @@ def price_with_pack_sizes(db: Session, tenant_id: int, products: List[Product]) 
 
 
 @router.get("/images/{key:path}", dependencies=IMAGES_LIMIT)
-async def get_image(key: str):
+def get_image(key: str):
     """A product picture from object storage (when PRODUCT_IMAGE_PUBLIC_URL is not set).
     Only product image files can be read; each upload has a new name, so they cache for good."""
     if not product_images.KEY_PATTERN.match(key) or not storage.is_configured():
         raise HTTPException(status_code=404, detail="Image not found")
     try:
-        content = await run_in_threadpool(storage.get_file, key)
+        content = storage.get_file(key)
     except KeyError:
         raise HTTPException(status_code=404, detail="Image not found")
     return Response(content, media_type=product_images.CONTENT_TYPE,
@@ -156,7 +155,7 @@ async def get_image(key: str):
 
 
 @router.get("/stores", response_model=ShopStoreListResponse, dependencies=CATALOGUE_LIMIT)
-async def list_stores(response: Response, db: Session = Depends(get_db)):
+def list_stores(response: Response, db: Session = Depends(get_db)):
     """Stores customers can order from (the store picker)"""
     tenants = db.query(Tenant).filter(
         Tenant.status == "active", Tenant.subdomain.isnot(None), Tenant.id.in_(online_store_ids(db))
@@ -171,7 +170,7 @@ async def list_stores(response: Response, db: Session = Depends(get_db)):
 
 
 @router.get("/stores/{store}", response_model=ShopStoreDetail, dependencies=CATALOGUE_LIMIT)
-async def get_store(response: Response, db: Session = Depends(get_db),
+def get_store(response: Response, db: Session = Depends(get_db),
                     tenant: Tenant = Depends(get_shop_tenant)):
     """Store details for the shop header and footer (FSSAI licence must be shown for food)"""
     store = build_store_settings(db, tenant.id)
@@ -186,7 +185,7 @@ async def get_store(response: Response, db: Session = Depends(get_db),
 
 @router.get("/stores/{store}/categories", response_model=ShopCategoryListResponse,
             dependencies=CATALOGUE_LIMIT)
-async def list_categories(response: Response, db: Session = Depends(get_db),
+def list_categories(response: Response, db: Session = Depends(get_db),
                           tenant: Tenant = Depends(get_shop_tenant)):
     """Active categories that have products to sell (pack sizes of one item count once)"""
     counts = sellable_products(db, tenant.id).with_entities(
@@ -205,7 +204,7 @@ async def list_categories(response: Response, db: Session = Depends(get_db),
 
 @router.get("/stores/{store}/products", response_model=ShopProductListResponse,
             dependencies=CATALOGUE_LIMIT)
-async def list_products(
+def list_products(
     response: Response,
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=100),
@@ -265,7 +264,7 @@ async def list_products(
 
 @router.get("/stores/{store}/products/{product_id}", response_model=ShopProductDetail,
             dependencies=CATALOGUE_LIMIT)
-async def get_product(product_id: int, response: Response, db: Session = Depends(get_db),
+def get_product(product_id: int, response: Response, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant)):
     """One product with its description and its other pack sizes"""
     product = sellable_products(db, tenant.id).options(joinedload(Product.category)).filter(

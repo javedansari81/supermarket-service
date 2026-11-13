@@ -115,7 +115,7 @@ def build_label(product: Product, store_name: str) -> BarcodeLabelData:
 
 
 @router.get("/configs", response_model=BarcodeConfigListResponse)
-async def list_barcode_configs(
+def list_barcode_configs(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -132,7 +132,7 @@ async def list_barcode_configs(
 
 
 @router.post("/configs", response_model=BarcodeConfigResponse, status_code=status.HTTP_201_CREATED)
-async def create_barcode_config(
+def create_barcode_config(
     config_data: BarcodeConfigCreate,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
@@ -168,7 +168,7 @@ async def create_barcode_config(
 
 
 @router.get("/scale-export")
-async def export_scale_items(
+def export_scale_items(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -201,7 +201,7 @@ async def export_scale_items(
 
 
 @router.get("/generate/{product_id}")
-async def generate_barcode(
+def generate_barcode(
     product_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -224,7 +224,7 @@ async def generate_barcode(
 
 
 @router.post("/print")
-async def print_barcodes(
+def print_barcodes(
     request: BarcodePrintRequest,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -266,7 +266,7 @@ async def print_barcodes(
 
 
 @router.post("/packed-labels")
-async def print_packed_labels(
+def print_packed_labels(
     request: PackedLabelRequest,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -326,7 +326,7 @@ async def print_packed_labels(
 
 
 @router.post("/generate-code")
-async def generate_new_barcode(
+def generate_new_barcode(
     product_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),

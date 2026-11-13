@@ -15,13 +15,14 @@ from app.schemas.stock import (
     StockMovementCreate, StockMovementResponse, StockMovementListResponse,
     StockAdjustment, StockSummary, StockReport
 )
+from app.api.v1.endpoints.reports import IST_OFFSET
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
 
 
 @router.get("/stock")
-async def get_stock_summary(
+def get_stock_summary(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     category_id: Optional[int] = None,
@@ -109,7 +110,7 @@ async def get_stock_summary(
 
 
 @router.get("/movements", response_model=StockMovementListResponse)
-async def list_stock_movements(
+def list_stock_movements(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     product_id: Optional[int] = None,
@@ -133,10 +134,10 @@ async def list_stock_movements(
         query = query.filter(StockMovement.movement_type == movement_type)
     
     if from_date:
-        query = query.filter(func.date(StockMovement.created_at) >= from_date)
+        query = query.filter(func.date(StockMovement.created_at + IST_OFFSET) >= from_date)
     
     if to_date:
-        query = query.filter(func.date(StockMovement.created_at) <= to_date)
+        query = query.filter(func.date(StockMovement.created_at + IST_OFFSET) <= to_date)
     
     total = query.count()
     items = query.order_by(StockMovement.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -150,7 +151,7 @@ async def list_stock_movements(
 
 
 @router.post("/adjust")
-async def adjust_stock(
+def adjust_stock(
     adjustment: StockAdjustment,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),

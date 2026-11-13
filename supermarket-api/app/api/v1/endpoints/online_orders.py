@@ -110,7 +110,7 @@ def _move(db: Session, request: Request, background: BackgroundTasks, context: T
 
 
 @router.get("", response_model=StaffOrderListResponse)
-async def list_orders(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+def list_orders(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
                       status: Optional[str] = None,
                       search: Optional[str] = Query(None, max_length=50),
                       db: Session = Depends(get_db),
@@ -171,14 +171,14 @@ async def order_stream(request: Request, current_user: User = Depends(get_curren
 
 
 @router.get("/{order_id}", response_model=StaffOrder)
-async def get_order(order_id: int, db: Session = Depends(get_db),
+def get_order(order_id: int, db: Session = Depends(get_db),
                     context: TenantContext = Depends(get_tenant_context)):
     """One order with its items"""
     return _detail(_get_order(db, context, order_id))
 
 
 @router.post("/{order_id}/confirm", response_model=StaffOrder)
-async def confirm_order(order_id: int, request: Request, background: BackgroundTasks,
+def confirm_order(order_id: int, request: Request, background: BackgroundTasks,
                         db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Accept a new order"""
@@ -189,7 +189,7 @@ async def confirm_order(order_id: int, request: Request, background: BackgroundT
 
 
 @router.post("/{order_id}/pack", response_model=StaffOrder)
-async def pack_order(order_id: int, data: PackRequest, request: Request,
+def pack_order(order_id: int, data: PackRequest, request: Request,
                      background: BackgroundTasks, db: Session = Depends(get_db),
                      context: TenantContext = Depends(get_tenant_context)):
     """Record what was packed: the same or a lower quantity (0 = out of stock), loose items
@@ -200,7 +200,8 @@ async def pack_order(order_id: int, data: PackRequest, request: Request,
     if set(packed) != {i.id for i in order.items}:
         raise HTTPException(status_code=400, detail="Give the packed quantity of every item")
     stock = dict(db.query(Product.id, Product.stock_quantity).filter(
-        Product.id.in_([i.product_id for i in order.items])).with_for_update().all())
+        Product.id.in_([i.product_id for i in order.items])
+    ).order_by(Product.id).with_for_update().all())
     mrp_total = items_total = ZERO
     for item in order.items:
         qty = packed[item.id]
@@ -233,7 +234,7 @@ async def pack_order(order_id: int, data: PackRequest, request: Request,
 
 
 @router.post("/{order_id}/dispatch", response_model=StaffOrder)
-async def dispatch_order(order_id: int, request: Request, background: BackgroundTasks,
+def dispatch_order(order_id: int, request: Request, background: BackgroundTasks,
                          db: Session = Depends(get_db),
                          context: TenantContext = Depends(get_tenant_context)):
     """The order has left the store"""
@@ -265,7 +266,7 @@ def _cap_to_order_prices(lines: List[PricedLine], items: List[OrderItem]) -> Non
 
 
 @router.post("/{order_id}/deliver", response_model=StaffOrder)
-async def deliver_order(order_id: int, data: DeliverRequest, request: Request,
+def deliver_order(order_id: int, data: DeliverRequest, request: Request,
                         background: BackgroundTasks, db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Handed over and paid: billed as a sale (tax invoice, loyalty points, stock taken off)
@@ -304,7 +305,7 @@ async def deliver_order(order_id: int, data: DeliverRequest, request: Request,
 
 
 @router.post("/{order_id}/cancel", response_model=StaffOrder)
-async def cancel_order(order_id: int, data: StoreCancel, request: Request,
+def cancel_order(order_id: int, data: StoreCancel, request: Request,
                        background: BackgroundTasks, db: Session = Depends(get_db),
                        current_user: User = Depends(get_current_supervisor_user),
                        context: TenantContext = Depends(get_tenant_context)):

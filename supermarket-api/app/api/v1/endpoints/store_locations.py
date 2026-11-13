@@ -96,7 +96,7 @@ def next_number(values: List[str], prefix: str = "") -> int:
 
 
 @router.get("", response_model=StoreLocationListResponse)
-async def list_locations(
+def list_locations(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=1000),
     status: Optional[str] = None,
@@ -137,7 +137,7 @@ async def list_locations(
 
 
 @router.get("/active")
-async def list_active_locations(
+def list_active_locations(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -154,7 +154,7 @@ async def list_active_locations(
 
 
 @router.get("/suggest", response_model=LocationSuggestion)
-async def suggest_location(
+def suggest_location(
     location_type: str = Query(..., pattern="^(display|storage|promo)$"),
     rack_no: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -182,7 +182,7 @@ async def suggest_location(
 
 
 @router.get("/{location_id}", response_model=StoreLocationResponse)
-async def get_location(
+def get_location(
     location_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -194,7 +194,7 @@ async def get_location(
 
 
 @router.get("/{location_id}/products", response_model=List[LocationProduct])
-async def list_location_products(
+def list_location_products(
     location_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -215,7 +215,7 @@ async def list_location_products(
 
 
 @router.post("", response_model=StoreLocationResponse, status_code=status.HTTP_201_CREATED)
-async def create_location(
+def create_location(
     location_data: StoreLocationCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -256,7 +256,7 @@ async def create_location(
 
 
 @router.put("/{location_id}", response_model=StoreLocationResponse)
-async def update_location(
+def update_location(
     location_id: int,
     location_data: StoreLocationUpdate,
     request: Request,
@@ -324,7 +324,7 @@ async def update_location(
 
 
 @router.delete("/{location_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_location(
+def delete_location(
     location_id: int,
     request: Request,
     db: Session = Depends(get_db),

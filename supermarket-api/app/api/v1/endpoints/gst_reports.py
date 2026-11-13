@@ -172,7 +172,7 @@ def store_warnings(store) -> List[str]:
 
 
 @router.get("/gstr1")
-async def get_gstr1(
+def get_gstr1(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: Session = Depends(get_db),
@@ -283,7 +283,7 @@ def estimate_set_off(liability: Dict[str, Decimal], credit: Dict[str, Decimal]):
 
 
 @router.get("/gstr3b")
-async def get_gstr3b(
+def get_gstr3b(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: Session = Depends(get_db),

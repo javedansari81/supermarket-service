@@ -5,7 +5,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
 from app.models.audit_log import AuditLog
 from app.models.supplier import Supplier
@@ -17,6 +17,7 @@ router = APIRouter()
 
 def generate_supplier_code(db: Session, tenant_id: int) -> str:
     """Generate next sequential supplier code (SUP0001, SUP0002, ...)"""
+    lock_sequence(db, "supplier_code", tenant_id)
     last_seq = db.query(
         func.max(cast(func.substring(Supplier.supplier_code, 4), Integer))
     ).filter(
@@ -43,7 +44,7 @@ def ensure_unique_gst_no(db: Session, tenant_id: int, gst_no: Optional[str], exc
 
 
 @router.get("", response_model=SupplierListResponse)
-async def list_suppliers(
+def list_suppliers(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
@@ -77,7 +78,7 @@ async def list_suppliers(
 
 
 @router.get("/active")
-async def list_active_suppliers(
+def list_active_suppliers(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -94,7 +95,7 @@ async def list_active_suppliers(
 
 
 @router.get("/{supplier_id}", response_model=SupplierResponse)
-async def get_supplier(
+def get_supplier(
     supplier_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -114,7 +115,7 @@ async def get_supplier(
 
 
 @router.post("", response_model=SupplierResponse, status_code=status.HTTP_201_CREATED)
-async def create_supplier(
+def create_supplier(
     supplier_data: SupplierCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -156,7 +157,7 @@ async def create_supplier(
 
 
 @router.put("/{supplier_id}", response_model=SupplierResponse)
-async def update_supplier(
+def update_supplier(
     supplier_id: int,
     supplier_data: SupplierUpdate,
     request: Request,
@@ -193,7 +194,7 @@ async def update_supplier(
 
 
 @router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_supplier(
+def delete_supplier(
     supplier_id: int,
     request: Request,
     db: Session = Depends(get_db),

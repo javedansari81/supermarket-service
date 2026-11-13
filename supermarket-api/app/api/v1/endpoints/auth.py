@@ -13,7 +13,7 @@ from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.models.tenant import Tenant
 from app.schemas.auth import Token, LoginRequest
-from app.api.deps import get_current_user, get_store_tenant_id
+from app.api.deps import get_current_user, get_store_tenant_id, limit_by_ip
 
 router = APIRouter()
 
@@ -43,8 +43,9 @@ def _issue_token(user: User, tenant: Tenant) -> Token:
     )
 
 
-@router.post("/login", response_model=Token)
-async def login(
+@router.post("/login", response_model=Token,
+             dependencies=[Depends(limit_by_ip("login", "RATE_LIMIT_LOGIN_PER_MINUTE"))])
+def login(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -95,7 +96,7 @@ async def login(
 
 
 @router.post("/refresh", response_model=Token)
-async def refresh_token(current_user: User = Depends(get_current_user)):
+def refresh_token(current_user: User = Depends(get_current_user)):
     """
     Issue a new access token for an active session
     """
@@ -103,7 +104,7 @@ async def refresh_token(current_user: User = Depends(get_current_user)):
 
 
 @router.post("/logout")
-async def logout(
+def logout(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -118,7 +119,7 @@ async def logout(
 
 
 @router.get("/me")
-async def get_current_user_info(
+def get_current_user_info(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):

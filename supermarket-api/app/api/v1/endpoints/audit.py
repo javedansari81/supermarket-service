@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.audit_log import AuditLog
 from app.models.user import User
 from app.schemas.audit import AuditLogResponse, AuditLogListResponse
+from app.api.v1.endpoints.reports import IST_OFFSET
 from app.api.deps import get_current_admin_user, get_tenant_context, TenantContext
 
 router = APIRouter()
@@ -179,7 +180,7 @@ def load_user_names(db: Session, tenant_id: int, logs: list) -> dict:
 
 
 @router.get("", response_model=AuditLogListResponse)
-async def list_audit_logs(
+def list_audit_logs(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     action: Optional[str] = None,
@@ -210,10 +211,10 @@ async def list_audit_logs(
         query = query.filter(AuditLog.user_id == user_id)
     
     if from_date:
-        query = query.filter(func.date(AuditLog.created_at) >= from_date)
+        query = query.filter(func.date(AuditLog.created_at + IST_OFFSET) >= from_date)
     
     if to_date:
-        query = query.filter(func.date(AuditLog.created_at) <= to_date)
+        query = query.filter(func.date(AuditLog.created_at + IST_OFFSET) <= to_date)
     
     total = query.count()
     items = query.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -229,7 +230,7 @@ async def list_audit_logs(
 
 
 @router.get("/actions")
-async def get_audit_actions(current_user = Depends(get_current_admin_user)):
+def get_audit_actions(current_user = Depends(get_current_admin_user)):
     """
     Get list of possible audit actions
     """
@@ -246,7 +247,7 @@ async def get_audit_actions(current_user = Depends(get_current_admin_user)):
 
 
 @router.get("/entity-types")
-async def get_entity_types(current_user = Depends(get_current_admin_user)):
+def get_entity_types(current_user = Depends(get_current_admin_user)):
     """
     Get list of possible entity types
     """
@@ -269,7 +270,7 @@ async def get_entity_types(current_user = Depends(get_current_admin_user)):
 
 
 @router.get("/{audit_id}", response_model=AuditLogResponse)
-async def get_audit_log(
+def get_audit_log(
     audit_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),

@@ -112,7 +112,7 @@ def apply_data(db: Session, context: TenantContext, offer: Offer, data: OfferIn)
 
 
 @router.get("", response_model=OfferListResponse)
-async def list_offers(
+def list_offers(
     status_filter: Optional[str] = Query(None, alias="status",
                                          pattern="^(running|upcoming|ended|inactive)$"),
     db: Session = Depends(get_db),
@@ -129,13 +129,13 @@ async def list_offers(
 
 
 @router.get("/{offer_id}", response_model=OfferResponse)
-async def read_offer(offer_id: int, db: Session = Depends(get_db),
+def read_offer(offer_id: int, db: Session = Depends(get_db),
                      context: TenantContext = Depends(get_tenant_context)):
     return to_offer_response(get_offer(db, context.tenant_id, offer_id))
 
 
 @router.post("", response_model=OfferResponse, status_code=status.HTTP_201_CREATED)
-async def create_offer(data: OfferIn, request: Request, db: Session = Depends(get_db),
+def create_offer(data: OfferIn, request: Request, db: Session = Depends(get_db),
                        context: TenantContext = Depends(get_tenant_context)):
     offer = Offer(tenant_id=context.tenant_id, created_by=context.user_id)
     apply_data(db, context, offer, data)
@@ -148,7 +148,7 @@ async def create_offer(data: OfferIn, request: Request, db: Session = Depends(ge
 
 
 @router.put("/{offer_id}", response_model=OfferResponse)
-async def update_offer(offer_id: int, data: OfferIn, request: Request,
+def update_offer(offer_id: int, data: OfferIn, request: Request,
                        db: Session = Depends(get_db),
                        context: TenantContext = Depends(get_tenant_context)):
     offer = get_offer(db, context.tenant_id, offer_id)
@@ -163,7 +163,7 @@ async def update_offer(offer_id: int, data: OfferIn, request: Request,
 
 
 @router.delete("/{offer_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_offer(offer_id: int, request: Request, db: Session = Depends(get_db),
+def delete_offer(offer_id: int, request: Request, db: Session = Depends(get_db),
                        context: TenantContext = Depends(get_tenant_context)):
     """Bills already made keep the offer name on their lines"""
     offer = get_offer(db, context.tenant_id, offer_id)

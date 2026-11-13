@@ -110,7 +110,7 @@ def _get_customer_row(db: Session, tenant_id: int, customer_id: int):
 
 
 @router.get("", response_model=CustomerListResponse)
-async def list_customers(
+def list_customers(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     search: Optional[str] = None,
@@ -136,7 +136,7 @@ async def list_customers(
 
 
 @router.get("/lookup", response_model=CustomerResponse)
-async def lookup_customer(
+def lookup_customer(
     mobile: str,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -156,7 +156,7 @@ async def lookup_customer(
 
 
 @router.get("/{customer_id}", response_model=CustomerResponse)
-async def get_customer(
+def get_customer(
     customer_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -192,7 +192,7 @@ def _loyalty_history(db: Session, tenant_id: int, customer: Customer, settings: 
 
 
 @router.get("/{customer_id}/loyalty", response_model=LoyaltyHistoryResponse)
-async def get_customer_loyalty(
+def get_customer_loyalty(
     customer_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -210,7 +210,7 @@ async def get_customer_loyalty(
 
 
 @router.post("/{customer_id}/loyalty/adjust", response_model=LoyaltyHistoryResponse)
-async def adjust_customer_loyalty(
+def adjust_customer_loyalty(
     customer_id: int,
     data: LoyaltyAdjustRequest,
     request: Request,
@@ -238,7 +238,7 @@ async def adjust_customer_loyalty(
 
 
 @router.get("/{customer_id}/sales", response_model=CustomerSalesResponse)
-async def list_customer_sales(
+def list_customer_sales(
     customer_id: int,
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
@@ -270,7 +270,7 @@ async def list_customer_sales(
 
 
 @router.put("/{customer_id}", response_model=CustomerResponse)
-async def update_customer(
+def update_customer(
     customer_id: int,
     data: CustomerUpdate,
     db: Session = Depends(get_db),

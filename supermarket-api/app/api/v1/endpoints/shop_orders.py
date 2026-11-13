@@ -57,7 +57,7 @@ def _make_default(db: Session, address: CustomerAddress) -> None:
 
 
 @router.get("/addresses", response_model=AddressListResponse)
-async def list_addresses(db: Session = Depends(get_db),
+def list_addresses(db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """The customer's delivery addresses, default first"""
     rows = db.query(CustomerAddress).filter(CustomerAddress.account_id == account.id).order_by(
@@ -67,7 +67,7 @@ async def list_addresses(db: Session = Depends(get_db),
 
 @router.post("/addresses", response_model=AddressResponse, status_code=status.HTTP_201_CREATED,
              dependencies=ADDRESS_LIMIT)
-async def add_address(data: AddressIn, db: Session = Depends(get_db),
+def add_address(data: AddressIn, db: Session = Depends(get_db),
                       account: CustomerAccount = Depends(get_current_account)):
     """Save a delivery address; the first one becomes the default"""
     count = db.query(CustomerAddress).filter(CustomerAddress.account_id == account.id).count()
@@ -84,7 +84,7 @@ async def add_address(data: AddressIn, db: Session = Depends(get_db),
 
 
 @router.put("/addresses/{address_id}", response_model=AddressResponse, dependencies=ADDRESS_LIMIT)
-async def update_address(address_id: int, data: AddressIn, db: Session = Depends(get_db),
+def update_address(address_id: int, data: AddressIn, db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """Change an address (orders already placed keep the address they were sent to)"""
     address = _get_address(db, account, address_id)
@@ -98,7 +98,7 @@ async def update_address(address_id: int, data: AddressIn, db: Session = Depends
 
 
 @router.delete("/addresses/{address_id}", dependencies=ADDRESS_LIMIT)
-async def delete_address(address_id: int, db: Session = Depends(get_db),
+def delete_address(address_id: int, db: Session = Depends(get_db),
                          account: CustomerAccount = Depends(get_current_account)):
     """Remove an address; the latest other address becomes the default"""
     address = _get_address(db, account, address_id)
@@ -173,7 +173,7 @@ def _price_cart(db: Session, tenant_id: int, items, lock: bool = False) -> Price
 
 @router.post("/stores/{store}/checkout/quote", response_model=QuoteResponse,
              dependencies=QUOTE_LIMIT)
-async def quote(data: QuoteRequest, db: Session = Depends(get_db),
+def quote(data: QuoteRequest, db: Session = Depends(get_db),
                 tenant: Tenant = Depends(get_shop_tenant)):
     """Bill for a cart before ordering (no login needed); nothing is saved"""
     cart = _price_cart(db, tenant.id, data.items)
@@ -242,7 +242,7 @@ def _my_order(db: Session, account: CustomerAccount, order_id: int, lock: bool =
 
 @router.post("/stores/{store}/orders", response_model=OrderResponse,
              status_code=status.HTTP_201_CREATED, dependencies=ORDER_LIMIT)
-async def place_order(data: OrderCreate, request: Request, db: Session = Depends(get_db),
+def place_order(data: OrderCreate, request: Request, db: Session = Depends(get_db),
                       tenant: Tenant = Depends(get_shop_tenant),
                       account: CustomerAccount = Depends(get_current_account)):
     """Place a home-delivery order. The cart is priced again and its stock held for the order;
@@ -287,7 +287,7 @@ async def place_order(data: OrderCreate, request: Request, db: Session = Depends
 
 
 @router.get("/orders", response_model=OrderListResponse)
-async def list_orders(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=50),
+def list_orders(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=50),
                       store: Optional[str] = None, db: Session = Depends(get_db),
                       account: CustomerAccount = Depends(get_current_account)):
     """The customer's orders at every store (or one store), newest first"""
@@ -305,14 +305,14 @@ async def list_orders(page: int = Query(1, ge=1), page_size: int = Query(20, ge=
 
 
 @router.get("/orders/{order_id}", response_model=OrderResponse)
-async def get_order(order_id: int, db: Session = Depends(get_db),
+def get_order(order_id: int, db: Session = Depends(get_db),
                     account: CustomerAccount = Depends(get_current_account)):
     """One of the customer's orders"""
     return _order_response(db, _my_order(db, account, order_id))
 
 
 @router.post("/orders/{order_id}/cancel", response_model=OrderResponse)
-async def cancel_order(order_id: int, data: OrderCancel, request: Request,
+def cancel_order(order_id: int, data: OrderCancel, request: Request,
                        db: Session = Depends(get_db),
                        account: CustomerAccount = Depends(get_current_account)):
     """Cancel an order before it is packed; its stock is offered again"""

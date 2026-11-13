@@ -7,8 +7,9 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
+from app.core.clearance import today_ist
 from app.models.audit_log import AuditLog
 from app.models.invoice import Invoice
 from app.models.loyalty_transaction import LoyaltyTransaction
@@ -22,6 +23,7 @@ from app.schemas.invoice import (
 )
 from app.schemas.settings import GST_STATE_CODES, state_code_for
 from app.api.v1.endpoints.settings import build_store_settings
+from app.api.v1.endpoints.reports import IST_OFFSET
 from app.api.deps import get_current_user, get_tenant_context, TenantContext
 
 router = APIRouter()
@@ -29,8 +31,9 @@ router = APIRouter()
 
 def generate_invoice_no(db: Session, tenant_id: int) -> str:
     """Generate unique invoice number (GST allows at most 16 characters)"""
+    lock_sequence(db, "invoice_no", tenant_id)
     prefix = (get_setting(db, tenant_id, "invoice_prefix", "INV") or "INV").strip()[:4]
-    today = datetime.now().strftime("%Y%m%d")
+    today = today_ist().strftime("%Y%m%d")
     last_invoice = db.query(Invoice).filter(
         Invoice.tenant_id == tenant_id,
         Invoice.invoice_no.like(f"{prefix}{today}%")
@@ -91,11 +94,11 @@ def get_setting(db: Session, tenant_id: int, key: str, default: str = "") -> str
         TenantSetting.tenant_id == tenant_id,
         TenantSetting.setting_key == key
     ).first()
-    return setting.setting_value if setting else default
+    return setting.setting_value if setting and setting.setting_value is not None else default
 
 
 @router.get("", response_model=InvoiceListResponse)
-async def list_invoices(
+def list_invoices(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     from_date: Optional[date] = None,
@@ -110,10 +113,10 @@ async def list_invoices(
     query = db.query(Invoice).filter(Invoice.tenant_id == context.tenant_id)
     
     if from_date:
-        query = query.filter(func.date(Invoice.invoice_date) >= from_date)
+        query = query.filter(func.date(Invoice.invoice_date + IST_OFFSET) >= from_date)
     
     if to_date:
-        query = query.filter(func.date(Invoice.invoice_date) <= to_date)
+        query = query.filter(func.date(Invoice.invoice_date + IST_OFFSET) <= to_date)
     
     if search:
         query = query.filter(
@@ -143,7 +146,7 @@ async def list_invoices(
 
 
 @router.get("/{invoice_id}", response_model=InvoiceResponse)
-async def get_invoice(
+def get_invoice(
     invoice_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -163,7 +166,7 @@ async def get_invoice(
 
 
 @router.get("/{invoice_id}/print", response_model=InvoicePrintData)
-async def get_invoice_print_data(
+def get_invoice_print_data(
     invoice_id: int,
     request: Request,
     mark_printed: bool = False,
@@ -309,7 +312,7 @@ async def get_invoice_print_data(
 
 
 @router.post("/from-sale/{sale_id}", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
-async def create_invoice_from_sale(
+def create_invoice_from_sale(
     sale_id: int,
     request: Request,
     db: Session = Depends(get_db),

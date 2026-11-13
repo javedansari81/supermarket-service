@@ -58,8 +58,8 @@ def net_product_lines(db: Session, tenant_id: int, from_date: date, to_date: dat
         SaleItem.line_total.label("amount")
     ).join(Sale).filter(
         Sale.tenant_id == tenant_id,
-        func.date(Sale.sale_date) >= from_date,
-        func.date(Sale.sale_date) <= to_date,
+        func.date(Sale.sale_date + IST_OFFSET) >= from_date,
+        func.date(Sale.sale_date + IST_OFFSET) <= to_date,
         Sale.status.in_(BILLED_STATUSES)
     )
     returned = db.query(
@@ -69,14 +69,14 @@ def net_product_lines(db: Session, tenant_id: int, from_date: date, to_date: dat
         -SaleReturnItem.line_total
     ).join(SaleReturn).filter(
         SaleReturn.tenant_id == tenant_id,
-        func.date(SaleReturn.return_date) >= from_date,
-        func.date(SaleReturn.return_date) <= to_date
+        func.date(SaleReturn.return_date + IST_OFFSET) >= from_date,
+        func.date(SaleReturn.return_date + IST_OFFSET) <= to_date
     )
     return union_all(sold, returned).subquery()
 
 
 @router.get("/dashboard")
-async def get_dashboard(
+def get_dashboard(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -394,7 +394,7 @@ async def get_dashboard(
 
 
 @router.get("/sales-summary")
-async def get_sales_summary(
+def get_sales_summary(
     from_date: date = Query(...),
     to_date: date = Query(...),
     group_by: str = Query("day", enum=["day", "week", "month"]),
@@ -408,14 +408,14 @@ async def get_sales_summary(
     validate_date_range(from_date, to_date)
     base_query = db.query(Sale).filter(
         Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) >= from_date,
-        func.date(Sale.sale_date) <= to_date,
+        func.date(Sale.sale_date + IST_OFFSET) >= from_date,
+        func.date(Sale.sale_date + IST_OFFSET) <= to_date,
         Sale.status.in_(BILLED_STATUSES)
     )
     returns_query = db.query(SaleReturn).filter(
         SaleReturn.tenant_id == context.tenant_id,
-        func.date(SaleReturn.return_date) >= from_date,
-        func.date(SaleReturn.return_date) <= to_date
+        func.date(SaleReturn.return_date + IST_OFFSET) >= from_date,
+        func.date(SaleReturn.return_date + IST_OFFSET) <= to_date
     )
 
     # Total summary (net = billed minus returns processed in the range)
@@ -437,21 +437,21 @@ async def get_sales_summary(
 
     # Daily breakdown
     daily_data = db.query(
-        func.date(Sale.sale_date).label("date"),
+        func.date(Sale.sale_date + IST_OFFSET).label("date"),
         func.count(Sale.id).label("transactions"),
         func.sum(Sale.total_amount).label("total_sales"),
         func.sum(Sale.tax_amount).label("total_tax")
     ).filter(
         Sale.tenant_id == context.tenant_id,
-        func.date(Sale.sale_date) >= from_date,
-        func.date(Sale.sale_date) <= to_date,
+        func.date(Sale.sale_date + IST_OFFSET) >= from_date,
+        func.date(Sale.sale_date + IST_OFFSET) <= to_date,
         Sale.status.in_(BILLED_STATUSES)
-    ).group_by(func.date(Sale.sale_date)).all()
+    ).group_by(func.date(Sale.sale_date + IST_OFFSET)).all()
     daily_returns = returns_query.with_entities(
-        func.date(SaleReturn.return_date).label("date"),
+        func.date(SaleReturn.return_date + IST_OFFSET).label("date"),
         func.sum(SaleReturn.total_amount).label("total_returns"),
         func.sum(SaleReturn.tax_amount).label("total_tax")
-    ).group_by(func.date(SaleReturn.return_date)).all()
+    ).group_by(func.date(SaleReturn.return_date + IST_OFFSET)).all()
 
     days = {}
     for d in daily_data:
@@ -487,7 +487,7 @@ async def get_sales_summary(
 
 
 @router.get("/top-products")
-async def get_top_products(
+def get_top_products(
     from_date: date = Query(...),
     to_date: date = Query(...),
     limit: int = Query(10, ge=1, le=50),
@@ -527,7 +527,7 @@ async def get_top_products(
 
 
 @router.get("/category-sales")
-async def get_category_sales(
+def get_category_sales(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: Session = Depends(get_db),
@@ -575,7 +575,7 @@ async def get_category_sales(
 
 
 @router.get("/cashier-performance")
-async def get_cashier_performance(
+def get_cashier_performance(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: Session = Depends(get_db),
@@ -594,8 +594,8 @@ async def get_cashier_performance(
     ).outerjoin(
         Sale, and_(
             Sale.created_by == User.id,
-            func.date(Sale.sale_date) >= from_date,
-            func.date(Sale.sale_date) <= to_date,
+            func.date(Sale.sale_date + IST_OFFSET) >= from_date,
+            func.date(Sale.sale_date + IST_OFFSET) <= to_date,
             Sale.status.in_(BILLED_STATUSES)
         )
     ).filter(
@@ -607,8 +607,8 @@ async def get_cashier_performance(
         func.coalesce(func.sum(SaleReturn.total_amount), 0)
     ).filter(
         SaleReturn.tenant_id == context.tenant_id,
-        func.date(SaleReturn.return_date) >= from_date,
-        func.date(SaleReturn.return_date) <= to_date
+        func.date(SaleReturn.return_date + IST_OFFSET) >= from_date,
+        func.date(SaleReturn.return_date + IST_OFFSET) <= to_date
     ).group_by(SaleReturn.created_by).all())
 
     return {
@@ -628,7 +628,7 @@ async def get_cashier_performance(
 
 
 @router.get("/payment-modes")
-async def get_payment_modes(
+def get_payment_modes(
     from_date: date = Query(...),
     to_date: date = Query(...),
     db: Session = Depends(get_db),
@@ -796,7 +796,7 @@ def profit_figures(quantity, revenue, cost, uncosted) -> dict:
 
 
 @router.get("/profit")
-async def get_profit(
+def get_profit(
     from_date: date = Query(...),
     to_date: date = Query(...),
     group_by: str = Query("product", enum=["product", "category", "day"]),
@@ -852,7 +852,7 @@ async def get_profit(
 
 
 @router.get("/stock-report")
-async def get_stock_report(
+def get_stock_report(
     category_id: Optional[int] = None,
     include_zero_stock: bool = False,
     db: Session = Depends(get_db),

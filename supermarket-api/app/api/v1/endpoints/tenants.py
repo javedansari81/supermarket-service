@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=TenantListResponse)
-async def list_tenants(
+def list_tenants(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
@@ -47,7 +47,7 @@ async def list_tenants(
 
 
 @router.get("/current", response_model=TenantResponse)
-async def get_current_tenant(
+def get_current_tenant(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -61,7 +61,7 @@ async def get_current_tenant(
 
 
 @router.get("/{tenant_id}", response_model=TenantResponse)
-async def get_tenant(
+def get_tenant(
     tenant_id: int,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
@@ -79,7 +79,7 @@ async def get_tenant(
 
 
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
-async def create_tenant(
+def create_tenant(
     tenant_data: TenantCreate,
     db: Session = Depends(get_db),
     current_user = Depends(get_current_admin_user)
@@ -101,7 +101,7 @@ async def create_tenant(
 
 
 @router.put("/{tenant_id}", response_model=TenantResponse)
-async def update_tenant(
+def update_tenant(
     tenant_id: int,
     tenant_data: TenantUpdate,
     db: Session = Depends(get_db),

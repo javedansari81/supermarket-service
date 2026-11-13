@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.core.database import lock_sequence
 from app.models.product import Product
 from app.models.product_batch import ProductBatch
 
@@ -110,6 +111,7 @@ def display_product_name(product_type: str, item_name: str, net_quantity: Option
 
 def next_plu_code(db: Session, tenant_id: int) -> int:
     """Item numbers (PLU) for loose products, from 1 upwards per store"""
+    lock_sequence(db, "plu_code", tenant_id)
     last = db.query(func.max(Product.plu_code)).filter(Product.tenant_id == tenant_id).scalar() or 0
     if last >= 99999:
         raise HTTPException(status_code=400, detail="No free item numbers (PLU) left")
@@ -152,6 +154,13 @@ def create_batch(db: Session, product: Product, *, mrp, selling_price, purchase_
     db.add(batch)
     db.flush()
     return batch
+
+
+def lock_product_stock(db: Session, product: Product) -> None:
+    """Lock the product row and reload its stock. Call before sync_batches when the product
+    was read without a lock: batches reconciled against a stock figure that a sale in
+    progress is changing would move stock between batches."""
+    db.refresh(product, attribute_names=["stock_quantity"], with_for_update=True)
 
 
 def sync_batches(db: Session, product: Product) -> List[ProductBatch]:

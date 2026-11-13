@@ -1,7 +1,7 @@
 # FastAPI and ASGI server
-fastapi==0.109.0
+fastapi==0.115.6
 uvicorn[standard]==0.27.0
-python-multipart==0.0.6
+python-multipart==0.0.20
 
 # Database
 sqlalchemy==2.0.25
@@ -24,7 +24,7 @@ fastapi-cors==0.0.6
 
 # Barcode generation
 python-barcode==0.15.1
-Pillow==10.2.0
+Pillow==10.4.0
 
 # PDF generation for invoices
 reportlab==4.0.9

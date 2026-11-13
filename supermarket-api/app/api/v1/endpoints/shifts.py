@@ -141,7 +141,7 @@ def build_report(db: Session, shift: CashierShift) -> ShiftReport:
 
 
 @router.get("/current", response_model=CurrentShiftResponse)
-async def current_shift(db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)):
+def current_shift(db: Session = Depends(get_db), context: TenantContext = Depends(get_tenant_context)):
     """The open shift (without expected cash) and whether billing needs one"""
     shift = get_open_shift(db, context.tenant_id)
     return CurrentShiftResponse(
@@ -152,7 +152,7 @@ async def current_shift(db: Session = Depends(get_db), context: TenantContext = 
 
 
 @router.get("", response_model=ShiftListResponse, dependencies=[Depends(get_current_supervisor_user)])
-async def list_shifts(
+def list_shifts(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     from_date: Optional[date] = None,
@@ -179,7 +179,7 @@ async def list_shifts(
 
 
 @router.post("/open", response_model=ShiftResponse, status_code=status.HTTP_201_CREATED)
-async def open_shift(data: ShiftOpen, request: Request, db: Session = Depends(get_db),
+def open_shift(data: ShiftOpen, request: Request, db: Session = Depends(get_db),
                      context: TenantContext = Depends(get_tenant_context)):
     """Open the cash drawer shift with the change money already in the drawer"""
     if get_open_shift(db, context.tenant_id):
@@ -202,7 +202,7 @@ async def open_shift(data: ShiftOpen, request: Request, db: Session = Depends(ge
 
 @router.post("/{shift_id}/cash-movements", response_model=ShiftMovementResponse,
              status_code=status.HTTP_201_CREATED)
-async def add_cash_movement(shift_id: int, data: CashMovementCreate, request: Request,
+def add_cash_movement(shift_id: int, data: CashMovementCreate, request: Request,
                             db: Session = Depends(get_db),
                             context: TenantContext = Depends(get_tenant_context)):
     """Cash in (anyone) or cash out (supervisors and admins) of the open shift's drawer"""
@@ -229,7 +229,7 @@ async def add_cash_movement(shift_id: int, data: CashMovementCreate, request: Re
 
 
 @router.get("/{shift_id}/report", response_model=ShiftReport)
-async def shift_report(shift_id: int, db: Session = Depends(get_db),
+def shift_report(shift_id: int, db: Session = Depends(get_db),
                        context: TenantContext = Depends(get_tenant_context)):
     """X report of the open shift (supervisors and admins) or Z report of a closed shift"""
     shift = get_shift_or_404(db, context.tenant_id, shift_id)
@@ -240,7 +240,7 @@ async def shift_report(shift_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/{shift_id}/close", response_model=ShiftReport)
-async def close_shift(shift_id: int, data: ShiftClose, request: Request, db: Session = Depends(get_db),
+def close_shift(shift_id: int, data: ShiftClose, request: Request, db: Session = Depends(get_db),
                       context: TenantContext = Depends(get_tenant_context)):
     """Close the shift with the note-by-note count; the difference from expected cash is
     worked out here, and one above the store limit waits for supervisor approval"""
@@ -267,7 +267,7 @@ async def close_shift(shift_id: int, data: ShiftClose, request: Request, db: Ses
 
 @router.post("/{shift_id}/approve", response_model=ShiftResponse,
              dependencies=[Depends(get_current_supervisor_user)])
-async def approve_shift(shift_id: int, data: ShiftApprove, request: Request, db: Session = Depends(get_db),
+def approve_shift(shift_id: int, data: ShiftApprove, request: Request, db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Accept a closing difference above the limit, with the reason (supervisors and admins)"""
     shift = get_shift_or_404(db, context.tenant_id, shift_id, lock=True)

@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get("", response_model=List[GstItemResponse])
-async def list_gst_items(
+def list_gst_items(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):

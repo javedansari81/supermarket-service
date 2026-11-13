@@ -618,3 +618,20 @@ def test_barcode_configs(client, seed, admin_headers, cashier_headers):
     assert client.post(f"{BAR}/configs", json=body, headers=admin_headers).status_code == 400
     assert client.post(f"{BAR}/configs", json=body, headers=cashier_headers).status_code == 403
     assert len(client.get(f"{BAR}/configs", headers=cashier_headers).json()["items"]) == 1
+
+
+def test_reports_and_lists_use_ist_days(client, db, seed, admin_headers):
+    """A bill at 01:30 IST on 2 Jan (20:00 UTC on 1 Jan) belongs to 2 Jan"""
+    from datetime import datetime
+    from app.models import Sale
+    db.add(Sale(tenant_id=seed["tenant_a"].id, sale_no="S202601020001", sale_date=datetime(2026, 1, 1, 20, 0),
+                total_amount=100, tax_amount=5, status="completed", created_by=seed["admin"].id))
+    db.commit()
+    day1 = {"from_date": "2026-01-01", "to_date": "2026-01-01"}
+    day2 = {"from_date": "2026-01-02", "to_date": "2026-01-02"}
+    summary = lambda params: client.get("/api/v1/reports/sales-summary", params=params, headers=admin_headers).json()
+    assert summary(day1)["summary"]["total_transactions"] == 0
+    assert summary(day2)["summary"]["total_transactions"] == 1
+    assert summary(day2)["daily_data"][0]["date"] == "2026-01-02"
+    listed = lambda params: client.get("/api/v1/sales", params=params, headers=admin_headers).json()["total"]
+    assert (listed(day1), listed(day2)) == (0, 1)

@@ -61,7 +61,7 @@ DEFAULT_SETTINGS = {
 
 
 @router.get("", response_model=SettingsListResponse)
-async def list_settings(
+def list_settings(
     category: Optional[str] = None,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -132,7 +132,7 @@ def build_store_settings(db: Session, tenant_id: int) -> StoreSettings:
 
 
 @router.get("/store", response_model=StoreSettings)
-async def get_store_settings(
+def get_store_settings(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -143,7 +143,7 @@ async def get_store_settings(
 
 
 @router.put("/store", response_model=StoreSettings)
-async def update_store_settings(
+def update_store_settings(
     store_settings: StoreSettings,
     request: Request,
     db: Session = Depends(get_db),
@@ -171,7 +171,7 @@ async def update_store_settings(
 
 
 @router.get("/billing", response_model=BillingSettings)
-async def get_billing_settings(
+def get_billing_settings(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -194,7 +194,7 @@ async def get_billing_settings(
 
 
 @router.put("/billing", response_model=BillingSettings)
-async def update_billing_settings(
+def update_billing_settings(
     billing_settings: BillingSettings,
     request: Request,
     db: Session = Depends(get_db),
@@ -266,7 +266,7 @@ def _encrypted(value: Optional[str], current: Optional[str]) -> Optional[str]:
 
 
 @router.get("/payment", response_model=PaymentSettingsResponse)
-async def get_payment_settings(
+def get_payment_settings(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
@@ -278,7 +278,7 @@ async def get_payment_settings(
 
 
 @router.put("/payment", response_model=PaymentSettingsResponse)
-async def update_payment_settings(
+def update_payment_settings(
     data: PaymentSettingsUpdate,
     request: Request,
     db: Session = Depends(get_db),
@@ -308,7 +308,7 @@ async def update_payment_settings(
 
 
 @router.get("/upi-qr", response_model=UpiQrResponse)
-async def get_upi_qr(
+def get_upi_qr(
     amount: Decimal = Query(..., gt=0, le=1000000, max_digits=9, decimal_places=2),
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -326,7 +326,7 @@ async def get_upi_qr(
 
 
 @router.get("/loyalty", response_model=LoyaltySettings)
-async def get_loyalty(
+def get_loyalty(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -337,7 +337,7 @@ async def get_loyalty(
 
 
 @router.put("/loyalty", response_model=LoyaltySettings)
-async def update_loyalty(
+def update_loyalty(
     loyalty_settings: LoyaltySettings,
     request: Request,
     db: Session = Depends(get_db),
@@ -374,7 +374,7 @@ def _online_values(online: OnlineSettings) -> dict:
 
 
 @router.get("/online", response_model=OnlineSettings)
-async def get_online_settings(
+def get_online_settings(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -385,7 +385,7 @@ async def get_online_settings(
 
 
 @router.put("/online", response_model=OnlineSettings)
-async def update_online_settings(
+def update_online_settings(
     online_settings: OnlineSettings,
     request: Request,
     db: Session = Depends(get_db),

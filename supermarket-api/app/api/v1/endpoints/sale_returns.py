@@ -10,10 +10,11 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches
 from app.core.loyalty import reverse_for_sale, POINTS_MODE
+from app.core.online_orders import DELIVERY_PRODUCT_NO
 from app.core.shifts import shift_for_cash
 from app.models.audit_log import AuditLog
 from app.models.product_batch import ProductBatch
@@ -50,7 +51,8 @@ def days_since_sale(sale: Sale) -> int:
 
 def generate_return_no(db: Session, tenant_id: int) -> str:
     """Generate unique credit note number"""
-    today = datetime.now().strftime("%Y%m%d")
+    lock_sequence(db, "return_no", tenant_id)
+    today = datetime.now(IST).strftime("%Y%m%d")
     last_return = db.query(SaleReturn).filter(
         SaleReturn.tenant_id == tenant_id,
         SaleReturn.return_no.like(f"CN{today}%")
@@ -139,7 +141,10 @@ def build_return_responses(db: Session, returns: List[SaleReturn]) -> List[SaleR
 def restock(db: Session, context: TenantContext, product: Product, quantity: Decimal,
             reference_type: str, reference_id: int, remarks: str,
             batch: Optional[ProductBatch] = None) -> None:
-    """Put stock back, into the batch it was sold from when known"""
+    """Put stock back, into the batch it was sold from when known.
+    The delivery charge line of an online order is a service: it never held stock."""
+    if product.product_no == DELIVERY_PRODUCT_NO:
+        return
     product.stock_quantity = (product.stock_quantity or 0) + quantity
     if batch:
         batch.quantity_left = (batch.quantity_left or 0) + quantity
@@ -190,7 +195,7 @@ def split_tax(tax: Decimal, is_interstate: bool):
 
 
 @router.get("", response_model=SaleReturnListResponse)
-async def list_returns(
+def list_returns(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     from_date: Optional[date] = None,
@@ -231,7 +236,7 @@ async def list_returns(
 
 
 @router.get("/{return_id}", response_model=SaleReturnResponse)
-async def get_return(
+def get_return(
     return_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -249,7 +254,7 @@ async def get_return(
 
 
 @sales_router.get("/{sale_id}/returnable", response_model=ReturnableSale)
-async def get_returnable(
+def get_returnable(
     sale_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -307,7 +312,7 @@ async def get_returnable(
 
 @sales_router.post("/{sale_id}/returns", response_model=SaleReturnResponse,
                    status_code=status.HTTP_201_CREATED)
-async def create_return(
+def create_return(
     sale_id: int,
     return_data: SaleReturnCreate,
     request: Request,
@@ -461,7 +466,7 @@ async def create_return(
 
 
 @sales_router.post("/{sale_id}/void", response_model=SaleResponse)
-async def void_sale(
+def void_sale(
     sale_id: int,
     void_data: SaleVoidRequest,
     request: Request,

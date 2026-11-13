@@ -7,6 +7,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from app.core.config import settings
 from app.core.logging_config import setup_logging, request_id_var
 from app.api.v1.api import api_router
@@ -33,6 +34,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Internal server error", "request_id": request_id},
         headers={"X-Request-ID": request_id},
+    )
+
+
+@app.exception_handler(IntegrityError)
+async def integrity_error_handler(request: Request, exc: IntegrityError):
+    """Two requests saved the same thing at once (e.g. the same code or name) and the database
+    refused the second: answer 409 so the client can retry, instead of a 500"""
+    request_id = request_id_var.get()
+    logger.warning("Conflicting save on %s %s: %s", request.method, request.url.path, exc.orig)
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "This was changed or saved by someone else at the same time. "
+                           "Please try again.", "request_id": request_id},
     )
 
 

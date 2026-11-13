@@ -65,7 +65,7 @@ def apply_data(db: Session, context: TenantContext, coupon: Coupon, data: Coupon
 
 
 @router.get("", response_model=CouponListResponse)
-async def list_coupons(
+def list_coupons(
     status_filter: Optional[str] = Query(None, alias="status",
                                          pattern="^(running|upcoming|ended|inactive)$"),
     db: Session = Depends(get_db),
@@ -82,14 +82,14 @@ async def list_coupons(
 
 
 @router.get("/{coupon_id}", response_model=CouponResponse)
-async def read_coupon(coupon_id: int, db: Session = Depends(get_db),
+def read_coupon(coupon_id: int, db: Session = Depends(get_db),
                       context: TenantContext = Depends(get_tenant_context)):
     coupon = get_coupon(db, context.tenant_id, coupon_id)
     return to_coupon_response(coupon, usage_counts(db, context.tenant_id).get(coupon.id, 0))
 
 
 @router.post("", response_model=CouponResponse, status_code=status.HTTP_201_CREATED)
-async def create_coupon(data: CouponIn, request: Request, db: Session = Depends(get_db),
+def create_coupon(data: CouponIn, request: Request, db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     coupon = Coupon(tenant_id=context.tenant_id, created_by=context.user_id)
     apply_data(db, context, coupon, data)
@@ -103,7 +103,7 @@ async def create_coupon(data: CouponIn, request: Request, db: Session = Depends(
 
 
 @router.put("/{coupon_id}", response_model=CouponResponse)
-async def update_coupon(coupon_id: int, data: CouponIn, request: Request,
+def update_coupon(coupon_id: int, data: CouponIn, request: Request,
                         db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     coupon = get_coupon(db, context.tenant_id, coupon_id)
@@ -118,7 +118,7 @@ async def update_coupon(coupon_id: int, data: CouponIn, request: Request,
 
 
 @router.delete("/{coupon_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_coupon(coupon_id: int, request: Request, db: Session = Depends(get_db),
+def delete_coupon(coupon_id: int, request: Request, db: Session = Depends(get_db),
                         context: TenantContext = Depends(get_tenant_context)):
     """Bills already made keep the coupon code"""
     coupon = get_coupon(db, context.tenant_id, coupon_id)

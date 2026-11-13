@@ -34,6 +34,14 @@ def test_login_wrong_password(client, seed):
     assert res.json()["detail"] == "Incorrect username or password"
 
 
+def test_login_attempts_are_limited_per_ip(client, seed, monkeypatch):
+    monkeypatch.setattr(settings, "RATE_LIMIT_LOGIN_PER_MINUTE", 3)
+    for _ in range(3):
+        assert login(client, "admin_a", "wrong-password").status_code == 401
+    res = login(client, "admin_a")
+    assert res.status_code == 429 and res.headers["Retry-After"]
+
+
 def test_login_unknown_user(client, seed):
     assert login(client, "nobody").status_code == 401
 

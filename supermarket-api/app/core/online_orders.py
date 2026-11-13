@@ -7,6 +7,8 @@ from decimal import Decimal
 from typing import Dict, Iterable, List
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from app.core.database import lock_sequence
+from app.core.clearance import today_ist
 from app.core.offers import CENTS
 from app.models.order import Order, OrderItem
 from app.models.product import Product
@@ -81,7 +83,8 @@ def delivery_charge_for(db: Session, tenant_id: int, items_total: Decimal) -> De
 
 def generate_order_no(db: Session, tenant_id: int) -> str:
     """ON + date + 4-digit number for the day, per store"""
-    today = datetime.now().strftime("%Y%m%d")
+    lock_sequence(db, "order_no", tenant_id)
+    today = today_ist().strftime("%Y%m%d")
     last = db.query(Order.order_no).filter(
         Order.tenant_id == tenant_id, Order.order_no.like(f"ON{today}%")
     ).order_by(Order.id.desc()).first()

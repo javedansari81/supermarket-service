@@ -13,7 +13,7 @@ from sqlalchemy import func, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core import storage
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
 from app.core.batches import match_or_create_batch, sync_batches, uses_batches
 from app.core.offers import CENTS
@@ -127,6 +127,7 @@ def item_from_line(item: PurchaseItem) -> PurchaseItemCreate:
 
 def generate_purchase_no(db: Session, tenant_id: int) -> str:
     """Generate unique purchase number (PO000001, PO000002, ...)"""
+    lock_sequence(db, "purchase_no", tenant_id)
     last_seq = db.query(
         func.max(cast(func.substring(Purchase.purchase_no, 3), Integer))
     ).filter(
@@ -212,7 +213,7 @@ def lock_item_batches(db: Session, items) -> dict:
 
 
 @router.get("", response_model=PurchaseListResponse)
-async def list_purchases(
+def list_purchases(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     supplier_id: Optional[int] = None,
@@ -254,7 +255,7 @@ async def list_purchases(
 
 
 @router.get("/{purchase_id}", response_model=PurchaseResponse)
-async def get_purchase(
+def get_purchase(
     purchase_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -277,7 +278,7 @@ async def get_purchase(
 
 
 @router.get("/{purchase_id}/putaway", response_model=List[PutawayItem])
-async def get_purchase_putaway(
+def get_purchase_putaway(
     purchase_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -320,7 +321,7 @@ async def get_purchase_putaway(
 
 
 @router.post("", response_model=PurchaseResponse, status_code=status.HTTP_201_CREATED)
-async def create_purchase(
+def create_purchase(
     purchase_data: PurchaseCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -468,7 +469,7 @@ def replace_purchase_items(db: Session, purchase: Purchase, new_items, context: 
 
 
 @router.put("/{purchase_id}", response_model=PurchaseResponse)
-async def update_purchase(
+def update_purchase(
     purchase_id: int,
     purchase_data: PurchaseUpdate,
     request: Request,
@@ -527,7 +528,7 @@ async def update_purchase(
 
 
 @router.post("/{purchase_id}/cancel", response_model=PurchaseResponse)
-async def cancel_purchase(
+def cancel_purchase(
     purchase_id: int,
     cancel_data: PurchaseCancel,
     request: Request,
@@ -614,7 +615,7 @@ def require_storage() -> None:
 
 
 @router.post("/{purchase_id}/bill", response_model=PurchaseResponse)
-async def upload_purchase_bill(
+def upload_purchase_bill(
     purchase_id: int,
     request: Request,
     file: UploadFile = File(...),
@@ -629,7 +630,7 @@ async def upload_purchase_bill(
     require_storage()
 
     max_bytes = settings.BILL_MAX_SIZE_MB * 1024 * 1024
-    content = await file.read(max_bytes + 1)
+    content = file.file.read(max_bytes + 1)
     if not content:
         raise HTTPException(status_code=400, detail="Bill file is empty")
     if len(content) > max_bytes:
@@ -669,7 +670,7 @@ async def upload_purchase_bill(
 
 
 @router.get("/{purchase_id}/bill", response_model=PurchaseBillUrl)
-async def get_purchase_bill(
+def get_purchase_bill(
     purchase_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -691,7 +692,7 @@ async def get_purchase_bill(
 
 
 @router.delete("/{purchase_id}/bill", response_model=PurchaseResponse)
-async def delete_purchase_bill(
+def delete_purchase_bill(
     purchase_id: int,
     request: Request,
     db: Session = Depends(get_db),

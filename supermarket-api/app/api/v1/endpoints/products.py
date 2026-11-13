@@ -6,17 +6,17 @@ from typing import Optional, List
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, UploadFile, File
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import Response
 from pydantic import ValidationError
 from sqlalchemy import func, or_, cast, Integer
 from sqlalchemy.orm import Session, joinedload, selectinload
 from app.core import product_images, storage
 from app.core.config import settings
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
 from app.core.batches import (
-    generate_instore_barcode, sync_batches, uses_batches, fefo_key, get_product_batch,
+    generate_instore_barcode, sync_batches, lock_product_stock, uses_batches, fefo_key,
+    get_product_batch,
     scale_barcode, is_scale_barcode, parse_scale_barcode, scale_quantity,
     display_product_name, base_product_name, capitalize_words, next_plu_code, STORE_BRAND
 )
@@ -52,6 +52,7 @@ PACKED_UNIT = "pcs"
 
 def generate_product_no(db: Session, tenant_id: int) -> str:
     """Generate next sequential product number (P00001, P00002, ...)"""
+    lock_sequence(db, "product_no", tenant_id)
     last_seq = db.query(
         func.max(cast(func.substring(Product.product_no, 2), Integer))
     ).filter(
@@ -267,7 +268,7 @@ def barcode_used_by_batch(db: Session, tenant_id: int, barcode: str) -> bool:
 
 
 @router.get("", response_model=ProductListResponse)
-async def list_products(
+def list_products(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=1000),
     status: Optional[str] = None,
@@ -314,7 +315,7 @@ async def list_products(
         query = query.filter(or_(Product.barcode.is_(None), Product.barcode == ""))
 
     if expiry:
-        today = date.today()
+        today = today_ist()
         if expiry == "expired":
             query = query.filter(Product.expiry_date < today)
         else:
@@ -364,7 +365,7 @@ async def list_products(
 
 
 @router.get("/search")
-async def search_product(
+def search_product(
     barcode: Optional[str] = None,
     product_no: Optional[str] = None,
     db: Session = Depends(get_db),
@@ -406,6 +407,7 @@ async def search_product(
 
     batches = []
     if uses_batches(product):
+        lock_product_stock(db, product)
         batches = sync_batches(db, product)
         db.commit()
     price_source = scanned_batch or (batches[0] if batches else None)
@@ -451,7 +453,7 @@ async def search_product(
 
 
 @router.get("/import/template")
-async def download_import_template(
+def download_import_template(
     context: TenantContext = Depends(get_tenant_context),
     current_user = Depends(get_current_admin_user)
 ):
@@ -466,7 +468,7 @@ async def download_import_template(
 
 
 @router.post("/import")
-async def import_products(
+def import_products(
     request: Request,
     file: UploadFile = File(...),
     dry_run: bool = Query(False),
@@ -480,7 +482,7 @@ async def import_products(
     are skipped; invalid rows are reported as failed.
     dry_run=true checks the file and reports the result without saving anything.
     """
-    content = await file.read(MAX_IMPORT_BYTES + 1)
+    content = file.file.read(MAX_IMPORT_BYTES + 1)
     if len(content) > MAX_IMPORT_BYTES:
         raise HTTPException(status_code=400,
                             detail=f"File is larger than {MAX_IMPORT_BYTES // (1024 * 1024)} MB")
@@ -552,7 +554,7 @@ async def import_products(
 
 
 @router.get("/{product_id}", response_model=ProductResponse)
-async def get_product(
+def get_product(
     product_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -572,7 +574,7 @@ async def get_product(
 
 
 @router.get("/{product_id}/batches", response_model=List[ProductBatchResponse])
-async def list_product_batches(
+def list_product_batches(
     product_id: int,
     in_stock: bool = True,
     db: Session = Depends(get_db),
@@ -590,6 +592,7 @@ async def list_product_batches(
     if not uses_batches(product):
         return []
 
+    lock_product_stock(db, product)
     batches = sync_batches(db, product)
     db.commit()
     if not in_stock:
@@ -599,7 +602,7 @@ async def list_product_batches(
 
 
 @router.put("/{product_id}/batches/{batch_id}", response_model=ProductBatchResponse)
-async def update_product_batch(
+def update_product_batch(
     product_id: int,
     batch_id: int,
     batch_data: ProductBatchUpdate,
@@ -637,7 +640,7 @@ async def update_product_batch(
 
 
 @router.post("", response_model=ProductResponse, status_code=status.HTTP_201_CREATED)
-async def create_product(
+def create_product(
     product_data: ProductCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -714,7 +717,7 @@ def build_product(db: Session, request: Optional[Request], context: TenantContex
 
 
 @router.put("/{product_id}", response_model=ProductResponse)
-async def update_product(
+def update_product(
     product_id: int,
     product_data: ProductUpdate,
     request: Request,
@@ -728,7 +731,7 @@ async def update_product(
     product = db.query(Product).filter(
         Product.id == product_id,
         Product.tenant_id == context.tenant_id
-    ).first()
+    ).with_for_update().first()
     
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -816,7 +819,7 @@ async def update_product(
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_product(
+def delete_product(
     product_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -871,7 +874,7 @@ def _set_image(db: Session, request: Request, context: TenantContext, product: P
 
 
 @router.post("/{product_id}/image", response_model=ProductResponse)
-async def upload_product_image(
+def upload_product_image(
     product_id: int,
     request: Request,
     file: UploadFile = File(...),
@@ -890,13 +893,13 @@ async def upload_product_image(
     if not storage.is_configured():
         raise HTTPException(status_code=503, detail="Image storage is not configured")
     max_bytes = settings.PRODUCT_IMAGE_MAX_MB * 1024 * 1024
-    content = await file.read(max_bytes + 1)
+    content = file.file.read(max_bytes + 1)
     if not content:
         raise HTTPException(status_code=400, detail="The picture file is empty")
     if len(content) > max_bytes:
         raise HTTPException(status_code=413, detail=f"The picture must be "
                                                     f"{settings.PRODUCT_IMAGE_MAX_MB} MB or smaller")
-    large, thumb = await run_in_threadpool(product_images.process, content)
+    large, thumb = product_images.process(content)
 
     key = product_images.new_key(context.tenant_id, product.id)
     large_key, thumb_key = product_images.file_keys(key)
@@ -907,11 +910,12 @@ async def upload_product_image(
         logger.exception("Image upload failed for product %s (key %s)", product.id, key)
         _delete_image_files(key, product.id)
         raise HTTPException(status_code=502, detail="Could not save the picture to storage")
-    return ProductResponse.model_validate(_set_image(db, request, context, product, key))
+    return ProductResponse.model_validate(
+        _set_image(db, request, context, product, key))
 
 
 @router.delete("/{product_id}/image", response_model=ProductResponse)
-async def delete_product_image(
+def delete_product_image(
     product_id: int,
     request: Request,
     db: Session = Depends(get_db),
@@ -927,5 +931,6 @@ async def delete_product_image(
         raise HTTPException(status_code=404, detail="Product not found")
     if not product.image_key:
         return ProductResponse.model_validate(product)
-    return ProductResponse.model_validate(_set_image(db, request, context, product, None))
+    return ProductResponse.model_validate(
+        _set_image(db, request, context, product, None))
 

@@ -70,9 +70,11 @@ class Settings(BaseSettings):
     # when missing, the connection's address is used
     CLIENT_IP_HEADER: str = "do-connecting-ip"
 
-    # Request limits on the public shop API, per visitor IP or per customer account
+    # Request limits on staff login and the public shop API, per visitor IP or per customer account
     # (counted in each API instance's memory); over the limit answers 429 with Retry-After
     RATE_LIMIT_ENABLED: bool = True
+    # Staff login attempts (password guessing)
+    RATE_LIMIT_LOGIN_PER_MINUTE: int = 10
     RATE_LIMIT_OTP_REQUEST_PER_MINUTE: int = 5
     RATE_LIMIT_OTP_VERIFY_PER_MINUTE: int = 10
     RATE_LIMIT_REFRESH_PER_MINUTE: int = 30

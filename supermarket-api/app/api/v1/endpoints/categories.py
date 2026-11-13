@@ -44,7 +44,7 @@ def apply_gst_items(db: Session, category: Category, gst_item_ids: List[int]):
 
 
 @router.get("", response_model=CategoryListResponse)
-async def list_categories(
+def list_categories(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     status: Optional[str] = None,
@@ -75,7 +75,7 @@ async def list_categories(
 
 
 @router.get("/active")
-async def list_active_categories(
+def list_active_categories(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -91,7 +91,7 @@ async def list_active_categories(
 
 
 @router.get("/{category_id}", response_model=CategoryResponse)
-async def get_category(
+def get_category(
     category_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -111,7 +111,7 @@ async def get_category(
 
 
 @router.post("", response_model=CategoryResponse, status_code=status.HTTP_201_CREATED)
-async def create_category(
+def create_category(
     category_data: CategoryCreate,
     request: Request,
     db: Session = Depends(get_db),
@@ -151,7 +151,7 @@ async def create_category(
 
 
 @router.put("/{category_id}", response_model=CategoryResponse)
-async def update_category(
+def update_category(
     category_id: int,
     category_data: CategoryUpdate,
     request: Request,
@@ -198,7 +198,7 @@ async def update_category(
 
 
 @router.delete("/{category_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_category(
+def delete_category(
     category_id: int,
     request: Request,
     db: Session = Depends(get_db),

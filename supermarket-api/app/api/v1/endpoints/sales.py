@@ -8,10 +8,10 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import func
-from app.core.database import get_db
+from app.core.database import get_db, lock_sequence
 from app.core.audit import record_audit, snapshot
 from app.core.batches import sync_batches, uses_batches, distinct_mrps, allocate, get_product_batch
-from app.core.clearance import ClearanceResolver
+from app.core.clearance import ClearanceResolver, today_ist
 from app.core.offers import OfferResolver, LineDiscount, resolve_line_discount, CENTS
 from app.core.coupons import (SOURCE_COUPON, CouponLine, find_coupon, check_coupon,
                               allocate_coupon)
@@ -29,6 +29,7 @@ from app.models.tenant_setting import TenantSetting
 from app.models.user import User
 from app.schemas.sale import SaleCreate, SaleResponse, SaleListResponse
 from app.schemas.coupon import CouponCheckRequest, CouponCheckResponse, CouponCheckItem
+from app.api.v1.endpoints.reports import IST_OFFSET
 from app.api.deps import get_current_user, get_tenant_context, TenantContext
 from app.api.v1.endpoints.settings import build_store_settings
 from app.api.v1.endpoints.invoices import create_invoice_for_sale, format_place_of_supply
@@ -41,7 +42,8 @@ router = APIRouter()
 
 def generate_sale_no(db: Session, tenant_id: int) -> str:
     """Generate unique sale number"""
-    today = datetime.now().strftime("%Y%m%d")
+    lock_sequence(db, "sale_no", tenant_id)
+    today = today_ist().strftime("%Y%m%d")
     last_sale = db.query(Sale).filter(
         Sale.tenant_id == tenant_id,
         Sale.sale_no.like(f"S{today}%")
@@ -59,7 +61,7 @@ def get_setting(db: Session, tenant_id: int, key: str, default: str = "") -> str
         TenantSetting.tenant_id == tenant_id,
         TenantSetting.setting_key == key
     ).first()
-    return setting.setting_value if setting else default
+    return setting.setting_value if setting and setting.setting_value is not None else default
 
 
 def pick_batches(db: Session, product: Product, item_data, any_mrp: bool = False):
@@ -109,6 +111,11 @@ def price_lines(db: Session, tenant_id: int, items, any_mrp: bool = False) -> Li
     """Checks products and stock, picks batches and takes the stock off (callers that don't
     sell roll back), and gives each line its near-expiry or offer discount.
     any_mrp = take stock first expiry first even across batches with different MRPs."""
+    # Lock every product of the bill in one fixed order, so two bills with the same products
+    # in a different order cannot deadlock
+    db.query(Product.id).filter(
+        Product.tenant_id == tenant_id, Product.id.in_({i.product_id for i in items})
+    ).order_by(Product.id).with_for_update().all()
     clearance = ClearanceResolver(db, tenant_id)
     offers = OfferResolver(db, tenant_id)
     lines = []
@@ -219,7 +226,7 @@ def to_sale_response(sale: Sale) -> SaleResponse:
 
 
 @router.post("/coupon-check", response_model=CouponCheckResponse)
-async def check_sale_coupon(
+def check_sale_coupon(
     data: CouponCheckRequest,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -249,7 +256,7 @@ async def check_sale_coupon(
 
 
 @router.get("", response_model=SaleListResponse)
-async def list_sales(
+def list_sales(
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     from_date: Optional[date] = None,
@@ -267,10 +274,10 @@ async def list_sales(
     )
 
     if from_date:
-        query = query.filter(func.date(Sale.sale_date) >= from_date)
+        query = query.filter(func.date(Sale.sale_date + IST_OFFSET) >= from_date)
 
     if to_date:
-        query = query.filter(func.date(Sale.sale_date) <= to_date)
+        query = query.filter(func.date(Sale.sale_date + IST_OFFSET) <= to_date)
 
     if status:
         query = query.filter(Sale.status == status)
@@ -290,7 +297,7 @@ async def list_sales(
 
 
 @router.get("/{sale_id}", response_model=SaleResponse)
-async def get_sale(
+def get_sale(
     sale_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -310,7 +317,7 @@ async def get_sale(
 
 
 @router.post("", response_model=SaleResponse, status_code=status.HTTP_201_CREATED)
-async def create_sale(
+def create_sale(
     sale_data: SaleCreate,
     request: Request,
     db: Session = Depends(get_db),

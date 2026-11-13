@@ -52,7 +52,7 @@ def to_held_bill_response(held: HeldBill) -> HeldBillResponse:
 
 
 @router.get("", response_model=HeldBillListResponse)
-async def list_held_bills(
+def list_held_bills(
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
 ):
@@ -64,7 +64,7 @@ async def list_held_bills(
 
 
 @router.get("/{held_bill_id}", response_model=HeldBillResponse)
-async def get_held_bill_by_id(
+def get_held_bill_by_id(
     held_bill_id: int,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -76,7 +76,7 @@ async def get_held_bill_by_id(
 
 
 @router.post("", response_model=HeldBillResponse, status_code=status.HTTP_201_CREATED)
-async def create_held_bill(
+def create_held_bill(
     data: HeldBillCreate,
     db: Session = Depends(get_db),
     context: TenantContext = Depends(get_tenant_context)
@@ -102,7 +102,7 @@ async def create_held_bill(
 
 
 @router.put("/{held_bill_id}", response_model=HeldBillResponse)
-async def update_held_bill(
+def update_held_bill(
     held_bill_id: int,
     data: HeldBillCreate,
     db: Session = Depends(get_db),
@@ -119,7 +119,7 @@ async def update_held_bill(
 
 
 @router.delete("/{held_bill_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def discard_held_bill(
+def discard_held_bill(
     held_bill_id: int,
     request: Request,
     db: Session = Depends(get_db),
