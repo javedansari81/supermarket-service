@@ -1,5 +1,5 @@
 /**
- * A store's home and products: category dropdown and search in the header (recent searches below),
+ * A store's home and products: search in the header (recent searches below),
  * category shortcuts, today's offers, recently viewed, then all products with "Show more" paging. Sort appears once the
  * customer searches or filters.
  */
@@ -106,23 +106,6 @@ export default function StorePage() {
     setPage(1);
   };
   const title = query ? `Results for "${query}"` : onOffer ? "Today's offers" : categoryName || 'All products';
-  const categoryLabel = (id: string) => {
-    const category = categories.find((c) => String(c.id) === id);
-    const { Icon, color, background } = category ? categoryStyle(category.category_name)
-      : { Icon: Apps, color: '#15803d', background: '#dcfce7' };
-    return (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-        <Box sx={{ width: 28, height: 28, borderRadius: '50%', display: 'grid', placeItems: 'center', flexShrink: 0,
-          color, bgcolor: background }}>
-          <Icon sx={{ fontSize: 16 }} />
-        </Box>
-        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {category?.category_name ?? 'All categories'}
-        </Box>
-      </Box>
-    );
-  };
-
   return (
     <>
       {searchSlot && createPortal(
@@ -132,35 +115,7 @@ export default function StorePage() {
           '& .MuiOutlinedInput-root.Mui-focused': { boxShadow: '0 0 0 3px rgba(255,255,255,0.45)' },
           '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: 'transparent' },
           '& .MuiOutlinedInput-input': { height: { xs: 42, md: 44 }, py: 0, boxSizing: 'border-box' },
-          '& .MuiSelect-select': { display: 'flex', alignItems: 'center', height: { xs: '42px !important', md: '44px !important' } },
           '& .MuiInputBase-input::placeholder': { fontSize: { xs: 15, sm: 16 } } }}>
-          {categories.length > 0 && (
-            <TextField select value={categoryId === null ? 'all' : String(categoryId)}
-              sx={{ flexShrink: 0, width: { xs: 64, lg: 210 },
-                '& .MuiSelect-select': { pl: { xs: 1.25, lg: 1.75 }, pr: { xs: '28px !important', lg: '32px !important' } },
-                '& .MuiSelect-icon': { right: { xs: 4, lg: 7 } } }}
-              onChange={(e) => {
-                setOnOffer(false);
-                chooseCategory(e.target.value === 'all' ? null : Number(e.target.value));
-              }}
-              slotProps={{
-                htmlInput: { 'aria-label': 'Category' },
-                select: {
-                  renderValue: (v) => (
-                    <Box sx={{ '& span': { display: { xs: 'none', lg: 'inline' } } }}>{categoryLabel(String(v))}</Box>
-                  ),
-                  MenuProps: { slotProps: { paper: { sx: { maxHeight: 420 } } } },
-                },
-              }}>
-              <MenuItem value="all">{categoryLabel('all')}</MenuItem>
-              {categories.map((c) => (
-                <MenuItem key={c.id} value={String(c.id)} sx={{ justifyContent: 'space-between', gap: 2 }}>
-                  {categoryLabel(String(c.id))}
-                  <Typography variant="caption" color="text.secondary">{c.product_count}</Typography>
-                </MenuItem>
-              ))}
-            </TextField>
-          )}
           <TextField fullWidth placeholder="Search for atta, milk, chips..." value={search}
             onChange={(e) => setSearch(e.target.value)}
             slotProps={{ htmlInput: { maxLength: 100, 'aria-label': 'Search products' },
