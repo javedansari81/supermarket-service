@@ -82,6 +82,7 @@ def get_stock_summary(
             stock_quantity=p.stock_quantity or Decimal("0"),
             reorder_level=p.reorder_level or Decimal("0"),
             unit_type=p.unit_type or "pcs",
+            product_type=p.product_type,
             is_low_stock=(p.stock_quantity or 0) <= (p.reorder_level or 0)
         ))
     

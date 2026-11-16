@@ -9,24 +9,32 @@ import {
 } from '@mui/material';
 import Grid from '@mui/material/Grid';
 import { DataGrid, GridColDef, GridRenderCellParams } from '@mui/x-data-grid';
-import { Search, Refresh, Edit, EventNote } from '@mui/icons-material';
+import { Search, Refresh, Edit, EventNote, Inventory2 } from '@mui/icons-material';
 import dayjs from 'dayjs';
 import api from '../services/api';
 import PageHeader from '../components/layout/PageHeader';
 import { ListToolbar, RowAction, humanize } from '../components/common/ListParts';
 import { API_ENDPOINTS } from '../config/api';
 import { PaginatedResponse, ProductBatch } from '../types';
+import RepackDialog from '../components/inventory/RepackDialog';
 import toast from 'react-hot-toast';
 
 interface StockItem { id: number; product_no: string; product_name: string; barcode: string | null; category_name: string | null;
-  stock_quantity: number | string; reorder_level: number | string; unit_type: string; }
+  stock_quantity: number | string; reorder_level: number | string; unit_type: string; product_type?: string | null; }
 interface StockMovement { id: number; product_name: string | null; movement_type: string; quantity: number | string;
   reference_type: string | null; reference_id: number | null; created_at: string; remarks: string | null; }
+interface RepackRow { id: number; repack_no: string; source_product_name: string | null; unit_type: string | null;
+  packed_quantity: string; wastage_enabled: boolean; wastage_quantity: string; total_quantity: string;
+  expiry_date: string | null; remarks: string | null; created_at: string;
+  items: { product_name: string | null; pack_count: number; unit_cost: string | null }[]; }
 
 const Inventory: React.FC = () => {
   const [tab, setTab] = useState(0);
   const [stockItems, setStockItems] = useState<StockItem[]>([]);
   const [movements, setMovements] = useState<StockMovement[]>([]);
+  const [repacks, setRepacks] = useState<RepackRow[]>([]);
+  const [repackOpen, setRepackOpen] = useState(false);
+  const [repackProductId, setRepackProductId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -68,10 +76,30 @@ const Inventory: React.FC = () => {
     finally { setLoading(false); }
   }, [page, pageSize]);
 
+  const fetchRepacks = useCallback(async () => {
+    setLoading(true);
+    try {
+      const response = await api.get<PaginatedResponse<RepackRow>>(API_ENDPOINTS.REPACKS, {
+        params: { page: page + 1, page_size: pageSize }
+      });
+      setRepacks(response.data.items);
+      setTotal(response.data.total);
+    } catch (error) { toast.error('Failed to fetch repacks'); }
+    finally { setLoading(false); }
+  }, [page, pageSize]);
+
+  const refresh = tab === 0 ? fetchStock : tab === 1 ? fetchMovements : fetchRepacks;
+
   useEffect(() => {
     if (tab === 0) fetchStock();
-    else fetchMovements();
-  }, [tab, fetchStock, fetchMovements]);
+    else if (tab === 1) fetchMovements();
+    else fetchRepacks();
+  }, [tab, fetchStock, fetchMovements, fetchRepacks]);
+
+  const openRepack = (productId: number | null = null) => {
+    setRepackProductId(productId);
+    setRepackOpen(true);
+  };
 
   const handleAdjust = async () => {
     if (!selectedItem || !adjustQty) return;
@@ -155,8 +183,11 @@ const Inventory: React.FC = () => {
       const status = getStockStatus(params.row.stock_quantity, params.row.reorder_level);
       return <Chip label={status.label} size="small" color={status.color} variant={status.color === 'success' ? 'outlined' : 'filled'} />;
     }},
-    { field: 'actions', headerName: '', width: 100, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
+    { field: 'actions', headerName: '', width: 130, sortable: false, align: 'right', renderCell: (params: GridRenderCellParams) => (
       <>
+        {params.row.product_type === 'loose' && (
+          <RowAction title="Repack into packets" icon={<Inventory2 fontSize="small" />} onClick={() => openRepack(params.row.id)} />
+        )}
         <RowAction title="Adjust stock" icon={<Edit fontSize="small" />} onClick={() => openAdjustDialog(params.row)} />
         <RowAction title="Batches & expiry" icon={<EventNote fontSize="small" />} onClick={() => openBatchesDialog(params.row)} />
       </>
@@ -177,6 +208,24 @@ const Inventory: React.FC = () => {
     { field: 'remarks', headerName: 'Remarks', flex: 1, minWidth: 150 },
   ];
 
+  const qty = (value: string | number, unit?: string | null) => `${Number(value)} ${unit ?? ''}`.trim();
+
+  const repackColumns: GridColDef[] = [
+    { field: 'created_at', headerName: 'Date', width: 170,
+      valueFormatter: (value: string) => value ? dayjs(value + (value.endsWith('Z') ? '' : 'Z')).format('DD/MM/YYYY hh:mm A') : '' },
+    { field: 'repack_no', headerName: 'Repack No', width: 140 },
+    { field: 'source_product_name', headerName: 'Loose product', width: 180 },
+    { field: 'packs', headerName: 'Packs made', flex: 1, minWidth: 220, sortable: false,
+      valueGetter: (_value, row: RepackRow) => row.items.map((i) => `${i.product_name} × ${i.pack_count}`).join(', ') },
+    { field: 'packed_quantity', headerName: 'Packed', width: 100,
+      valueGetter: (_value, row: RepackRow) => qty(row.packed_quantity, row.unit_type) },
+    { field: 'wastage_quantity', headerName: 'Wastage', width: 100,
+      valueGetter: (_value, row: RepackRow) => row.wastage_enabled ? qty(row.wastage_quantity, row.unit_type) : 'Off' },
+    { field: 'total_quantity', headerName: 'Loose used', width: 110,
+      valueGetter: (_value, row: RepackRow) => qty(row.total_quantity, row.unit_type) },
+    { field: 'remarks', headerName: 'Remarks', width: 150 },
+  ];
+
   const handleTabChange = (value: number) => {
     setTab(value);
     setPage(0);
@@ -186,11 +235,14 @@ const Inventory: React.FC = () => {
     <Box>
       <PageHeader
         title="Inventory"
-        actions={<RowAction title="Refresh" icon={<Refresh />} onClick={tab === 0 ? fetchStock : fetchMovements} />}
+        actions={<>
+          <Button variant="contained" startIcon={<Inventory2 />} onClick={() => openRepack()}>Repack</Button>
+          <RowAction title="Refresh" icon={<Refresh />} onClick={refresh} />
+        </>}
       />
       <Card>
         <Tabs value={tab} onChange={(_, v) => handleTabChange(v)} sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}>
-          <Tab label="Stock Overview" /><Tab label="Stock Movements" />
+          <Tab label="Stock Overview" /><Tab label="Stock Movements" /><Tab label="Repacks" />
         </Tabs>
         {tab === 0 && (
           <>
@@ -224,7 +276,16 @@ const Inventory: React.FC = () => {
             onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
             pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick sx={{ border: 0 }} />
         )}
+        {tab === 2 && (
+          <DataGrid rows={repacks} columns={repackColumns} loading={loading} rowCount={total}
+            paginationMode="server"
+            paginationModel={{ page, pageSize }}
+            onPaginationModelChange={(model) => { setPage(model.page); setPageSize(model.pageSize); }}
+            pageSizeOptions={[10, 25, 50]} autoHeight disableRowSelectionOnClick sx={{ border: 0 }} />
+        )}
       </Card>
+      <RepackDialog open={repackOpen} productId={repackProductId} onClose={() => setRepackOpen(false)}
+        onDone={refresh} />
       <Dialog open={adjustOpen} onClose={() => setAdjustOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Adjust Stock: {selectedItem?.product_name}</DialogTitle>
         <DialogContent>

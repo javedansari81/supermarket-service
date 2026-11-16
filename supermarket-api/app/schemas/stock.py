@@ -65,6 +65,7 @@ class StockSummary(BaseModel):
     stock_quantity: Decimal
     reorder_level: Decimal
     unit_type: str
+    product_type: Optional[str] = None
     is_low_stock: bool
 
 

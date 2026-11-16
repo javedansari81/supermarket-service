@@ -56,6 +56,8 @@ DEFAULT_SETTINGS = {
     "free_delivery_min": {"value": "300", "category": "online", "description": "Online order amount for free delivery (Rs)"},
     "delivery_pincodes": {"value": "", "category": "online", "description": "Pincodes for online delivery (comma-separated)"},
     "low_stock_threshold": {"value": "10", "category": "inventory", "description": "Low stock warning threshold"},
+    "repack_wastage_percent": {"value": "0.5", "category": "inventory",
+                               "description": "Recommended wastage when packing loose stock (% of packed weight)"},
     "barcode_prefix": {"value": "", "category": "barcode", "description": "Barcode prefix"},
 }
 

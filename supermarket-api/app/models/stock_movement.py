@@ -40,7 +40,10 @@ class StockMovement(Base):
         'adjustment_out',
         'damage_out',
         'expired_out',
-        'return_in'
+        'return_in',
+        'repack_out',   # loose stock taken for packing
+        'repack_in',    # own-packed packs made from loose stock
+        'wastage_out',  # spillage / loss while packing
     ]
     
     def __repr__(self):

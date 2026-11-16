@@ -13,6 +13,7 @@ from app.api.v1.endpoints import (
     suppliers,
     purchases,
     inventory,
+    repacks,
     barcode,
     sales,
     sale_returns,
@@ -64,6 +65,9 @@ api_router.include_router(purchases.router, prefix="/purchases", tags=["Purchase
 
 # Inventory management
 api_router.include_router(inventory.router, prefix="/inventory", tags=["Inventory"])
+
+# Repacking loose stock into own-packed products
+api_router.include_router(repacks.router, prefix="/repacks", tags=["Repacks"])
 
 # Barcode management
 api_router.include_router(barcode.router, prefix="/barcode", tags=["Barcode"])

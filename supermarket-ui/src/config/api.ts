@@ -52,6 +52,10 @@ export const API_ENDPOINTS = {
   INVENTORY_STOCK: '/inventory/stock',
   INVENTORY_MOVEMENTS: '/inventory/movements',
   INVENTORY_ADJUST: '/inventory/adjust',
+
+  // Repacking loose stock into own-packed products
+  REPACKS: '/repacks',
+  REPACK_SOURCE: '/repacks/sources',
   
   // Barcode
   BARCODE_CONFIGS: '/barcode/configs',

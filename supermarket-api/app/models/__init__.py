@@ -16,6 +16,7 @@ from app.models.coupon import Coupon
 from app.models.supplier import Supplier
 from app.models.purchase import Purchase, PurchaseItem
 from app.models.stock_movement import StockMovement
+from app.models.repack import Repack, RepackItem
 from app.models.customer import Customer
 from app.models.customer_auth import (CustomerAccount, CustomerOtp, CustomerRefreshToken,
                                       CustomerPushSubscription)
@@ -49,6 +50,8 @@ __all__ = [
     "Purchase",
     "PurchaseItem",
     "StockMovement",
+    "Repack",
+    "RepackItem",
     "Customer",
     "CustomerAccount",
     "CustomerOtp",
